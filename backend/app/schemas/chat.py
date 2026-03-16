@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -14,8 +14,8 @@ class ChatMessage(BaseModel):
     username: str
     content: str = Field(min_length=1, max_length=500)
     source: MessageSource = MessageSource.mock
-    priority: int = 1
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    priority: int = Field(default=1, ge=0, le=10)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class ModerationResult(BaseModel):

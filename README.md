@@ -3,6 +3,13 @@
 This project scaffolds an **original** real-time AI VTuber assistant with safety-first defaults.
 It does **not** copy proprietary code, branding, voice, likeness, or personality from existing creators.
 
+## Current status
+
+- ✅ Working MVP scaffold: FastAPI backend + React/Vite dashboard connected with a WebSocket event stream.
+- ✅ Mock chat ingestion, moderation, mock reply generation, mock TTS, and mock avatar events are wired end-to-end.
+- ℹ️ LLM/TTS/avatar providers are currently mock adapters for local development.
+
+
 ## A) Proposed architecture
 
 The system is event-driven and decoupled with queues:
@@ -181,7 +188,7 @@ curl -X POST "http://localhost:8000/api/mock-chat/simple?username=alex&content=h
 
 ## Development roadmap (phases)
 
-1. **Phase 1 (MVP done by scaffold)**: queue + moderation + mock LLM/TTS/avatar + dashboard.
+1. **Phase 1 (MVP runnable)**: queue + moderation + mock LLM/TTS/avatar + dashboard.
 2. **Phase 2**: real streaming chat ingestion adapter (YouTube/Twitch/etc. where permitted).
 3. **Phase 3**: production LLM + stronger prompt/policy/evals.
 4. **Phase 4**: real TTS and avatar runtime with viseme timing.
@@ -201,3 +208,6 @@ I can now help you implement each module step-by-step in this order:
 5. Interrupt handling + barge-in logic
 6. Memory retrieval and summarization upgrades
 7. Advanced moderation + policy configuration
+
+
+> Note: This repository is currently a working MVP scaffold intended for extension with real provider integrations.
