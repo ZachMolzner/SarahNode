@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.adapters.avatar.mock import MockAvatarClient
 from app.adapters.llm.mock import MockLLMClient
 from app.adapters.tts.mock import MockTTSClient
@@ -10,10 +12,15 @@ from app.services.chat_ingestion import ChatIngestionService
 from app.services.dialogue_engine import DialogueEngine
 
 chat_ingestion_service = ChatIngestionService()
-dialogue_engine = DialogueEngine(llm_client=MockLLMClient(), persona_path="app/config/persona.json")
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
+
+dialogue_engine = DialogueEngine(
+    llm_client=MockLLMClient(),
+    persona_path=str(Path(__file__).resolve().parents[1] / "config" / "persona.json"),
+)
+
 stream_orchestrator = StreamOrchestrator(
     dialogue_engine=dialogue_engine,
     tts_client=MockTTSClient(),

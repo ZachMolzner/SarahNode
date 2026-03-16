@@ -14,7 +14,12 @@ class ModerationService:
     }
 
     def evaluate(self, message: ChatMessage) -> ModerationResult:
+        content = message.content.strip()
         for category, pattern in self.blocked_patterns.items():
-            if pattern.search(message.content):
-                return ModerationResult(allowed=False, reason="Blocked by moderation", category=category)
-        return ModerationResult(allowed=True)
+            if pattern.search(content):
+                return ModerationResult(
+                    allowed=False,
+                    reason="Blocked by moderation policy",
+                    category=category,
+                )
+        return ModerationResult(allowed=True, reason="Allowed")
