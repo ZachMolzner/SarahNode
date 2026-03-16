@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
