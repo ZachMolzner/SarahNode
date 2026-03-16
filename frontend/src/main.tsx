@@ -1,10 +1,9 @@
-import React from 'react';
-import ReactDOM from 'react-dom/client';
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { DashboardPage } from "./pages/DashboardPage";
 
-import { DashboardPage } from './pages/DashboardPage';
-
-ReactDOM.createRoot(document.getElementById('root')!).render(
+ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <DashboardPage />
-  </React.StrictMode>,
+  </React.StrictMode>
 );
