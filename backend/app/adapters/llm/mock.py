@@ -12,6 +12,19 @@ class MockLLMClient(LLMClient):
         persona: dict[str, Any],
     ) -> AssistantReply:
         name = str(persona.get("name", "Nova"))
-        text = f"{name}: I saw '{message.content[:120]}'. Context: {memory_summary}."
-        emotion = "emotion_happy" if "!" in message.content else "emotion_confused"
-        return AssistantReply(text=text, emotion=emotion, should_speak=True)
+        tone = str(persona.get("tone", "helpful"))
+
+        emotion = "emotion_happy" if "!" in message.content else "emotion_calm"
+
+        text = (
+            f"{name} here. Thanks, {message.username}! "
+            f"You said: '{message.content[:120]}'. "
+            f"My tone is {tone}. "
+            f"Recent context: {memory_summary}."
+        )
+
+        return AssistantReply(
+            text=text,
+            emotion=emotion,
+            should_speak=True,
+        )
