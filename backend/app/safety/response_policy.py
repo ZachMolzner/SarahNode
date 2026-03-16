@@ -2,7 +2,11 @@ from app.schemas.chat import AssistantReply, ModerationResult
 
 
 class ResponsePolicy:
-    def apply(self, moderation: ModerationResult, reply: AssistantReply | None = None) -> AssistantReply:
+    def apply(
+        self,
+        moderation: ModerationResult,
+        reply: AssistantReply | None = None,
+    ) -> AssistantReply:
         if not moderation.allowed:
             return AssistantReply(
                 text="I can’t help with that request, but I can help with a safer alternative.",
