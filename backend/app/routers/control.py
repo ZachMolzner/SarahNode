@@ -18,7 +18,11 @@ async def post_simple_chat(
     content: str = Query(min_length=1, max_length=500),
     priority: int = Query(default=1, ge=0, le=10),
 ) -> dict[str, str]:
-    message = chat_ingestion_service.mock_message(username=username, content=content, priority=priority)
+    message = chat_ingestion_service.mock_message(
+        username=username,
+        content=content,
+        priority=priority,
+    )
     await stream_orchestrator.enqueue_message(message)
     return {"status": "queued"}
 
