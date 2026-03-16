@@ -11,6 +11,7 @@ from app.routers.health import router as health_router
 setup_logging()
 
 app = FastAPI(title=settings.app_name)
+
 app.include_router(health_router)
 app.include_router(control_router)
 
@@ -28,6 +29,7 @@ async def on_shutdown() -> None:
 @app.websocket("/ws/events")
 async def ws_events(websocket: WebSocket) -> None:
     await stream_orchestrator.register_ws(websocket)
+
     try:
         while True:
             await websocket.receive_text()
