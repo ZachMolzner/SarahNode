@@ -1,3 +1,4 @@
+import React from "react";
 import type { SystemEvent } from "../types/events";
 
 type Props = {
