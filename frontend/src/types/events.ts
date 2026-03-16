@@ -1,16 +1,18 @@
 export type EventType =
-  | 'chat_received'
-  | 'moderation_decision'
-  | 'reply_selected'
-  | 'speaking_status'
-  | 'tts_output'
-  | 'avatar_event'
-  | 'error';
+  | "chat_received"
+  | "moderation_decision"
+  | "reply_selected"
+  | "speaking_status"
+  | "tts_output"
+  | "avatar_event"
+  | "error";
+
+export type EventPayload = Record<string, unknown>;
 
 export type SystemEvent = {
   type: EventType | string;
   timestamp: string;
-  payload: Record<string, unknown>;
+  payload: EventPayload;
 };
 
-export type ConnectionState = 'connecting' | 'open' | 'closed' | 'error';
+export type ConnectionState = "connecting" | "open" | "closed" | "error";
