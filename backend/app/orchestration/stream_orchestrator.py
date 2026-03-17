@@ -7,6 +7,7 @@ from fastapi import WebSocket
 
 from app.adapters.avatar.base import AvatarClient
 from app.adapters.tts.base import TTSClient
+from app.adapters.tts.mock import MockTTSClient
 from app.config.settings import settings
 from app.memory.state_manager import MemoryManager
 from app.safety.moderation import ModerationService
@@ -194,10 +195,11 @@ class StreamOrchestrator:
 
         # Dialogue
         memory_summary = self.memory_manager.summarize()
+        recent_history = self.memory_manager.recent_history()
         generated_reply = None
 
         if moderation.allowed:
-            generated_reply = await self.dialogue_engine.generate(message, memory_summary)
+            generated_reply = await self.dialogue_engine.generate(message, memory_summary, recent_history)
 
         reply = self.response_policy.apply(moderation, generated_reply)
         self.memory_manager.set_last_reply(reply.text)
@@ -228,12 +230,25 @@ class StreamOrchestrator:
                 )
                 await self.emit_event("avatar_event", avatar_start)
 
-                tts_result = await self.tts_client.synthesize(reply.text)
-                await self.emit_event("tts_output", tts_result)
+                try:
+                    tts_result = await self.tts_client.synthesize(reply.text)
+                    await self.emit_event("tts_output", tts_result)
 
-                duration = float(tts_result.get("duration_seconds", 0.0) or 0.0)
-                if duration > 0:
-                    await asyncio.sleep(duration)
+                    duration = float(tts_result.get("duration_seconds", 0.0) or 0.0)
+                    if duration > 0:
+                        await asyncio.sleep(duration)
+                except Exception as exc:
+                    logger.exception("TTS generation failed, using mock fallback")
+                    await self.emit_event(
+                        "error",
+                        {
+                            "stage": "tts",
+                            "username": message.username,
+                            "details": str(exc),
+                        },
+                    )
+                    tts_result = await MockTTSClient().synthesize(reply.text)
+                    await self.emit_event("tts_output", tts_result)
 
                 avatar_stop = await self.avatar_client.dispatch("speaking_stop", {})
                 await self.emit_event("avatar_event", avatar_stop)

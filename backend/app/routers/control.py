@@ -1,7 +1,12 @@
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.core.container import assistant_intake_service, memory_manager, stream_orchestrator
+from app.core.container import (
+    assistant_intake_service,
+    memory_manager,
+    provider_status,
+    stream_orchestrator,
+)
 
 router = APIRouter(prefix="/api", tags=["assistant"])
 
@@ -29,11 +34,12 @@ async def send_chat_legacy(request: AssistantMessageRequest) -> dict[str, str]:
 
 
 @router.get("/assistant/state")
-def get_assistant_state() -> dict[str, str]:
+def get_assistant_state() -> dict[str, object]:
     return {
         "assistant_state": memory_manager.state.assistant_state,
         "latest_reply": memory_manager.state.last_reply,
         "memory_summary": memory_manager.summarize(),
+        "providers": provider_status(),
     }
 
 

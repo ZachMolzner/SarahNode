@@ -38,6 +38,16 @@ export type SendAssistantMessagePayload = {
   priority?: number;
 };
 
+export type AssistantStateResponse = {
+  assistant_state: string;
+  latest_reply: string;
+  memory_summary: string;
+  providers?: {
+    llm?: { active?: string; mode?: string };
+    tts?: { active?: string; mode?: string };
+  };
+};
+
 export async function sendAssistantMessage(payload: SendAssistantMessagePayload): Promise<void> {
   const response = await fetch(`${API_BASE_URL}/api/assistant/messages`, {
     method: "POST",
@@ -48,6 +58,14 @@ export async function sendAssistantMessage(payload: SendAssistantMessagePayload)
   if (!response.ok) {
     throw new Error(`Failed to queue message: ${response.status}`);
   }
+}
+
+export async function fetchAssistantState(): Promise<AssistantStateResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/state`);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch assistant state: ${response.status}`);
+  }
+  return (await response.json()) as AssistantStateResponse;
 }
 
 export function getWsEventsUrl(): string {

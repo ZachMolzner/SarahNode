@@ -23,11 +23,14 @@ class OpenAIClient(LLMClient):
         self,
         message: ChatMessage,
         memory_summary: str,
+        recent_history: list[str],
         persona: dict[str, Any],
     ) -> AssistantReply:
         system_prompt = str(persona.get("system_prompt", settings.persona_system_prompt))
         persona_name = str(persona.get("name", settings.persona_name))
         persona_style = str(persona.get("style", settings.persona_style))
+
+        history_text = "\n".join(recent_history[-8:]) if recent_history else "No prior turns recorded."
 
         response = await self.client.responses.create(
             model=self.model,
@@ -38,8 +41,11 @@ class OpenAIClient(LLMClient):
                         {
                             "type": "text",
                             "text": (
-                                f"{system_prompt} Persona name: {persona_name}. "
-                                f"Conversation style: {persona_style}."
+                                f"{system_prompt}\n"
+                                "You are a practical local-first personal assistant. "
+                                "Give useful, concrete next steps. Keep responses concise by default unless asked for depth.\n"
+                                f"Assistant persona name: {persona_name}\n"
+                                f"Conversation style: {persona_style}"
                             ),
                         }
                     ],
@@ -50,9 +56,9 @@ class OpenAIClient(LLMClient):
                         {
                             "type": "text",
                             "text": (
-                                f"Memory summary: {memory_summary}\n"
-                                f"User ({message.username}) says: {message.content}\n"
-                                "Respond as the assistant in under 120 words."
+                                f"Recent memory summary:\n{memory_summary}\n\n"
+                                f"Recent turns:\n{history_text}\n\n"
+                                f"New message from {message.username}: {message.content}"
                             ),
                         }
                     ],

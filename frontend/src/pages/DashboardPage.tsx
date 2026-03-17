@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
-import { sendAssistantMessage } from "../lib/api";
+import { fetchAssistantState, sendAssistantMessage } from "../lib/api";
 import { AvatarPanel } from "../components/avatar/AvatarPanel";
 import { useAvatarState } from "../hooks/useAvatarState";
 
@@ -17,10 +17,27 @@ export function DashboardPage() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [audioReady, setAudioReady] = useState(false);
+  const [llmStatus, setLlmStatus] = useState("loading");
+  const [ttsStatus, setTtsStatus] = useState("loading");
 
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const avatarState = useAvatarState(events);
+
+  useEffect(() => {
+    void fetchAssistantState()
+      .then((state) => {
+        const llm = state.providers?.llm;
+        const tts = state.providers?.tts;
+        setLlmStatus(`${llm?.active ?? "unknown"} (${llm?.mode ?? "unknown"})`);
+        setTtsStatus(`${tts?.active ?? "unknown"} (${tts?.mode ?? "unknown"})`);
+      })
+      .catch(() => {
+        setLlmStatus("unavailable");
+        setTtsStatus("unavailable");
+      });
+  }, []);
 
   useEffect(() => {
     const ttsEvent = events.find((event) => event.type === "tts_output");
@@ -46,14 +63,14 @@ export function DashboardPage() {
 
     const audio = new Audio(`data:${mimeType};base64,${audioBase64}`);
     audioRef.current = audio;
-    setIsAudioPlaying(true);
+    setAudioReady(true);
 
     const onEnded = () => setIsAudioPlaying(false);
     const onError = () => setIsAudioPlaying(false);
 
     audio.addEventListener("ended", onEnded);
     audio.addEventListener("error", onError);
-    void audio.play().catch(() => setIsAudioPlaying(false));
+    void audio.play().then(() => setIsAudioPlaying(true)).catch(() => setIsAudioPlaying(false));
 
     return () => {
       audio.pause();
@@ -76,11 +93,21 @@ export function DashboardPage() {
     }
   }
 
+  async function replayAudio() {
+    if (!audioRef.current) return;
+    try {
+      await audioRef.current.play();
+      setIsAudioPlaying(true);
+    } catch {
+      setIsAudioPlaying(false);
+    }
+  }
+
   return (
     <main style={pageStyle}>
       <div style={containerStyle}>
         <header>
-          <h1 style={{ marginBottom: 8 }}>SarahNode Local Assistant Control Center</h1>
+          <h1 style={{ marginBottom: 8 }}>SarahNode Personal AI Assistant</h1>
           <p style={{ margin: 0, opacity: 0.8 }}>
             WebSocket: <strong>{connectionState}</strong> · Events: <strong>{totalEvents}</strong>
           </p>
@@ -121,11 +148,20 @@ export function DashboardPage() {
             <button onClick={handleSend} disabled={isSending || !content.trim()} style={buttonStyle}>
               {isSending ? "Sending..." : "Send Message"}
             </button>
+            <button onClick={replayAudio} disabled={!audioReady} style={secondaryButtonStyle}>
+              Replay Last Audio
+            </button>
             {error ? <span style={{ color: "#ff8c8c" }}>{error}</span> : null}
           </div>
         </section>
 
-        <StatusCards events={events} connectionState={connectionState} isAudioPlaying={isAudioPlaying} />
+        <StatusCards
+          events={events}
+          connectionState={connectionState}
+          isAudioPlaying={isAudioPlaying}
+          llmStatus={llmStatus}
+          ttsStatus={ttsStatus}
+        />
 
         <AvatarPanel avatarState={avatarState} latestReplyText={typeof latestReply === "string" ? latestReply : undefined} />
 
@@ -171,7 +207,6 @@ const submitRowStyle: React.CSSProperties = {
   flexWrap: "wrap",
 };
 
-
 const inputStyle: React.CSSProperties = {
   border: "1px solid #3a3a3a",
   borderRadius: 10,
@@ -188,4 +223,14 @@ const buttonStyle: React.CSSProperties = {
   background: "#f5f5f5",
   color: "#111",
   fontWeight: 700,
+};
+
+const secondaryButtonStyle: React.CSSProperties = {
+  border: "1px solid #575757",
+  borderRadius: 10,
+  padding: "10px 16px",
+  cursor: "pointer",
+  background: "transparent",
+  color: "#f5f5f5",
+  fontWeight: 600,
 };
