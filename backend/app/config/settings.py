@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     assistant_max_queue_size: int = 200
     assistant_memory_window: int = 25
 
+    llm_provider: str = "auto"
+    tts_provider: str = "auto"
+
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
 
