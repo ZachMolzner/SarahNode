@@ -3,6 +3,8 @@ import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
 import { sendChat } from "../lib/api";
+import { AvatarPanel } from "../components/avatar/AvatarPanel";
+import { useAvatarState } from "../hooks/useAvatarState";
 
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
@@ -17,9 +19,8 @@ export function DashboardPage() {
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
 
   const totalEvents = useMemo(() => events.length, [events]);
-  const latestAvatarEvent = events.find((event) => event.type === "avatar_event")?.payload;
-  const latestAssistantState = events.find((event) => event.type === "assistant_state")?.payload?.["state"];
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
+  const avatarState = useAvatarState(events);
 
   useEffect(() => {
     const ttsEvent = events.find((event) => event.type === "tts_output");
@@ -126,29 +127,7 @@ export function DashboardPage() {
 
         <StatusCards events={events} connectionState={connectionState} isAudioPlaying={isAudioPlaying} />
 
-        <section style={panelStyle}>
-          <h2 style={{ marginTop: 0 }}>3D Model Area (Placeholder)</h2>
-          <p style={{ marginTop: 0, opacity: 0.8 }}>
-            Visual placeholder for future 3D avatar/Live2D runtime integration.
-          </p>
-          <div style={avatarPanelStyle}>
-            <p style={{ margin: "0 0 8px" }}>
-              <strong>Assistant state:</strong> {String(latestAssistantState ?? "idle")}
-            </p>
-            <p style={{ margin: "0 0 8px" }}>
-              <strong>Avatar state:</strong> {String(latestAvatarEvent?.["state"] ?? latestAssistantState ?? "idle")}
-            </p>
-            <p style={{ margin: "0 0 8px" }}>
-              <strong>Expression:</strong> {String(latestAvatarEvent?.["expression"] ?? "neutral")}
-            </p>
-            <p style={{ margin: 0 }}>
-              <strong>Last avatar event:</strong> {String(latestAvatarEvent?.["event_type"] ?? "none")}
-            </p>
-          </div>
-          <p style={{ marginBottom: 0, marginTop: 12, opacity: 0.85 }}>
-            Latest reply: {typeof latestReply === "string" ? latestReply : "No reply yet."}
-          </p>
-        </section>
+        <AvatarPanel avatarState={avatarState} latestReplyText={typeof latestReply === "string" ? latestReply : undefined} />
 
         <EventLog events={events} />
       </div>
@@ -192,13 +171,6 @@ const submitRowStyle: React.CSSProperties = {
   flexWrap: "wrap",
 };
 
-const avatarPanelStyle: React.CSSProperties = {
-  border: "1px dashed #555",
-  borderRadius: 12,
-  padding: 16,
-  minHeight: 110,
-  background: "#0f0f0f",
-};
 
 const inputStyle: React.CSSProperties = {
   border: "1px solid #3a3a3a",
