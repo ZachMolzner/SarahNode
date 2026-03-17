@@ -1,7 +1,7 @@
 {
-  "name": "sarahnode-dashboard",
+  "name": "sarahnode-local-assistant",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,10 +10,7 @@
   },
   "dependencies": {
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "three": "^0.169.0",
-    "@react-three/fiber": "^8.17.10",
-    "@pixiv/three-vrm": "^3.4.2"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.8",

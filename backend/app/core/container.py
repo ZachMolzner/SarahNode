@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from app.adapters.avatar.placeholder import PlaceholderAvatarClient
@@ -10,29 +11,53 @@ from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
 from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
-from app.services.chat_ingestion import ChatIngestionService
+from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
+
+logger = logging.getLogger(__name__)
 
 
 def build_llm_client() -> LLMClient:
-    try:
-        from app.adapters.llm.openai_client import OpenAIClient
+    provider = settings.llm_provider.lower()
 
-        return OpenAIClient()
-    except (ImportError, ValueError):
+    if provider == "mock":
         return MockLLMClient()
+
+    if provider in {"auto", "openai"}:
+        try:
+            from app.adapters.llm.openai_client import OpenAIClient
+
+            return OpenAIClient()
+        except (ImportError, ValueError) as exc:
+            if provider == "openai":
+                logger.warning("OPENAI provider requested but unavailable: %s. Falling back to local mock.", exc)
+            return MockLLMClient()
+
+    logger.warning("Unknown llm_provider '%s'. Falling back to local mock.", provider)
+    return MockLLMClient()
 
 
 def build_tts_client() -> TTSClient:
-    try:
-        from app.adapters.tts.elevenlabs_client import ElevenLabsClient
+    provider = settings.tts_provider.lower()
 
-        return ElevenLabsClient()
-    except (ImportError, ValueError):
+    if provider == "mock":
         return MockTTSClient()
 
+    if provider in {"auto", "elevenlabs"}:
+        try:
+            from app.adapters.tts.elevenlabs_client import ElevenLabsClient
 
-chat_ingestion_service = ChatIngestionService()
+            return ElevenLabsClient()
+        except (ImportError, ValueError) as exc:
+            if provider == "elevenlabs":
+                logger.warning("ElevenLabs provider requested but unavailable: %s. Falling back to local mock.", exc)
+            return MockTTSClient()
+
+    logger.warning("Unknown tts_provider '%s'. Falling back to local mock.", provider)
+    return MockTTSClient()
+
+
+assistant_intake_service = AssistantIntakeService()
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()

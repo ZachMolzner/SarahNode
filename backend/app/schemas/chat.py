@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 
 class MessageSource(str, Enum):
-    dashboard = "dashboard"
+    web_ui = "web_ui"
     api = "api"
 
 
@@ -13,7 +13,7 @@ class ChatMessage(BaseModel):
     user_id: str = Field(min_length=1, max_length=64)
     username: str = Field(min_length=1, max_length=32)
     content: str = Field(min_length=1, max_length=500)
-    source: MessageSource = MessageSource.dashboard
+    source: MessageSource = MessageSource.web_ui
     priority: int = Field(default=1, ge=0, le=10)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

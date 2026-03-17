@@ -12,7 +12,7 @@ function findLatestEvent(events: SystemEvent[], type: string): SystemEvent | und
 
 export function StatusCards({ events, connectionState, isAudioPlaying }: Props) {
   const assistantStateEvent = findLatestEvent(events, "assistant_state");
-  const latestModeration = findLatestEvent(events, "moderation_decision");
+  const latestSafetyEvent = findLatestEvent(events, "moderation_decision");
   const latestReplyEvent = findLatestEvent(events, "reply_selected");
   const latestAvatarEvent = findLatestEvent(events, "avatar_event");
   const latestSpeakingEvent = findLatestEvent(events, "speaking_status");
@@ -30,15 +30,12 @@ export function StatusCards({ events, connectionState, isAudioPlaying }: Props) 
       }}
     >
       <Card title="WebSocket" value={String(connectionState)} />
-      <Card title="Assistant State" value={String(assistantState ?? "idle")} />
-      <Card title="Speaking" value={readSpeaking(latestSpeakingEvent)} />
-      <Card title="Moderation" value={readModeration(latestModeration)} />
+      <Card title="Assistant Status" value={String(assistantState ?? "idle")} />
+      <Card title="Voice" value={readSpeaking(latestSpeakingEvent)} />
+      <Card title="Safety Filter" value={readSafetyFilter(latestSafetyEvent)} />
       <Card title="Audio Playback" value={isAudioPlaying ? "playing" : "idle"} />
-      <Card title="Avatar State" value={String(avatarState ?? assistantState ?? "idle")} />
-      <Card
-        title="Latest Reply"
-        value={typeof latestReply === "string" ? latestReply : "No reply yet"}
-      />
+      <Card title="Presence / Avatar" value={String(avatarState ?? assistantState ?? "idle")} />
+      <Card title="Latest Reply" value={typeof latestReply === "string" ? latestReply : "No reply yet"} />
     </section>
   );
 }
@@ -56,7 +53,7 @@ function readSpeaking(event: SystemEvent | undefined): string {
   return "idle";
 }
 
-function readModeration(event: SystemEvent | undefined): string {
+function readSafetyFilter(event: SystemEvent | undefined): string {
   if (!event) return "No moderation events yet";
 
   const allowed = event.payload?.["allowed"];

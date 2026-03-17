@@ -1,63 +1,67 @@
-# SarahNode — Local-First Personal AI Assistant
+# SarahNode — Local-First Personal Assistant
 
-SarahNode is now a local-first personal assistant app with:
-- FastAPI backend
-- React + Vite + TypeScript frontend
-- OpenAI text generation adapter
-- ElevenLabs TTS adapter
-- WebSocket event bus for real-time UI updates
-- Placeholder avatar bridge for future 3D/Live2D integration
-- Mock fallback adapters when OpenAI/ElevenLabs keys or SDK access are unavailable
+SarahNode is a LAN-accessible personal assistant control center for your own devices (desktop, tablet, phone).
 
-## Architecture
+## Product direction
+
+- ✅ Not a Twitch bot
+- ✅ Not a VTuber dashboard product
+- ✅ Local-first personal assistant app
+- ✅ FastAPI backend + React/Vite/TypeScript frontend
+- ✅ Real-time event stream via WebSocket
+- ✅ Optional placeholder presence/avatar layer
+
+## Current capabilities
+
+### Implemented
+
+- Assistant message intake API with queueing (`/api/assistant/messages`)
+- Assistant state API (`/api/assistant/state`)
+- Event stream (`/ws/events`) with moderation, reply, voice, and presence events
+- Provider abstraction with env-based selection (`auto`, `mock`, `openai` / `elevenlabs`)
+- Safe mock fallback for LLM and TTS when provider credentials are unavailable
+- Responsive web dashboard with conversation, status cards, optional presence panel, and live event log
+
+### Placeholder
+
+- Presence/avatar is intentionally placeholder-only right now
+- Voice synthesis can run in mock mode unless ElevenLabs is configured
+
+### Planned
+
+- Rich local memory and task/tool integrations
+- Optional production-grade avatar integrations
+- Better mobile-first conversation UX and settings pages
+
+## Architecture (current)
 
 ```text
-Dashboard (desktop/tablet/phone)
-  -> REST /api/chat/send
+Web UI (desktop/tablet/phone)
+  -> REST /api/assistant/messages
   -> StreamOrchestrator queue
-  -> Moderation
-  -> Memory summary
-  -> DialogueEngine (OpenAI adapter)
-  -> ResponsePolicy
-  -> TTS (ElevenLabs adapter)
-  -> Avatar placeholder events
+  -> Moderation + ResponsePolicy
+  -> DialogueEngine (LLM adapter)
+  -> TTS adapter
+  -> Presence/avatar placeholder events
   -> WebSocket /ws/events
 ```
 
-## Backend layout
-
-- `config/settings.py`
-- `adapters/llm/base.py`
-- `adapters/llm/openai_client.py`
-- `adapters/tts/base.py`
-- `adapters/tts/elevenlabs_client.py`
-- `adapters/avatar/base.py`
-- `adapters/avatar/placeholder.py`
-- `services/dialogue_engine.py`
-- `services/chat_ingestion.py`
-- `memory/state_manager.py`
-- `safety/moderation.py`
-- `safety/response_policy.py`
-- `orchestration/stream_orchestrator.py`
-- `routers/health.py`
-- `routers/control.py`
-- `main.py`
-
-OpenAI and ElevenLabs adapters are optional. If keys are missing (or provider SDK/network is unavailable), SarahNode automatically falls back to mock LLM/TTS behavior so local development still works.
-
-## Environment variables
+## Backend environment variables
 
 ```bash
 APP_NAME=SarahNode Personal Assistant
 ENV=dev
 LOG_LEVEL=INFO
+
 ASSISTANT_COOLDOWN_SECONDS=1.0
 ASSISTANT_MAX_QUEUE_SIZE=200
 ASSISTANT_MEMORY_WINDOW=25
 
+LLM_PROVIDER=auto        # auto | mock | openai
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4o-mini
 
+TTS_PROVIDER=auto        # auto | mock | elevenlabs
 ELEVENLABS_API_KEY=
 ELEVENLABS_VOICE_ID=
 ELEVENLABS_MODEL_ID=eleven_multilingual_v2
@@ -68,16 +72,16 @@ PUBLIC_API_BASE_URL=http://localhost:8000
 PUBLIC_WS_BASE_URL=ws://localhost:8000
 ```
 
-For frontend, set:
+## Frontend environment variables
 
 ```bash
 VITE_PUBLIC_API_BASE_URL=http://<LAN_IP>:8000
 VITE_PUBLIC_WS_BASE_URL=ws://<LAN_IP>:8000
 ```
 
-## Run
+## Local setup (LAN-ready)
 
-### Backend
+### 1) Backend
 
 ```bash
 cd backend
@@ -87,7 +91,7 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Frontend
+### 2) Frontend
 
 ```bash
 cd frontend
@@ -95,4 +99,16 @@ npm install
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-Then open `http://<LAN_IP>:5173` from desktop/tablet/phone on the same network.
+### 3) Open from your devices
+
+- Desktop/tablet/phone on the same network:
+  - `http://<LAN_IP>:5173`
+
+## API quick reference
+
+- `POST /api/assistant/messages` — enqueue a user message for assistant processing
+- `GET /api/assistant/state` — read latest assistant state and memory summary
+- `GET /health` — health info
+- `WS /ws/events` — live stream of assistant events
+
+Legacy compatibility endpoints still exist (`/api/chat/send`, `/api/state`) but are deprecated and should be replaced by assistant routes.

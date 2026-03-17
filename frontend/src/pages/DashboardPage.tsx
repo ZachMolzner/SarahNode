@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
-import { sendChat } from "../lib/api";
+import { sendAssistantMessage } from "../lib/api";
 import { AvatarPanel } from "../components/avatar/AvatarPanel";
 import { useAvatarState } from "../hooks/useAvatarState";
 
@@ -67,10 +67,10 @@ export function DashboardPage() {
     setError(null);
 
     try {
-      await sendChat({ username, content, priority });
+      await sendAssistantMessage({ username, content, priority });
       setContent("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send chat.");
+      setError(err instanceof Error ? err.message : "Failed to send message to assistant.");
     } finally {
       setIsSending(false);
     }
@@ -80,14 +80,14 @@ export function DashboardPage() {
     <main style={pageStyle}>
       <div style={containerStyle}>
         <header>
-          <h1 style={{ marginBottom: 8 }}>SarahNode Local Assistant</h1>
+          <h1 style={{ marginBottom: 8 }}>SarahNode Local Assistant Control Center</h1>
           <p style={{ margin: 0, opacity: 0.8 }}>
             WebSocket: <strong>{connectionState}</strong> · Events: <strong>{totalEvents}</strong>
           </p>
         </header>
 
         <section style={panelStyle}>
-          <h2 style={{ marginTop: 0 }}>Send a Message</h2>
+          <h2 style={{ marginTop: 0 }}>Conversation</h2>
           <div style={gridInputsStyle}>
             <label style={{ display: "grid", gap: 6 }}>
               <span>Username</span>
@@ -119,7 +119,7 @@ export function DashboardPage() {
 
           <div style={submitRowStyle}>
             <button onClick={handleSend} disabled={isSending || !content.trim()} style={buttonStyle}>
-              {isSending ? "Sending..." : "Send to Assistant"}
+              {isSending ? "Sending..." : "Send Message"}
             </button>
             {error ? <span style={{ color: "#ff8c8c" }}>{error}</span> : null}
           </div>

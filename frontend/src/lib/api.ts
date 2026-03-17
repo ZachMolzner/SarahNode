@@ -32,14 +32,14 @@ function resolveWsBaseUrl(): string {
 
 const API_BASE_URL = resolveApiBaseUrl();
 
-export type SendChatPayload = {
+export type SendAssistantMessagePayload = {
   username: string;
   content: string;
   priority?: number;
 };
 
-export async function sendChat(payload: SendChatPayload): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/api/chat/send`, {
+export async function sendAssistantMessage(payload: SendAssistantMessagePayload): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...payload, priority: payload.priority ?? 1 }),

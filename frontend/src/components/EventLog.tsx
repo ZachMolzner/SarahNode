@@ -15,7 +15,7 @@ const cardStyle: React.CSSProperties = {
 export function EventLog({ events }: Props) {
   return (
     <section style={cardStyle}>
-      <h2 style={{ marginTop: 0 }}>Live Events</h2>
+      <h2 style={{ marginTop: 0 }}>Assistant Event Stream</h2>
 
       {events.length === 0 ? (
         <p style={{ opacity: 0.8 }}>No events yet.</p>

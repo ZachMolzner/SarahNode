@@ -35,10 +35,9 @@ class StreamOrchestrator:
         self.memory_manager = memory_manager
         self.response_policy = response_policy
 
-        self.queue: asyncio.PriorityQueue[tuple[int, int, ChatMessage]] = asyncio.PriorityQueue(
-            maxsize=settings.assistant_max_queue_size
-        )
-        self.events: asyncio.Queue[SystemEvent] = asyncio.Queue()
+        self.queue: asyncio.PriorityQueue[tuple[int, int, ChatMessage]] | None = None
+        self.events: asyncio.Queue[SystemEvent] | None = None
+        self._bound_loop: asyncio.AbstractEventLoop | None = None
 
         self._worker_task: asyncio.Task[None] | None = None
         self._fanout_task: asyncio.Task[None] | None = None
@@ -50,9 +49,22 @@ class StreamOrchestrator:
         self._cooldown_until = 0.0
         self._sequence = 0
 
+
+    def _ensure_runtime_queues(self) -> None:
+        loop = asyncio.get_running_loop()
+        if self._bound_loop is loop and self.queue is not None and self.events is not None:
+            return
+
+        self._bound_loop = loop
+        self.queue = asyncio.PriorityQueue(maxsize=settings.assistant_max_queue_size)
+        self.events = asyncio.Queue()
+        self._sequence = 0
+
     async def start(self) -> None:
         if self._worker_task and not self._worker_task.done():
             return
+
+        self._ensure_runtime_queues()
 
         # Initialize avatar
         for event in await self.avatar_client.initialize():
@@ -94,6 +106,9 @@ class StreamOrchestrator:
             self._clients.discard(websocket)
 
     async def enqueue_message(self, message: ChatMessage) -> None:
+        self._ensure_runtime_queues()
+        assert self.queue is not None
+
         self.memory_manager.add_message(message)
 
         self._sequence += 1
@@ -110,10 +125,13 @@ class StreamOrchestrator:
         )
 
     async def emit_event(self, event_type: str, payload: dict[str, Any]) -> None:
+        self._ensure_runtime_queues()
+        assert self.events is not None
         await self.events.put(SystemEvent(type=event_type, payload=payload))
 
     async def _fanout_loop(self) -> None:
         while True:
+            assert self.events is not None
             event = await self.events.get()
 
             try:
@@ -134,10 +152,12 @@ class StreamOrchestrator:
                             self._clients.discard(client)
 
             finally:
+                assert self.events is not None
                 self.events.task_done()
 
     async def _worker_loop(self) -> None:
         while True:
+            assert self.queue is not None
             _priority, _sequence, message = await self.queue.get()
 
             try:
@@ -157,6 +177,7 @@ class StreamOrchestrator:
                 await self._set_assistant_state("idle")
 
             finally:
+                assert self.queue is not None
                 self.queue.task_done()
 
     async def _process_message(self, message: ChatMessage) -> None:
