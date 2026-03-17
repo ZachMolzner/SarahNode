@@ -3,12 +3,22 @@ import type { ConnectionState, SystemEvent } from "../types/events";
 type Props = {
   events: SystemEvent[];
   connectionState: ConnectionState;
+  isAudioPlaying: boolean;
 };
 
-export function StatusCards({ events, connectionState }: Props) {
-  const latestSpeaking = events.find((event) => event.type === "speaking_status");
-  const latestModeration = events.find((event) => event.type === "moderation_decision");
-  const latestReply = events.find((event) => event.type === "reply_selected");
+function findLatestEvent(events: SystemEvent[], type: string): SystemEvent | undefined {
+  return events.find((event) => event.type === type);
+}
+
+export function StatusCards({ events, connectionState, isAudioPlaying }: Props) {
+  const assistantStateEvent = findLatestEvent(events, "assistant_state");
+  const latestModeration = findLatestEvent(events, "moderation_decision");
+  const latestReplyEvent = findLatestEvent(events, "reply_selected");
+  const latestAvatarEvent = findLatestEvent(events, "avatar_event");
+
+  const assistantState = assistantStateEvent?.payload?.["state"];
+  const avatarState = latestAvatarEvent?.payload?.["state"];
+  const latestReply = latestReplyEvent?.payload?.["text"];
 
   return (
     <section
@@ -18,17 +28,17 @@ export function StatusCards({ events, connectionState }: Props) {
         gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
       }}
     >
-      <Card title="WebSocket" value={connectionState} />
-      <Card title="Speaking" value={readSpeaking(latestSpeaking)} />
+      <Card title="WebSocket" value={String(connectionState)} />
+      <Card title="Assistant State" value={String(assistantState ?? "idle")} />
       <Card title="Moderation" value={readModeration(latestModeration)} />
-      <Card title="Latest Reply" value={readReply(latestReply)} />
+      <Card title="Audio Playback" value={isAudioPlaying ? "playing" : "idle"} />
+      <Card title="Avatar State" value={String(avatarState ?? assistantState ?? "idle")} />
+      <Card
+        title="Latest Reply"
+        value={typeof latestReply === "string" ? latestReply : "No reply yet"}
+      />
     </section>
   );
-}
-
-function readSpeaking(event: SystemEvent | undefined): string {
-  const isSpeaking = event?.payload?.["is_speaking"];
-  return isSpeaking === true ? "speaking" : "idle";
 }
 
 function readModeration(event: SystemEvent | undefined): string {
@@ -39,13 +49,6 @@ function readModeration(event: SystemEvent | undefined): string {
 
   const category = event.payload?.["category"];
   return typeof category === "string" ? `blocked (${category})` : "blocked";
-}
-
-function readReply(event: SystemEvent | undefined): string {
-  if (!event) return "No reply selected yet";
-
-  const text = event.payload?.["text"];
-  return typeof text === "string" ? text : "Reply unavailable";
 }
 
 function Card({ title, value }: { title: string; value: string }) {

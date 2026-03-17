@@ -10,14 +10,14 @@ class ResponsePolicy:
         if not moderation.allowed:
             return AssistantReply(
                 text="I can’t help with that request, but I can help with a safer alternative.",
-                emotion="idle",
+                emotion="concerned",
                 should_speak=True,
             )
 
         if reply is None:
             return AssistantReply(
                 text="I might have missed that. Could you rephrase your message?",
-                emotion="emotion_confused",
+                emotion="neutral",
                 should_speak=True,
             )
 
