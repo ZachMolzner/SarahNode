@@ -1,8 +1,8 @@
 export type EventType =
   | "chat_received"
   | "moderation_decision"
+  | "assistant_state"
   | "reply_selected"
-  | "speaking_status"
   | "tts_output"
   | "avatar_event"
   | "error";

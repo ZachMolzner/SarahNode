@@ -8,6 +8,8 @@ from app.schemas.chat import ChatMessage
 class MemoryState:
     rolling_messages: deque[ChatMessage]
     session_notes: list[str] = field(default_factory=list)
+    assistant_state: str = "idle"
+    last_reply: str = ""
 
 
 class MemoryManager:
@@ -20,12 +22,18 @@ class MemoryManager:
     def add_note(self, note: str) -> None:
         self.state.session_notes.append(note)
 
-    def summarize(self) -> str:
-        recent = list(self.state.rolling_messages)[-5:]
-        if not recent:
-            return "No recent chat context."
+    def set_assistant_state(self, assistant_state: str) -> None:
+        self.state.assistant_state = assistant_state
 
-        recent_summary = " | ".join(f"{m.username}: {m.content[:40]}" for m in recent)
+    def set_last_reply(self, reply: str) -> None:
+        self.state.last_reply = reply
+
+    def summarize(self) -> str:
+        recent = list(self.state.rolling_messages)[-6:]
+        if not recent:
+            return "No recent conversation."
+
+        recent_summary = " | ".join(f"{m.username}: {m.content[:60]}" for m in recent)
 
         if not self.state.session_notes:
             return recent_summary

@@ -24,8 +24,4 @@ class ModerationService:
                     category=category,
                 )
 
-        return ModerationResult(
-            allowed=True,
-            reason="Allowed",
-            category=None,
-        )
+        return ModerationResult(allowed=True, reason="Allowed", category=None)

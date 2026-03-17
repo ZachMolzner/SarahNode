@@ -11,20 +11,11 @@ class MockLLMClient(LLMClient):
         memory_summary: str,
         persona: dict[str, Any],
     ) -> AssistantReply:
-        name = str(persona.get("name", "Nova"))
-        tone = str(persona.get("tone", "helpful"))
-
-        emotion = "emotion_happy" if "!" in message.content else "emotion_calm"
-
-        text = (
-            f"{name} here. Thanks, {message.username}! "
-            f"You said: '{message.content[:120]}'. "
-            f"My tone is {tone}. "
-            f"Recent context: {memory_summary}."
-        )
-
         return AssistantReply(
-            text=text,
-            emotion=emotion,
+            text=(
+                f"Mock mode active. I received: '{message.content}'. "
+                f"Memory: {memory_summary[:120]}"
+            ),
+            emotion="neutral",
             should_speak=True,
         )

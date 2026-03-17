@@ -43,9 +43,9 @@ class StreamOrchestrator:
         self._worker_task: asyncio.Task[None] | None = None
         self._fanout_task: asyncio.Task[None] | None = None
 
-        self._speech_lock = asyncio.Lock()
         self._clients_lock = asyncio.Lock()
         self._clients: set[WebSocket] = set()
+        self._speech_lock = asyncio.Lock()
 
         self._cooldown_until = 0.0
         self._sequence = 0
@@ -54,18 +54,16 @@ class StreamOrchestrator:
         if self._worker_task and not self._worker_task.done():
             return
 
-        self._worker_task = asyncio.create_task(
-            self._worker_loop(),
-            name="stream-orchestrator-worker",
-        )
-        self._fanout_task = asyncio.create_task(
-            self._fanout_loop(),
-            name="event-broadcaster",
-        )
+        for event in await self.avatar_client.initialize():
+            await self.emit_event("avatar_event", event)
+
+        await self._set_assistant_state("idle")
+
+        self._worker_task = asyncio.create_task(self._worker_loop(), name="assistant-worker")
+        self._fanout_task = asyncio.create_task(self._fanout_loop(), name="assistant-event-broadcaster")
 
     async def stop(self) -> None:
         tasks = [task for task in (self._worker_task, self._fanout_task) if task is not None]
-
         for task in tasks:
             task.cancel()
 
@@ -96,7 +94,6 @@ class StreamOrchestrator:
     async def enqueue_message(self, message: ChatMessage) -> None:
         self.memory_manager.add_message(message)
         self._sequence += 1
-
         await self.queue.put((-message.priority, self._sequence, message))
 
         await self.emit_event(
@@ -115,13 +112,11 @@ class StreamOrchestrator:
     async def _fanout_loop(self) -> None:
         while True:
             event = await self.events.get()
-
             try:
                 async with self._clients_lock:
                     clients = list(self._clients)
 
                 stale: list[WebSocket] = []
-
                 for client in clients:
                     try:
                         await client.send_json(event.model_dump(mode="json"))
@@ -132,27 +127,19 @@ class StreamOrchestrator:
                     async with self._clients_lock:
                         for client in stale:
                             self._clients.discard(client)
-
-                logger.debug("Emitted event: %s", event.type)
             finally:
                 self.events.task_done()
 
     async def _worker_loop(self) -> None:
         while True:
             _priority, _sequence, message = await self.queue.get()
-
             try:
                 await self._process_message(message)
-            except Exception:
-                logger.exception("Unexpected worker error while processing message")
-                await self.emit_event(
-                    "error",
-                    {
-                        "stage": "worker",
-                        "username": message.username,
-                        "details": "Internal worker error.",
-                    },
-                )
+            except Exception as exc:
+                logger.exception("worker failure")
+                await self._set_assistant_state("error")
+                await self.emit_event("error", {"stage": "worker", "details": str(exc)})
+                await self._set_assistant_state("idle")
             finally:
                 self.queue.task_done()
 
@@ -161,47 +148,42 @@ class StreamOrchestrator:
         if now < self._cooldown_until:
             await asyncio.sleep(self._cooldown_until - now)
 
+        await self._set_assistant_state("thinking")
+
         moderation = self.moderation_service.evaluate(message)
         await self.emit_event("moderation_decision", moderation.model_dump())
 
         memory_summary = self.memory_manager.summarize()
         generated_reply = None
-
         if moderation.allowed:
             generated_reply = await self.dialogue_engine.generate(message, memory_summary)
 
         reply = self.response_policy.apply(moderation, generated_reply)
+        self.memory_manager.set_last_reply(reply.text)
         await self.emit_event("reply_selected", reply.model_dump())
+
+        expression_event = await self.avatar_client.dispatch(
+            "expression_change", {"expression": reply.emotion}
+        )
+        await self.emit_event("avatar_event", expression_event)
 
         if reply.should_speak:
             async with self._speech_lock:
-                await self.avatar_client.dispatch("talking_start", {"emotion": reply.emotion})
-                await self.emit_event(
-                    "avatar_event",
-                    {"event_type": "talking_start", "emotion": reply.emotion},
-                )
-                await self.emit_event(
-                    "speaking_status",
-                    {"is_speaking": True, "emotion": reply.emotion},
-                )
+                await self._set_assistant_state("speaking")
+                avatar_start = await self.avatar_client.dispatch("speaking_start", {"text": reply.text})
+                await self.emit_event("avatar_event", avatar_start)
 
                 tts_result = await self.tts_client.synthesize(reply.text)
                 await self.emit_event("tts_output", tts_result)
 
-                await asyncio.sleep(float(tts_result.get("duration_seconds", 0.0)))
+                avatar_stop = await self.avatar_client.dispatch("speaking_stop", {})
+                await self.emit_event("avatar_event", avatar_stop)
 
-                await self.avatar_client.dispatch("talking_stop", {"emotion": "idle"})
-                await self.emit_event(
-                    "avatar_event",
-                    {"event_type": "talking_stop", "emotion": "idle"},
-                )
-                await self.emit_event(
-                    "speaking_status",
-                    {"is_speaking": False, "emotion": "idle"},
-                )
+        await self._set_assistant_state("idle")
+        self._cooldown_until = asyncio.get_running_loop().time() + settings.assistant_cooldown_seconds
 
-        self._cooldown_until = (
-            asyncio.get_running_loop().time() + settings.assistant_cooldown_seconds
-        )
-
-        logger.info("Processed message from %s", message.username)
+    async def _set_assistant_state(self, assistant_state: str) -> None:
+        self.memory_manager.set_assistant_state(assistant_state)
+        await self.emit_event("assistant_state", {"state": assistant_state})
+        avatar_event = await self.avatar_client.dispatch("state_change", {"state": assistant_state})
+        await self.emit_event("avatar_event", avatar_event)
