@@ -170,11 +170,13 @@ class StreamOrchestrator:
         if reply.should_speak:
             async with self._speech_lock:
                 await self._set_assistant_state("speaking")
+                await self.emit_event("speaking_status", {"status": "started"})
                 avatar_start = await self.avatar_client.dispatch("speaking_start", {"text": reply.text})
                 await self.emit_event("avatar_event", avatar_start)
 
                 tts_result = await self.tts_client.synthesize(reply.text)
                 await self.emit_event("tts_output", tts_result)
+                await self.emit_event("speaking_status", {"status": "finished"})
 
                 avatar_stop = await self.avatar_client.dispatch("speaking_stop", {})
                 await self.emit_event("avatar_event", avatar_stop)
