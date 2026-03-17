@@ -1,10 +1,14 @@
+import logging
 import json
 from pathlib import Path
 from typing import Any
 
 from app.adapters.llm.base import LLMClient
+from app.adapters.llm.mock import MockLLMClient
 from app.config.settings import settings
 from app.schemas.chat import AssistantReply, ChatMessage
+
+logger = logging.getLogger(__name__)
 
 
 class DialogueEngine:
@@ -30,9 +34,24 @@ class DialogueEngine:
             "system_prompt": parsed.get("system_prompt", settings.persona_system_prompt),
         }
 
-    async def generate(self, message: ChatMessage, memory_summary: str) -> AssistantReply:
-        return await self.llm_client.generate_reply(
-            message=message,
-            memory_summary=memory_summary,
-            persona=self.persona,
-        )
+    async def generate(
+        self,
+        message: ChatMessage,
+        memory_summary: str,
+        recent_history: list[str],
+    ) -> AssistantReply:
+        try:
+            return await self.llm_client.generate_reply(
+                message=message,
+                memory_summary=memory_summary,
+                recent_history=recent_history,
+                persona=self.persona,
+            )
+        except Exception:
+            logger.exception("Primary LLM client failed, using mock fallback")
+            return await MockLLMClient().generate_reply(
+                message=message,
+                memory_summary=memory_summary,
+                recent_history=recent_history,
+                persona=self.persona,
+            )

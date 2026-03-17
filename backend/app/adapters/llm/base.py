@@ -10,6 +10,7 @@ class LLMClient(ABC):
         self,
         message: ChatMessage,
         memory_summary: str,
+        recent_history: list[str],
         persona: dict[str, Any],
     ) -> AssistantReply:
         raise NotImplementedError

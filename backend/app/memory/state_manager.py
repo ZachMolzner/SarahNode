@@ -28,6 +28,11 @@ class MemoryManager:
     def set_last_reply(self, reply: str) -> None:
         self.state.last_reply = reply
 
+
+    def recent_history(self, limit: int = 8) -> list[str]:
+        recent = list(self.state.rolling_messages)[-limit:]
+        return [f"{m.username}: {m.content}" for m in recent]
+
     def summarize(self) -> str:
         recent = list(self.state.rolling_messages)[-6:]
         if not recent:

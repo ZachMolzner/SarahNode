@@ -1,202 +1,110 @@
 # SarahNode — Local-First Personal AI Assistant
 
-SarahNode is a **full-stack, real-time personal AI assistant platform** designed to run locally and serve multiple devices (desktop, tablet, and mobile) over a local network.
+SarahNode is a practical **local-first personal AI assistant** you can run on your own machine and access from computer, tablet, and phone.
 
-It combines **LLM interaction, text-to-speech (TTS), and an event-driven architecture** to create a responsive, extensible AI system focused on privacy, performance, and modular design.
-
----
-
-## 🚀 Overview
-
-SarahNode explores a **local-first approach to AI systems**, where the backend runs on your machine and the interface is accessible across devices on the same network.
-
-Instead of relying entirely on cloud-based assistants, this project is designed to give developers:
-
-* More control over AI workflows
-* Real-time responsiveness
-* A modular foundation for future AI integrations
+It uses:
+- **FastAPI** backend
+- **React + Vite + TypeScript** frontend
+- **WebSocket event streaming** for real-time state updates
+- **OpenAI** for real LLM responses (with mock fallback)
+- **ElevenLabs** for real TTS audio (with mock fallback)
+- **Sarah.vrm** as the default visible assistant avatar
 
 ---
 
-## 🧠 Why SarahNode?
+## Key Features
 
-Most AI assistants today are:
-
-* Fully cloud-dependent
-* Closed ecosystems
-* Limited in customization
-
-SarahNode takes a different approach:
-
-* 🏠 **Local-first architecture** → runs on your own machine
-* ⚡ **Real-time communication** → powered by WebSockets
-* 🧩 **Modular AI pipeline** → plug-and-play components
-* 📱 **Multi-device support** → desktop, tablet, and phone
-* 🔒 **Privacy-focused design** → your data stays local
+- Real-time assistant flow: message → moderation → LLM → optional TTS → live UI events
+- Provider abstraction:
+  - `LLM_PROVIDER=auto|mock|openai`
+  - `TTS_PROVIDER=auto|mock|elevenlabs`
+- Automatic fallback to mock providers if keys/config are missing
+- VRM avatar panel with Sarah.vrm loaded from `/assets/Sarah.vrm`
+- Responsive dashboard usable on desktop/tablet/phone
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-### Frontend
+### Backend (`/backend`)
+- FastAPI API routes:
+  - `POST /api/assistant/messages`
+  - `GET /api/assistant/state`
+  - `GET /health`
+  - `WS /ws/events`
+- Stream orchestrator handles processing, state changes, and websocket event fanout.
+- LLM and TTS adapters are selected at startup with robust fallback logging.
 
-* React + Vite + TypeScript
-* Responsive dashboard UI
-* Designed for cross-device usage
-
-### Backend
-
-* FastAPI (Python)
-* Handles AI orchestration and event flow
-
-### Communication Layer
-
-* WebSocket event bus
-* Enables real-time updates between backend and UI
-
-### AI Pipeline
-
-* LLM Adapter (OpenAI - currently mocked)
-* TTS Adapter (ElevenLabs - currently mocked)
-* Avatar/Event Bridge (placeholder for future integration)
-
-### Data Flow
-
-User Input
-→ Moderation Layer
-→ LLM Processing
-→ TTS Generation
-→ UI Update
-→ Avatar/Event Output
+### Frontend (`/frontend`)
+- React dashboard for sending messages, viewing live events, and assistant status.
+- Provider status cards show real vs mock mode.
+- Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm`.
+- Auto-play + replay support for generated speech audio.
 
 ---
 
-## ✨ Key Features
+## Setup
 
-* ⚡ Real-time AI responses via WebSockets
-* 🧠 Modular AI adapter system (LLM, TTS, future integrations)
-* 🏠 Local-first backend accessible across devices
-* 📡 Event-driven architecture for scalability
-* 📱 Responsive UI (desktop + mobile friendly)
-* 🔌 Designed for future avatar / visual AI systems
+## 1) Backend
 
----
-
-## 📦 Project Structure
-
-```
-SarahNode/
-├── backend/        # FastAPI backend (AI orchestration)
-├── frontend/       # React + Vite frontend dashboard
-├── docs/           # Architecture and planning docs
-├── README.md
-└── .gitignore
-```
-
----
-
-## ⚙️ Getting Started
-
-### 1. Clone the repository
-
-```
-git clone https://github.com/ZachMolzner/SarahNode.git
-cd SarahNode
-```
-
----
-
-### 2. Backend Setup (FastAPI)
-
-```
+```bash
 cd backend
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate (Windows)
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
-uvicorn main:app --reload
+cp .env.example .env
 ```
 
-Backend runs on:
+Run backend:
 
+```bash
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
-http://localhost:8000
-```
 
----
+## 2) Frontend
 
-### 3. Frontend Setup (React + Vite)
-
-```
+```bash
 cd frontend
 npm install
-npm run dev
-```
-
-Frontend runs on:
-
-```
-http://localhost:5173
+cp .env.example .env
+npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
 ---
 
-### 4. Access Across Devices
+## Required Environment Variables
 
-To access from your phone/tablet:
+### Backend
+- `LLM_PROVIDER` = `auto` | `mock` | `openai`
+- `TTS_PROVIDER` = `auto` | `mock` | `elevenlabs`
+- `OPENAI_API_KEY` (required for real OpenAI responses)
+- `OPENAI_MODEL` (default `gpt-4o-mini`)
+- `ELEVENLABS_API_KEY` (required for real ElevenLabs TTS)
+- `ELEVENLABS_VOICE_ID` (required for real ElevenLabs TTS)
+- `ELEVENLABS_MODEL_ID` (default `eleven_multilingual_v2`)
 
-* Find your local IP (e.g. `192.168.x.x`)
-* Open:
-
-```
-http://<your-local-ip>:5173
-```
-
----
-
-## 🧪 Current Status
-
-* ✅ Full-stack MVP architecture complete
-* ✅ WebSocket event system implemented
-* ✅ Mock AI pipeline connected end-to-end
-* ⚠️ LLM + TTS currently mocked for development
+### Frontend
+- `VITE_PUBLIC_API_BASE_URL` (default `http://localhost:8000`)
+- `VITE_PUBLIC_WS_BASE_URL` (default `ws://localhost:8000`)
 
 ---
 
-## 🛣️ Roadmap
+## Avatar Asset Location
 
-* [ ] Integrate real LLM provider (OpenAI / local models)
-* [ ] Implement persistent memory system
-* [ ] Add real TTS pipeline
-* [ ] Build avatar / visual representation layer
-* [ ] Optimize mobile experience
-* [ ] Add authentication + user profiles
-* [ ] Dockerize for easy deployment
+`Sarah.vrm` is now expected at:
 
----
+`frontend/public/assets/Sarah.vrm`
 
-## 🧩 Future Vision
+The frontend loads it from:
 
-SarahNode is designed as a **foundation for next-generation personal AI systems**, including:
+`/assets/Sarah.vrm`
 
-* Voice-driven assistants
-* AI companions / avatars
-* Smart home integrations
-* Developer-controlled AI workflows
+If the avatar fails to load, the UI shows an “avatar unavailable” fallback panel and continues operating.
 
 ---
 
-## 👨‍💻 Author
+## Current Limitations
 
-**Zachery Molzner**
-
-* Full-Stack Developer (MERN + Python)
-* Educator transitioning into Software Engineering
-
-GitHub: https://github.com/ZachMolzner
-
----
-
-## 📄 License
-
-This project is open-source and available under the MIT License.
+- Conversation memory is currently in-memory only (no long-term persistence yet).
+- TTS uses base64 audio event payloads for immediate playback; no file storage pipeline yet.
+- Avatar animation is lightweight (idle/talking/blink), not a full motion rig.

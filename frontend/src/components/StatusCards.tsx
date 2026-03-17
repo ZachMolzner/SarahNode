@@ -4,13 +4,15 @@ type Props = {
   events: SystemEvent[];
   connectionState: ConnectionState;
   isAudioPlaying: boolean;
+  llmStatus: string;
+  ttsStatus: string;
 };
 
 function findLatestEvent(events: SystemEvent[], type: string): SystemEvent | undefined {
   return events.find((event) => event.type === type);
 }
 
-export function StatusCards({ events, connectionState, isAudioPlaying }: Props) {
+export function StatusCards({ events, connectionState, isAudioPlaying, llmStatus, ttsStatus }: Props) {
   const assistantStateEvent = findLatestEvent(events, "assistant_state");
   const latestSafetyEvent = findLatestEvent(events, "moderation_decision");
   const latestReplyEvent = findLatestEvent(events, "reply_selected");
@@ -30,6 +32,8 @@ export function StatusCards({ events, connectionState, isAudioPlaying }: Props) 
       }}
     >
       <Card title="WebSocket" value={String(connectionState)} />
+      <Card title="LLM Provider" value={llmStatus} />
+      <Card title="TTS Provider" value={ttsStatus} />
       <Card title="Assistant Status" value={String(assistantState ?? "idle")} />
       <Card title="Voice" value={readSpeaking(latestSpeakingEvent)} />
       <Card title="Safety Filter" value={readSafetyFilter(latestSafetyEvent)} />
