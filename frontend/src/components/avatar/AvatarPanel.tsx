@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Canvas } from "@react-three/fiber";
 import { VRMAvatar } from "./VRMAvatar";
 import type { AvatarState } from "../../types/avatar";
@@ -10,9 +10,13 @@ type AvatarPanelProps = {
 
 export function AvatarPanel({ avatarState, latestReplyText }: AvatarPanelProps) {
   const [modelState, setModelState] = useState<"loading" | "ready" | "error">("loading");
+  const canvasWrapRef = useRef<HTMLDivElement | null>(null);
+  const pointerTargetRef = useRef({ x: 0, y: 0 });
   const [isNarrowViewport, setIsNarrowViewport] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth <= 860 : false
   );
+
+  const pointerTarget = useMemo(() => pointerTargetRef.current, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -34,6 +38,17 @@ export function AvatarPanel({ avatarState, latestReplyText }: AvatarPanelProps) 
     ? { position: [0, 1.2, 2.6] as [number, number, number], fov: 42 }
     : { position: [0, 1.1, 2.2] as [number, number, number], fov: 36 };
 
+  const updatePointerTarget = (clientX: number, clientY: number) => {
+    const bounds = canvasWrapRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+
+    const normalizedX = ((clientX - bounds.left) / bounds.width) * 2 - 1;
+    const normalizedY = -(((clientY - bounds.top) / bounds.height) * 2 - 1);
+
+    pointerTargetRef.current.x = Math.max(-1, Math.min(1, normalizedX));
+    pointerTargetRef.current.y = Math.max(-1, Math.min(1, normalizedY));
+  };
+
   return (
     <section style={panelStyle}>
       <h2 style={{ marginTop: 0 }}>Avatar Panel</h2>
@@ -41,7 +56,15 @@ export function AvatarPanel({ avatarState, latestReplyText }: AvatarPanelProps) 
         Browser-native VRM avatar that reacts to live assistant websocket events.
       </p>
 
-      <div style={canvasWrapStyle}>
+      <div
+        ref={canvasWrapRef}
+        style={canvasWrapStyle}
+        onPointerMove={(event) => updatePointerTarget(event.clientX, event.clientY)}
+        onPointerLeave={() => {
+          pointerTargetRef.current.x = 0;
+          pointerTargetRef.current.y = 0;
+        }}
+      >
         <Canvas
           camera={camera}
           dpr={[1, 1.5]}
@@ -50,7 +73,12 @@ export function AvatarPanel({ avatarState, latestReplyText }: AvatarPanelProps) 
           <hemisphereLight args={["#e9f4ff", "#12141d", 0.72]} />
           <directionalLight color="#ffd9b0" position={[2.4, 3.2, 2]} intensity={1.1} />
           <directionalLight color="#a9bbff" position={[-2.2, 2, -2.6]} intensity={0.3} />
-          <VRMAvatar avatarState={avatarState} onModelStateChange={setModelState} />
+          <VRMAvatar
+            avatarState={avatarState}
+            onModelStateChange={setModelState}
+            pointerTarget={pointerTarget}
+            isNarrowViewport={isNarrowViewport}
+          />
         </Canvas>
 
         {modelState !== "ready" ? (
