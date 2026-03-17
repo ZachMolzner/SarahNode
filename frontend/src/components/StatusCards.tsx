@@ -15,6 +15,7 @@ export function StatusCards({ events, connectionState, isAudioPlaying }: Props) 
   const latestModeration = findLatestEvent(events, "moderation_decision");
   const latestReplyEvent = findLatestEvent(events, "reply_selected");
   const latestAvatarEvent = findLatestEvent(events, "avatar_event");
+  const latestSpeakingEvent = findLatestEvent(events, "speaking_status");
 
   const assistantState = assistantStateEvent?.payload?.["state"];
   const avatarState = latestAvatarEvent?.payload?.["state"];
@@ -30,6 +31,7 @@ export function StatusCards({ events, connectionState, isAudioPlaying }: Props) 
     >
       <Card title="WebSocket" value={String(connectionState)} />
       <Card title="Assistant State" value={String(assistantState ?? "idle")} />
+      <Card title="Speaking" value={readSpeaking(latestSpeakingEvent)} />
       <Card title="Moderation" value={readModeration(latestModeration)} />
       <Card title="Audio Playback" value={isAudioPlaying ? "playing" : "idle"} />
       <Card title="Avatar State" value={String(avatarState ?? assistantState ?? "idle")} />
@@ -39,6 +41,19 @@ export function StatusCards({ events, connectionState, isAudioPlaying }: Props) 
       />
     </section>
   );
+}
+
+function readSpeaking(event: SystemEvent | undefined): string {
+  if (!event) return "idle";
+
+  const isSpeaking = event.payload?.["is_speaking"];
+  const emotion = event.payload?.["emotion"];
+
+  if (isSpeaking === true) {
+    return typeof emotion === "string" ? `speaking (${emotion})` : "speaking";
+  }
+
+  return "idle";
 }
 
 function readModeration(event: SystemEvent | undefined): string {
