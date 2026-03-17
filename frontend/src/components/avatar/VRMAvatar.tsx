@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
-import { type Group } from "three";
+import { MathUtils, type Group } from "three";
 import { VRMLoaderPlugin, type VRM } from "@pixiv/three-vrm";
 import type { AvatarState } from "../../types/avatar";
 
@@ -11,11 +11,14 @@ type VRMAvatarProps = {
 };
 
 const VRM_MODEL_PATH = "/models/sarah.vrm";
+const BASE_POSITION_Y = -1.1;
+const TRACKED_EXPRESSIONS = ["happy", "neutral", "relaxed", "sad", "angry"] as const;
 
 export function VRMAvatar({ avatarState, onModelStateChange }: VRMAvatarProps) {
   const [vrm, setVrm] = useState<VRM | null>(null);
   const groupRef = useRef<Group | null>(null);
   const lastLoggedError = useRef(false);
+  const expressionWeightsRef = useRef<Record<string, number>>({});
 
   useEffect(() => {
     let mounted = true;
@@ -73,7 +76,7 @@ export function VRMAvatar({ avatarState, onModelStateChange }: VRMAvatarProps) {
     };
   }, [vrm]);
 
-  const moodValue = useMemo(() => {
+  const targetMoodWeights = useMemo(() => {
     switch (avatarState.mood) {
       case "happy":
         return { happy: 0.75, neutral: 0.2, relaxed: 0.2 };
@@ -95,23 +98,31 @@ export function VRMAvatar({ avatarState, onModelStateChange }: VRMAvatarProps) {
     const thinkTilt = avatarState.mode === "thinking" ? Math.sin(t * 1.8) * 0.07 : 0;
     vrm.scene.rotation.z = thinkTilt;
 
-    const speakValue = avatarState.isSpeaking ? 0.35 + 0.35 * (Math.sin(t * 14) * 0.5 + 0.5) : 0;
+    const breathingSuppression = avatarState.isSpeaking ? 0.38 : 1;
+    const breatheBob = Math.sin(t * 1.2) * 0.018 * breathingSuppression;
+    const breathePulse = 1 + Math.sin(t * 2.4) * 0.006 * breathingSuppression;
+
+    if (groupRef.current) {
+      groupRef.current.position.y = BASE_POSITION_Y + breatheBob;
+      groupRef.current.scale.y = breathePulse;
+    }
+
     const manager = vrm.expressionManager;
     if (!manager) return;
 
+    const speakValue = avatarState.isSpeaking ? 0.35 + 0.35 * (Math.sin(t * 14) * 0.5 + 0.5) : 0;
     manager.setValue("aa", speakValue);
     manager.setValue("ih", speakValue * 0.4);
 
-    manager.setValue("happy", 0);
-    manager.setValue("neutral", 0);
-    manager.setValue("relaxed", 0);
-    manager.setValue("sad", 0);
-    manager.setValue("angry", 0);
-
-    Object.entries(moodValue).forEach(([name, value]) => {
-      manager.setValue(name, value);
+    const smoothing = 1 - Math.exp(-delta * 9);
+    TRACKED_EXPRESSIONS.forEach((name) => {
+      const current = expressionWeightsRef.current[name] ?? 0;
+      const target = targetMoodWeights[name] ?? 0;
+      const next = MathUtils.lerp(current, target, smoothing);
+      expressionWeightsRef.current[name] = next;
+      manager.setValue(name, next);
     });
   });
 
-  return <group ref={groupRef} position={[0, -1.1, 0]} />;
+  return <group ref={groupRef} position={[0, BASE_POSITION_Y, 0]} />;
 }
