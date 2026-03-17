@@ -7,6 +7,7 @@ SarahNode is now a local-first personal assistant app with:
 - ElevenLabs TTS adapter
 - WebSocket event bus for real-time UI updates
 - Placeholder avatar bridge for future 3D/Live2D integration
+- Mock fallback adapters when OpenAI/ElevenLabs keys or SDK access are unavailable
 
 ## Architecture
 
@@ -41,6 +42,8 @@ Dashboard (desktop/tablet/phone)
 - `routers/health.py`
 - `routers/control.py`
 - `main.py`
+
+OpenAI and ElevenLabs adapters are optional. If keys are missing (or provider SDK/network is unavailable), SarahNode automatically falls back to mock LLM/TTS behavior so local development still works.
 
 ## Environment variables
 
