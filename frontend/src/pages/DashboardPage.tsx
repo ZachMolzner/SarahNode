@@ -35,6 +35,7 @@ export function DashboardPage() {
   const processedErrorKeyRef = useRef<string>("");
   const startupLineRef = useRef<string | null>(null);
   const shutdownLineRef = useRef<string | null>(null);
+  const lastSearchReactionAtRef = useRef(0);
 
   const [username, setUsername] = useState("local-user");
   const [content, setContent] = useState("Give me a quick plan for today.");
@@ -133,6 +134,7 @@ export function DashboardPage() {
     recentlyActiveMs: lastInteractionAt > 0 ? Math.max(0, expressionClockMs - lastInteractionAt) : Number.MAX_SAFE_INTEGER,
     summonedAtMs: summonedAt,
     interactionStartedAtMs: interactionStartedAt,
+    listeningStartedAtMs: listeningStartedAt,
     searchStartedAtMs: searchStartedAt,
     groundedAnswerAtMs: lastWebGroundedAt,
     sourceExpandedAtMs: sourceExpandedAt,
@@ -141,6 +143,7 @@ export function DashboardPage() {
     noResultAtMs: noResultAt,
     speakingEndedAtMs: speakingEndedAt,
   });
+  const expressionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugExpressions=1");
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
@@ -531,7 +534,10 @@ export function DashboardPage() {
     if (!stateEvent || processedThinkingKeyRef.current === eventKey) return;
     processedThinkingKeyRef.current = eventKey;
     if (typeof assistantState === "string" && assistantState.toLowerCase() === "thinking") {
-      setSearchStartedAt(Date.now());
+      const now = Date.now();
+      if (now - lastSearchReactionAtRef.current < 1500) return;
+      lastSearchReactionAtRef.current = now;
+      setSearchStartedAt(now);
     }
   }, [events]);
 
@@ -607,6 +613,19 @@ export function DashboardPage() {
             {settingsOpen ? "Hide Settings" : "Settings"}
           </button>
         </div> : overlayEnabled ? <div style={overlayHintStyle}>Ctrl+Shift+O for controls</div> : null}
+        {expressionDebugEnabled ? (
+          <div style={expressionDebugStyle}>
+            baseline: {expressionState.debug.baseline} · reaction: {expressionState.reaction} · intensity:{" "}
+            {expressionState.intensity.toFixed(2)} · gates:{" "}
+            {[
+              expressionState.debug.interruptionGateActive ? "interrupt" : null,
+              expressionState.debug.speakingSettleActive ? "speak_settle" : null,
+              expressionState.debug.errorRecoveryActive ? "error_recovery" : null,
+            ]
+              .filter(Boolean)
+              .join(", ") || "none"}
+          </div>
+        ) : null}
 
         <div style={overlayEnabled ? overlayBottomOverlayStyle : bottomOverlayStyle}>
           <VoiceRecorder
@@ -825,6 +844,23 @@ const overlayHintStyle: React.CSSProperties = {
   color: "rgba(245, 245, 255, 0.48)",
   zIndex: 16,
   pointerEvents: "none",
+};
+
+const expressionDebugStyle: React.CSSProperties = {
+  position: "absolute",
+  right: 10,
+  top: 48,
+  zIndex: 16,
+  pointerEvents: "none",
+  border: "1px solid rgba(132, 154, 214, 0.34)",
+  borderRadius: 8,
+  background: "rgba(7, 11, 20, 0.6)",
+  color: "rgba(234, 240, 255, 0.88)",
+  padding: "5px 9px",
+  fontSize: 11,
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  letterSpacing: 0.2,
+  maxWidth: "min(70vw, 560px)",
 };
 
 const miniButtonStyle: React.CSSProperties = {
