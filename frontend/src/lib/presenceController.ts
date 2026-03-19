@@ -1,7 +1,7 @@
 import type { MovementState, StagePoint } from "./movementController";
 import { resolveStageZones, type OverlayVisibility, type StageBounds, type StageZoneName } from "./stageZones";
 
-export type AttentionTarget = "viewer_center" | "captions_area" | "overlay_area" | "transcript_source" | "idle_neutral" | "inward_focus";
+export type AttentionTarget = "viewer_center" | "captions_area" | "overlay_area" | "transcript_source" | "web_answer_box" | "idle_neutral" | "inward_focus";
 
 export type PresenceInput = {
   mode: MovementState;
@@ -13,6 +13,7 @@ export type PresenceInput = {
   transcriptEventAtMs: number;
   userSpokeAtMs: number;
   replyAtMs: number;
+  presentingAtMs: number;
 };
 
 export type PresenceOutput = {
@@ -109,6 +110,7 @@ export class PresenceController {
     const transcriptLocked = input.nowMs - input.transcriptEventAtMs < PRESENCE_TUNING.transcriptLockMs;
     if (input.mode === "shutting_down") return "shutdown_settle";
     if (input.mode === "listening") return "listening_anchor";
+    if (input.mode === "presenting") return "left_relaxed";
     if (input.mode === "talking") return input.overlays.captionsVisible ? "caption_friendly" : "center_presentation";
     if (input.mode === "thinking") return "center_presentation";
     if (transcriptLocked) return "listening_anchor";
@@ -124,6 +126,7 @@ export class PresenceController {
 
   private movementWillingness(mode: MovementState, input: PresenceInput): number {
     if (mode === "shutting_down") return 0;
+    if (mode === "presenting") return 0.1;
     if (mode === "talking") return 0.14;
     if (mode === "listening") {
       const transcriptLocked = input.nowMs - input.transcriptEventAtMs < PRESENCE_TUNING.transcriptLockMs;
@@ -136,6 +139,7 @@ export class PresenceController {
   private engagementTarget(mode: MovementState, input: PresenceInput): number {
     if (mode === "shutting_down") return 0;
     if (mode === "listening") return 0.82;
+    if (mode === "presenting") return 0.96;
     if (mode === "talking") return 0.92;
     if (mode === "thinking") return 0.64;
 
@@ -146,6 +150,10 @@ export class PresenceController {
   }
 
   private resolveAttention(input: PresenceInput): { target: AttentionTarget; offset: StagePoint } {
+    if (input.nowMs - input.presentingAtMs < 4500) {
+      return { target: "web_answer_box", offset: { x: 0.024, y: -0.012 } };
+    }
+
     if (input.mode === "shutting_down") {
       return { target: "inward_focus", offset: { x: -0.01, y: -0.03 } };
     }
@@ -157,6 +165,10 @@ export class PresenceController {
     if (input.mode === "listening") {
       const overlayPull = input.overlays.transcriptOpen ? -0.01 : input.overlays.controlsOpen ? 0.01 : 0;
       return { target: "viewer_center", offset: { x: overlayPull, y: 0.006 } };
+    }
+
+    if (input.mode === "presenting") {
+      return { target: "web_answer_box", offset: { x: 0.026, y: -0.012 } };
     }
 
     if (input.mode === "talking") {

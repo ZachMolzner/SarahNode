@@ -227,6 +227,22 @@ class StreamOrchestrator:
             )
 
         reply = self.response_policy.apply(moderation, generated_reply)
+
+        if web_context:
+            distilled_points = [
+                result.snippet.strip()
+                for result in web_context.search_results
+                if result.snippet.strip()
+            ]
+            await self.emit_event(
+                "web_grounded_answer",
+                {
+                    "title": message.content[:120],
+                    "bullets": distilled_points[:5],
+                    "sources": [source.get("title", "") for source in web_sources if source.get("title")],
+                    "provider": web_context.provider,
+                },
+            )
         self.memory_manager.set_last_reply(reply.text)
 
         await self.emit_event("reply_selected", reply.model_dump())

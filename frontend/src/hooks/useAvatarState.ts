@@ -22,24 +22,30 @@ export function useAvatarState(events: SystemEvent[]): AvatarState {
     const assistantState = findPayload(events, "assistant_state")["state"];
     const replyEmotion = findPayload(events, "reply_selected")["emotion"];
     const speakingFlag = findPayload(events, "speaking_status")["is_speaking"];
+    const presentingPayload = findPayload(events, "web_grounded_answer");
     const latestVoiceEvent = events.find((event) => event.type.startsWith("voice:"));
+    const isPresenting = typeof presentingPayload["title"] === "string";
 
     const isSpeaking = speakingFlag === true;
 
     const mode =
       isSpeaking
         ? "talking"
-        : latestVoiceEvent?.type === "voice:recording_started"
-          ? "listening"
-          : typeof assistantState === "string" && assistantState.toLowerCase() === "thinking"
-            ? "thinking"
-            : "idle";
+        : isPresenting
+          ? "presenting"
+          : latestVoiceEvent?.type === "voice:recording_started"
+            ? "listening"
+            : typeof assistantState === "string" && assistantState.toLowerCase() === "thinking"
+              ? "thinking"
+              : "idle";
 
     const mood: AvatarMood =
       mode === "listening"
         ? "listening"
         : mode === "thinking"
           ? "thinking"
+          : mode === "presenting"
+            ? "focused"
           : mode === "talking"
             ? "warm"
             : moodFromEmotion(replyEmotion);
