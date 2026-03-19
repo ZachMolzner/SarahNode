@@ -37,6 +37,8 @@ def test_assistant_state_route_shape() -> None:
     assert "assistant_state" in payload
     assert "latest_reply" in payload
     assert "memory_summary" in payload
+    assert "web_browsing" in payload
+    assert "last_used_live_web" in payload
 
 
 def test_voice_event_route_accepts_voice_prefix() -> None:

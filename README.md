@@ -64,7 +64,20 @@ Desktop branding identity is standardized to:
   - `GET /health`
   - `WS /ws/events`
 - Stream orchestrator handles processing, state changes, and websocket event fanout.
-- LLM, TTS, and STT adapters are selected at startup with robust fallback logging.
+- LLM, TTS, STT, and web-search adapters are selected at startup with robust fallback logging.
+- ChatGPT-style web browsing path: freshness policy → search provider → top-page fetch/extract → LLM synthesis with source metadata retention.
+
+
+### ChatGPT-Style Browsing Flow
+When a message indicates freshness or explicit web lookup need, Sarah now runs:
+1. capability routing + browsing policy decision
+2. normalized provider search (Brave or SerpAPI)
+3. fetch of a small number of top pages with timeout/failure tolerance
+4. text extraction + truncation for relevance
+5. LLM synthesis into a direct answer first, then concise support
+6. source metadata retention for future UI surfacing
+
+If no provider is configured, Sarah answers honestly that live browsing is unavailable.
 
 ### Frontend (`/frontend`)
 - Immersive React stage with Sarah centered by default and controls behind compact overlays/drawers.
@@ -220,6 +233,13 @@ Mode detection and native window behavior are centralized in frontend utilities 
 - `ELEVENLABS_API_KEY` (required for real ElevenLabs TTS)
 - `ELEVENLABS_VOICE_ID` (required for real ElevenLabs TTS)
 - `ELEVENLABS_MODEL_ID` (default `eleven_multilingual_v2`)
+- `WEB_SEARCH_PROVIDER` = `brave` | `serpapi` | `none` (default `brave`)
+- `BRAVE_SEARCH_API_KEY` (required when using `brave`)
+- `SERPAPI_API_KEY` (required when using `serpapi`)
+- `WEB_SEARCH_MAX_RESULTS` (default `5`)
+- `WEB_FETCH_MAX_PAGES` (default `3`)
+- `WEB_FETCH_TIMEOUT_SECONDS` (default `6`)
+- `WEB_FETCH_MAX_CHARS` (default `6000`)
 
 ### Frontend
 - `VITE_PUBLIC_API_BASE_URL` (default `http://localhost:8000`)
@@ -241,8 +261,9 @@ Sarah routes each incoming message through a lightweight capability classifier b
 - `smalltalk_or_greeting`: concise social responses.
 
 Notes on implementation status:
-- Implemented now: intent routing, intent-aware style hints, capability events, and state exposure.
-- Extension-ready seam: live web browsing still depends on whichever runtime/provider path is configured; Sarah states clearly when web/tool lookup is required but unavailable.
+- Implemented now: intent routing, freshness-aware browsing policy, web provider abstraction (Brave + SerpAPI), top-result page fetch/extract, and synthesized web-grounded answers.
+- Sarah explicitly says when she checked live web sources, and honestly reports when provider configuration or evidence quality is insufficient.
+- Scope is intentionally practical (search + fetch + synthesize), not a large autonomous deep-research agent.
 
 ## Voice Testing Quick Start
 

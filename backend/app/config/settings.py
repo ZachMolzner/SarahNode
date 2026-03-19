@@ -23,6 +23,15 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = ""
     elevenlabs_model_id: str = "eleven_multilingual_v2"
 
+    web_search_provider: str = "brave"
+    brave_search_api_key: str = ""
+    serpapi_api_key: str = ""
+    web_search_max_results: int = 5
+
+    web_fetch_max_pages: int = 3
+    web_fetch_timeout_seconds: float = 6.0
+    web_fetch_max_chars: int = 6000
+
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     public_api_base_url: str = "http://localhost:8000"

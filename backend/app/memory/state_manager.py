@@ -11,6 +11,8 @@ class MemoryState:
     assistant_state: str = "idle"
     last_reply: str = ""
     last_capability_intent: str = "ask_general"
+    last_used_live_web: bool = False
+    latest_web_sources: list[dict[str, str]] = field(default_factory=list)
 
 
 class MemoryManager:
@@ -31,6 +33,10 @@ class MemoryManager:
 
     def set_last_capability(self, intent: str) -> None:
         self.state.last_capability_intent = intent
+
+    def set_last_web_usage(self, used_live_web: bool, sources: list[dict[str, str]] | None = None) -> None:
+        self.state.last_used_live_web = used_live_web
+        self.state.latest_web_sources = sources or []
 
     def recent_history(self, limit: int = 8) -> list[str]:
         recent = list(self.state.rolling_messages)[-limit:]

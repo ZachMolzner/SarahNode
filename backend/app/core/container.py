@@ -8,6 +8,9 @@ from app.adapters.llm.mock import MockLLMClient
 from app.adapters.stt.base import STTClient
 from app.adapters.tts.base import TTSClient
 from app.adapters.tts.mock import MockTTSClient
+from app.adapters.web_search.base import WebSearchProvider
+from app.adapters.web_search.brave_search import BraveSearchProvider
+from app.adapters.web_search.serpapi_search import SerpAPISearchProvider
 from app.config.settings import settings
 from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
@@ -15,7 +18,9 @@ from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
 from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
+from app.services.page_fetcher import PageFetcher
 from app.services.voice_service import VoiceService
+from app.services.web_search_service import WebSearchService
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,7 @@ class ProviderSelection:
 llm_selection: ProviderSelection | None = None
 tts_selection: ProviderSelection | None = None
 stt_selection: ProviderSelection | None = None
+web_selection: ProviderSelection | None = None
 
 
 def build_llm_client() -> LLMClient:
@@ -131,6 +137,32 @@ def build_stt_client() -> STTClient | None:
     return None
 
 
+def build_web_provider() -> WebSearchProvider | None:
+    global web_selection
+
+    provider = settings.web_search_provider.lower()
+    if provider in {"none", ""}:
+        web_selection = ProviderSelection(provider or "none", "none", "disabled", "Configured as none")
+        return None
+
+    if provider == "brave":
+        if not settings.brave_search_api_key:
+            web_selection = ProviderSelection(provider, "none", "disabled", "Missing BRAVE_SEARCH_API_KEY")
+            return None
+        web_selection = ProviderSelection(provider, "brave", "real", "API key available")
+        return BraveSearchProvider(settings.brave_search_api_key, timeout_seconds=settings.web_fetch_timeout_seconds)
+
+    if provider == "serpapi":
+        if not settings.serpapi_api_key:
+            web_selection = ProviderSelection(provider, "none", "disabled", "Missing SERPAPI_API_KEY")
+            return None
+        web_selection = ProviderSelection(provider, "serpapi", "real", "API key available")
+        return SerpAPISearchProvider(settings.serpapi_api_key, timeout_seconds=settings.web_fetch_timeout_seconds)
+
+    web_selection = ProviderSelection(provider, "none", "disabled", "Unknown provider")
+    return None
+
+
 def provider_status() -> dict[str, dict[str, str]]:
     return {
         "llm": {
@@ -151,6 +183,12 @@ def provider_status() -> dict[str, dict[str, str]]:
             "mode": (stt_selection.mode if stt_selection else "disabled"),
             "reason": (stt_selection.reason if stt_selection else "Not initialized"),
         },
+        "web_search": {
+            "requested": (web_selection.requested if web_selection else settings.web_search_provider),
+            "active": (web_selection.active if web_selection else "none"),
+            "mode": (web_selection.mode if web_selection else "disabled"),
+            "reason": (web_selection.reason if web_selection else "Not initialized"),
+        },
     }
 
 
@@ -160,9 +198,21 @@ moderation_service = ModerationService()
 response_policy = ResponsePolicy()
 voice_service = VoiceService(stt_client=build_stt_client())
 
+web_search_service = WebSearchService(
+    provider=build_web_provider(),
+    max_results=settings.web_search_max_results,
+)
+page_fetcher = PageFetcher(
+    max_pages=settings.web_fetch_max_pages,
+    timeout_seconds=settings.web_fetch_timeout_seconds,
+    max_chars=settings.web_fetch_max_chars,
+)
+
 dialogue_engine = DialogueEngine(
     llm_client=build_llm_client(),
     persona_path=str(Path(__file__).resolve().parents[1] / "config" / "persona.json"),
+    web_search_service=web_search_service,
+    page_fetcher=page_fetcher,
 )
 
 stream_orchestrator = StreamOrchestrator(
