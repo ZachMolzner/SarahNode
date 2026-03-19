@@ -28,7 +28,9 @@ export function WebAnswerTextbox({
   const [collapsed, setCollapsed] = useState(defaultCollapsedSources);
   const [hovered, setHovered] = useState(false);
   const [focusedWithin, setFocusedWithin] = useState(false);
+  const [touchInteracting, setTouchInteracting] = useState(false);
   const rootRef = useRef<HTMLElement | null>(null);
+  const touchTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setCollapsed(defaultCollapsedSources);
@@ -39,8 +41,24 @@ export function WebAnswerTextbox({
   }, [collapsed, onSourceExpansionChange]);
 
   useEffect(() => {
-    onInteractionChange(hovered || focusedWithin);
-  }, [focusedWithin, hovered, onInteractionChange]);
+    onInteractionChange(hovered || focusedWithin || touchInteracting);
+  }, [focusedWithin, hovered, onInteractionChange, touchInteracting]);
+
+  useEffect(() => {
+    return () => {
+      if (touchTimerRef.current) {
+        window.clearTimeout(touchTimerRef.current);
+      }
+    };
+  }, []);
+
+  function pulseTouchInteraction() {
+    setTouchInteracting(true);
+    if (touchTimerRef.current) {
+      window.clearTimeout(touchTimerRef.current);
+    }
+    touchTimerRef.current = window.setTimeout(() => setTouchInteracting(false), 1400);
+  }
 
   useEffect(() => {
     onInteractionRegionReady?.(rootRef.current);
@@ -66,6 +84,7 @@ export function WebAnswerTextbox({
       }}
       onPointerDown={(event) => event.stopPropagation()}
       onClick={(event) => event.stopPropagation()}
+      onTouchStart={() => pulseTouchInteraction()}
     >
       <div style={badgeStyle}>Checked live web</div>
       <h3 style={titleStyle}>{answer.title}</h3>

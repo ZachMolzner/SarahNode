@@ -13,6 +13,7 @@ type AvatarPanelProps = {
   presenceSignals: PresenceSignals;
   gesturePerformance: GesturePerformanceSnapshot;
   displayMode: DisplayModeState;
+  reducedEffects?: boolean;
   onInteractionRegionReady?: (element: HTMLElement | null) => void;
 };
 
@@ -22,6 +23,7 @@ export function AvatarPanel({
   presenceSignals,
   gesturePerformance,
   displayMode,
+  reducedEffects = false,
   onInteractionRegionReady,
 }: AvatarPanelProps) {
   const stageRef = useRef<HTMLElement | null>(null);
@@ -50,7 +52,7 @@ export function AvatarPanel({
     return "rgba(145, 167, 255, 0.2)";
   }, [avatarState.mode, avatarState.reaction]);
 
-  const showCinematicBackdrop = displayMode.activeMode === "immersive";
+  const showCinematicBackdrop = displayMode.activeMode === "immersive" && !reducedEffects;
   const isOverlayGrounded = displayMode.activeMode === "overlay";
   const glowIntensity = showCinematicBackdrop ? 1 + gesturePerformance.glowBoost : 0.18;
 
@@ -71,12 +73,12 @@ export function AvatarPanel({
 
       <div
         ref={interactionRegionRef}
-        style={{
-          ...interactionRegionStyle,
-          top: isOverlayGrounded ? "72%" : interactionRegionStyle.top,
-          height: isOverlayGrounded ? "min(58vh, 620px)" : interactionRegionStyle.height,
-        }}
-        aria-label="Sarah interaction region"
+          style={{
+            ...interactionRegionStyle,
+            top: isOverlayGrounded ? "72%" : interactionRegionStyle.top,
+            height: isOverlayGrounded ? "min(58vh, 620px)" : reducedEffects ? "min(74vh, 760px)" : interactionRegionStyle.height,
+          }}
+          aria-label="Sarah interaction region"
       >
         <div
           style={{
@@ -84,7 +86,12 @@ export function AvatarPanel({
             transform: `${stageMotion.transform} scaleX(${stageMotion.facingDirection})`,
           }}
         >
-          <VRMAvatar avatarState={avatarState} stageMotion={stageMotion} gesturePerformance={gesturePerformance} />
+          <VRMAvatar
+            avatarState={avatarState}
+            stageMotion={stageMotion}
+            gesturePerformance={gesturePerformance}
+            reducedEffects={reducedEffects}
+          />
         </div>
       </div>
 

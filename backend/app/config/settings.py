@@ -2,6 +2,10 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _parse_csv(raw: str) -> list[str]:
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 class Settings(BaseSettings):
     app_name: str = "SarahNode Personal Assistant"
     env: str = "dev"
@@ -32,8 +36,13 @@ class Settings(BaseSettings):
     web_fetch_timeout_seconds: float = 6.0
     web_fetch_max_chars: int = 6000
 
+    backend_bind_all_interfaces: bool = False
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
+
+    cors_allowed_origins_raw: str = "*"
+    cors_allow_credentials: bool = False
+
     public_api_base_url: str = "http://localhost:8000"
     public_ws_base_url: str = "ws://localhost:8000"
 
@@ -54,3 +63,12 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def resolve_backend_host() -> str:
+    return "0.0.0.0" if settings.backend_bind_all_interfaces else settings.backend_host
+
+
+def resolve_cors_origins() -> list[str]:
+    origins = _parse_csv(settings.cors_allowed_origins_raw)
+    return origins if origins else ["*"]

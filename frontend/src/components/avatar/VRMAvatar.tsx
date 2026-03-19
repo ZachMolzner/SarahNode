@@ -12,9 +12,10 @@ type VRMAvatarProps = {
   avatarState: AvatarState;
   stageMotion: StageMotion;
   gesturePerformance: GesturePerformanceSnapshot;
+  reducedEffects?: boolean;
 };
 
-export function VRMAvatar({ avatarState, stageMotion, gesturePerformance }: VRMAvatarProps) {
+export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reducedEffects = false }: VRMAvatarProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const vrmRef = useRef<VRM | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -44,20 +45,20 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance }: VRMA
     const camera = new THREE.PerspectiveCamera(30, container.clientWidth / container.clientHeight, 0.1, 1000);
     camera.position.set(0, 1.35, 2.4);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({ antialias: !reducedEffects, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, reducedEffects ? 1.25 : 2));
     renderer.setSize(container.clientWidth, container.clientHeight);
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xc3d4ff, 0x1f263c, 1.25);
+    const hemi = new THREE.HemisphereLight(0xc3d4ff, 0x1f263c, reducedEffects ? 1.05 : 1.25);
     scene.add(hemi);
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.02);
+    const keyLight = new THREE.DirectionalLight(0xffffff, reducedEffects ? 0.86 : 1.02);
     keyLight.position.set(1.2, 1.7, 2.4);
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight(0xa3bbff, 0.55);
+    const rimLight = new THREE.DirectionalLight(0xa3bbff, reducedEffects ? 0.36 : 0.55);
     rimLight.position.set(-1.5, 1.2, -1.4);
     scene.add(rimLight);
 
@@ -236,7 +237,7 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance }: VRMA
       renderer.dispose();
       container.innerHTML = "";
     };
-  }, []);
+  }, [reducedEffects]);
 
   if (loadError) {
     return <div style={fallbackStyle}>Sarah avatar unavailable. UI is still functional.</div>;

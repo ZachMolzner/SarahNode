@@ -29,6 +29,7 @@ export type VoiceStatus = {
   backendModel: string | null;
   lastError: string | null;
   hasReplayableAudio: boolean;
+  mobileAudioUnlocked: boolean;
 };
 
 type VoiceOrchestratorDeps = {
@@ -102,6 +103,7 @@ export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
     backendModel: null,
     lastError: null,
     hasReplayableAudio: false,
+    mobileAudioUnlocked: false,
   };
 
   const notify = () => deps.onDebugStatus?.({ ...status });
@@ -229,6 +231,7 @@ export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
 
         void audio.play().catch(() => {
           if (activeAudio === audio) activeAudio = null;
+          status.lastError = "Audio playback blocked until a user tap unlocks audio.";
           clearSpeaking();
           finalize(false);
         });
@@ -349,10 +352,27 @@ export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
     return speakWithBrowserFallback(trimmed, mood);
   };
 
+  const ensureAudioUnlockedFromGesture = async () => {
+    if (typeof window === "undefined" || typeof window.AudioContext === "undefined") {
+      status.mobileAudioUnlocked = true;
+      return true;
+    }
+
+    audioContext = audioContext ?? new window.AudioContext();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume().catch(() => null);
+    }
+
+    status.mobileAudioUnlocked = audioContext.state === "running";
+    notify();
+    return status.mobileAudioUnlocked;
+  };
+
   return {
     speakText,
     stopSpeaking,
     replayLastAudio,
+    ensureAudioUnlockedFromGesture,
     getVoiceStatus: () => ({ ...status }),
   };
 }

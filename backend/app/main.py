@@ -3,7 +3,7 @@ import asyncio
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.config.settings import settings
+from app.config.settings import resolve_cors_origins, settings
 from app.core.container import stream_orchestrator
 from app.core.logging import setup_logging
 from app.routers.control import router as control_router
@@ -12,10 +12,12 @@ from app.routers.health import router as health_router
 setup_logging()
 
 app = FastAPI(title=settings.app_name)
+cors_origins = resolve_cors_origins()
+cors_allow_credentials = settings.cors_allow_credentials and "*" not in cors_origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

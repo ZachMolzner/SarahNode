@@ -37,10 +37,16 @@ export function VoiceRecorder({
     setError(null);
 
     try {
+      if (typeof MediaRecorder === "undefined") {
+        setError("This browser does not support in-app recording. Please use desktop Chrome/Edge.");
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const recorder = new MediaRecorder(stream);
+      const preferredType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : undefined;
+      const recorder = new MediaRecorder(stream, preferredType ? { mimeType: preferredType } : undefined);
       recorderRef.current = recorder;
       chunksRef.current = [];
 
