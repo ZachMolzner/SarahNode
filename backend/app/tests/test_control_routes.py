@@ -1,3 +1,5 @@
+import io
+
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -35,3 +37,21 @@ def test_assistant_state_route_shape() -> None:
     assert "assistant_state" in payload
     assert "latest_reply" in payload
     assert "memory_summary" in payload
+
+
+def test_voice_event_route_accepts_voice_prefix() -> None:
+    with TestClient(app) as client:
+        response = client.post("/api/assistant/voice/event", json={"event_type": "voice:recording_started"})
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_transcribe_route_returns_error_when_stt_unavailable() -> None:
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/assistant/transcribe",
+            files={"file": ("sample.webm", io.BytesIO(b"fake audio"), "audio/webm")},
+        )
+
+    assert response.status_code in (400, 500, 503)

@@ -1,6 +1,6 @@
 export type AvatarMood = "neutral" | "happy" | "concerned" | "calm";
 
-export type AvatarMode = "idle" | "thinking" | "speaking";
+export type AvatarMode = "idle" | "listening" | "thinking" | "speaking";
 
 export type AvatarState = {
   mode: AvatarMode;
