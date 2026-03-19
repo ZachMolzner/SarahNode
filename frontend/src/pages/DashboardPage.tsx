@@ -7,6 +7,8 @@ import { AvatarPanel } from "../components/avatar/AvatarPanel";
 import { useAvatarState } from "../hooks/useAvatarState";
 import { VoiceRecorder } from "../components/voice/VoiceRecorder";
 import { createAppShell } from "../lib/appShell";
+import { OverlayController } from "../lib/overlayController";
+import { isOverlayMode } from "../lib/displayMode";
 import { isShutdownCancellation, isShutdownConfirmation, matchShutdownIntent } from "../lib/shutdownIntent";
 import { runShutdownFlow } from "../lib/shutdownController";
 import { SubtitleCaptions } from "../components/captions/SubtitleCaptions";
@@ -59,6 +61,10 @@ export function DashboardPage() {
   );
 
   const appShell = useMemo(() => createAppShell(), []);
+  const displayMode = appShell.displayMode;
+  const overlayEnabled = isOverlayMode(displayMode);
+  const [overlayControlsVisible, setOverlayControlsVisible] = useState(false);
+  const overlayControllerRef = useRef<OverlayController | null>(null);
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
@@ -278,17 +284,59 @@ export function DashboardPage() {
   }
 
   useEffect(() => {
+    void appShell.configureWindowForDisplayMode();
+
+    const controller = new OverlayController(displayMode);
+    overlayControllerRef.current = controller;
+    void controller.start();
+
+    return () => {
+      void controller.stop();
+      overlayControllerRef.current = null;
+    };
+  }, [appShell, displayMode]);
+
+  useEffect(() => {
+    if (!overlayEnabled) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "o") {
+        event.preventDefault();
+        setOverlayControlsVisible((visible) => !visible);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [overlayEnabled]);
+
+  useEffect(() => {
+    if (!overlayEnabled) return;
+    setIsControlsOpen(false);
+    setIsTranscriptOpen(false);
+  }, [overlayEnabled]);
+
+  useEffect(() => {
+    if (!overlayEnabled || !overlayControlsVisible) return;
+    setIsControlsOpen(true);
+  }, [overlayControlsVisible, overlayEnabled]);
+
+  useEffect(() => {
     if (isSpeaking) {
       setSpeakingStartedAt((previous) => (Date.now() - previous > 320 ? Date.now() : previous));
     }
   }, [isSpeaking]);
 
+  const showOverlayControls = !overlayEnabled || overlayControlsVisible;
+
   return (
-    <main style={pageStyle}>
-      <div style={stageStyle}>
+    <main style={overlayEnabled ? overlayPageStyle : pageStyle}>
+      <div style={overlayEnabled ? overlayStageStyle : stageStyle}>
         <AvatarPanel
           avatarState={avatarState}
           gesturePerformance={gesturePerformance}
+          displayMode={displayMode}
+          onInteractionRegionReady={(element) => overlayControllerRef.current?.setInteractionRegion(element)}
           overlayVisibility={{
             controlsOpen: isControlsOpen,
             transcriptOpen: isTranscriptOpen,
@@ -301,9 +349,19 @@ export function DashboardPage() {
             replyAtMs: lastReplyAt,
           }}
         />
-        <SubtitleCaptions speaker={captionSpeaker} text={captionText} onVisibilityChange={setIsCaptionVisible} />
+        <SubtitleCaptions
+          speaker={captionSpeaker}
+          text={captionText}
+          displayMode={displayMode.activeMode}
+          onVisibilityChange={setIsCaptionVisible}
+        />
 
-        <div style={topOverlayStyle}>
+
+        {overlayEnabled && !displayMode.nativeOverlayEnabled ? (
+          <div style={browserOverlayWarningStyle}>Overlay visuals are active, but native click-through requires Tauri desktop mode.</div>
+        ) : null}
+
+        {showOverlayControls ? <div style={topOverlayStyle}>
           <Pill label={`Connection: ${connectionState}`} muted={connectionState !== "open"} />
           <Pill label={`Voice: ${voiceStatus}`} muted={voiceStatus === "idle"} />
           <button type="button" onClick={() => setIsControlsOpen((open) => !open)} style={miniButtonStyle}>
@@ -312,9 +370,9 @@ export function DashboardPage() {
           <button type="button" onClick={() => setIsTranscriptOpen((open) => !open)} style={miniButtonStyle}>
             {isTranscriptOpen ? "Hide Transcript" : "Transcript"}
           </button>
-        </div>
+        </div> : overlayEnabled ? <div style={overlayHintStyle}>Ctrl+Shift+O for controls</div> : null}
 
-        <div style={bottomOverlayStyle}>
+        <div style={overlayEnabled ? overlayBottomOverlayStyle : bottomOverlayStyle}>
           <VoiceRecorder
             disabled={isSending || shutdownStatus !== "idle"}
             shouldStop={shutdownStatus !== "idle"}
@@ -339,7 +397,7 @@ export function DashboardPage() {
           {shutdownPrompt ? <p style={shutdownPromptStyle}>{shutdownPrompt}</p> : null}
         </div>
 
-        {isControlsOpen ? (
+        {showOverlayControls && isControlsOpen ? (
           <aside style={drawerStyle}>
             <h2 style={{ marginTop: 0 }}>Assistant Controls</h2>
             <div style={gridInputsStyle}>
@@ -394,7 +452,7 @@ export function DashboardPage() {
           </aside>
         ) : null}
 
-        {isTranscriptOpen ? (
+        {showOverlayControls && isTranscriptOpen ? (
           <section style={transcriptOverlayStyle}>
             <header style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
               <strong>Event Transcript</strong>
@@ -441,6 +499,29 @@ const stageStyle: React.CSSProperties = {
   overflow: "hidden",
 };
 
+const overlayPageStyle: React.CSSProperties = {
+  ...pageStyle,
+  background: "transparent",
+};
+
+const overlayStageStyle: React.CSSProperties = {
+  ...stageStyle,
+  background: "transparent",
+};
+
+const browserOverlayWarningStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 10,
+  left: 10,
+  padding: "6px 10px",
+  borderRadius: 999,
+  background: "rgba(16, 20, 36, 0.45)",
+  border: "1px solid rgba(150, 170, 234, 0.35)",
+  color: "rgba(244, 247, 255, 0.85)",
+  fontSize: 11,
+  zIndex: 18,
+};
+
 const topOverlayStyle: React.CSSProperties = {
   position: "absolute",
   top: 10,
@@ -462,6 +543,22 @@ const bottomOverlayStyle: React.CSSProperties = {
   gap: 8,
   maxWidth: 420,
   zIndex: 15,
+};
+
+const overlayBottomOverlayStyle: React.CSSProperties = {
+  ...bottomOverlayStyle,
+  maxWidth: 360,
+};
+
+const overlayHintStyle: React.CSSProperties = {
+  position: "absolute",
+  top: 10,
+  right: 10,
+  fontSize: 11,
+  letterSpacing: 0.2,
+  color: "rgba(245, 245, 255, 0.48)",
+  zIndex: 16,
+  pointerEvents: "none",
 };
 
 const miniButtonStyle: React.CSSProperties = {
