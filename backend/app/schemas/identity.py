@@ -14,6 +14,7 @@ class RelationType(str, Enum):
 
 
 class TonePreference(str, Enum):
+    playful_flirt = "playful_flirt"
     direct = "direct"
     warm = "warm"
     neutral = "neutral"
@@ -107,5 +108,6 @@ class AddressingContext(BaseModel):
     allow_alternate: bool = False
     alternate_candidates: list[str] = Field(default_factory=list)
     tone_hint: TonePreference = TonePreference.neutral
+    tone_directive: str = "Stay neutral and helpful."
     response_style_hint: ResponseStyle = ResponseStyle.balanced
     deterministic_rule: str

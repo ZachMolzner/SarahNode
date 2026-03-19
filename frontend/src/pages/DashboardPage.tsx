@@ -866,7 +866,7 @@ function Pill({ label, muted = false }: { label: string; muted?: boolean }) {
 
 const pageStyle: React.CSSProperties = {
   minHeight: "100vh",
-  background: "#03050c",
+  background: "linear-gradient(180deg, #0b1220 0%, #090f1a 100%)",
   color: "#f5f5f5",
   fontFamily: "Inter, Arial, sans-serif",
 };
@@ -876,6 +876,7 @@ const stageStyle: React.CSSProperties = {
   minHeight: "100vh",
   position: "relative",
   overflow: "hidden",
+  background: "radial-gradient(circle at 82% 20%, rgba(92, 128, 196, 0.12), transparent 36%)",
 };
 
 const overlayPageStyle: React.CSSProperties = {
@@ -935,7 +936,7 @@ const overlayHintStyle: React.CSSProperties = {
   right: 10,
   fontSize: 11,
   letterSpacing: 0.2,
-  color: "rgba(245, 245, 255, 0.48)",
+  color: "rgba(245, 245, 255, 0.6)",
   zIndex: 16,
   pointerEvents: "none",
 };
@@ -977,8 +978,8 @@ const drawerStyle: React.CSSProperties = {
   overflowY: "auto",
   padding: 12,
   borderRadius: 14,
-  background: "rgba(8, 12, 22, 0.76)",
-  border: "1px solid rgba(96, 120, 190, 0.5)",
+  background: "rgba(12, 18, 30, 0.76)",
+  border: "1px solid rgba(118, 146, 215, 0.5)",
   backdropFilter: "blur(12px)",
   zIndex: 20,
 };
