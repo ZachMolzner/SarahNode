@@ -19,11 +19,14 @@ import { SettingsPanel } from "../components/SettingsPanel";
 import { WebAnswerTextbox, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
 import { useSettingsStore } from "../hooks/useSettingsStore";
 import { computeWebGroundedSignature, normalizeWebGroundedPayload, shouldKeepWebPanelPinned } from "../lib/webGroundedAnswer";
+import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
 
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
   const processedTtsKeyRef = useRef<string>("");
   const processedReplyKeyRef = useRef<string>("");
+  const processedThinkingKeyRef = useRef<string>("");
+  const processedErrorKeyRef = useRef<string>("");
   const startupLineRef = useRef<string | null>(null);
   const shutdownLineRef = useRef<string | null>(null);
 
@@ -61,6 +64,15 @@ export function DashboardPage() {
   const [isWebAnswerInteracting, setIsWebAnswerInteracting] = useState(false);
   const [hasExpandedSources, setHasExpandedSources] = useState(false);
   const [lastWebGroundedAt, setLastWebGroundedAt] = useState(0);
+  const [summonedAt, setSummonedAt] = useState(0);
+  const [interactionStartedAt, setInteractionStartedAt] = useState(0);
+  const [searchStartedAt, setSearchStartedAt] = useState(0);
+  const [sourceExpandedAt, setSourceExpandedAt] = useState(0);
+  const [interruptedAt, setInterruptedAt] = useState(0);
+  const [errorAt, setErrorAt] = useState(0);
+  const [noResultAt, setNoResultAt] = useState(0);
+  const [speakingEndedAt, setSpeakingEndedAt] = useState(0);
+  const [expressionClockMs, setExpressionClockMs] = useState(() => Date.now());
   const latestGroundedEventRef = useRef<string>("");
   const lastGroundedSignatureRef = useRef<string>("");
   const groundedDismissTimerRef = useRef<number | null>(null);
@@ -89,23 +101,49 @@ export function DashboardPage() {
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
   const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying;
+  const lastInteractionAt = Math.max(lastUserSpeechAt, lastReplyAt, listeningStartedAt, interactionStartedAt);
+  const expressionState = resolveAvatarExpression({
+    nowMs: expressionClockMs,
+    mode: baseAvatarState.mode,
+    isSpeaking,
+    isPresenting: isWebAnswerVisible,
+    isThinking: baseAvatarState.mode === "thinking",
+    isListening: baseAvatarState.mode === "listening",
+    isOverlayMode: overlayEnabled,
+    isInteracting: isWebAnswerInteracting || isControlsOpen || isTranscriptOpen || settingsOpen,
+    recentlyActiveMs: lastInteractionAt > 0 ? Math.max(0, expressionClockMs - lastInteractionAt) : Number.MAX_SAFE_INTEGER,
+    summonedAtMs: summonedAt,
+    interactionStartedAtMs: interactionStartedAt,
+    searchStartedAtMs: searchStartedAt,
+    groundedAnswerAtMs: lastWebGroundedAt,
+    sourceExpandedAtMs: sourceExpandedAt,
+    interruptedAtMs: interruptedAt,
+    errorAtMs: errorAt,
+    noResultAtMs: noResultAt,
+    speakingEndedAtMs: speakingEndedAt,
+  });
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
-      ? { ...baseAvatarState, mode: "shutting_down", mood: "goodbye", isSpeaking: false, mouthIntensity: 0.05 }
+      ? {
+          ...baseAvatarState,
+          mode: "shutting_down",
+          mood: "goodbye",
+          isSpeaking: false,
+          mouthIntensity: 0.05,
+          expression: "neutral",
+          reaction: "none",
+          expressionIntensity: 0.7,
+        }
       : {
           ...baseAvatarState,
           mode: isWebAnswerVisible ? "presenting" : isSpeaking ? "talking" : baseAvatarState.mode,
-          mood:
-            baseAvatarState.mode === "listening"
-              ? "listening"
-              : baseAvatarState.mode === "thinking"
-                ? "focused"
-                : isSpeaking
-                  ? "warm"
-                  : baseAvatarState.mood,
+          mood: expressionState.mood,
           isSpeaking,
           mouthIntensity: mouthOpenAmount,
+          expression: expressionState.expression,
+          reaction: expressionState.reaction,
+          expressionIntensity: expressionState.intensity,
         };
   const latestReplyText = typeof latestReply === "string" ? latestReply : "";
 
@@ -120,9 +158,15 @@ export function DashboardPage() {
   });
 
   useEffect(() => {
+    const id = window.setInterval(() => setExpressionClockMs(Date.now()), 120);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
     const timerId = window.setTimeout(() => {
       setSessionReadyAt(Date.now());
       setStartupGreetingRequested(true);
+      setSummonedAt(Date.now());
     }, 850);
     return () => window.clearTimeout(timerId);
   }, []);
@@ -285,6 +329,9 @@ export function DashboardPage() {
       mode: overlayEnabled ? "overlay" : "immersive",
     });
     setLastWebGroundedAt(Date.now());
+    if (normalized.bullets.length === 0) {
+      setNoResultAt(Date.now());
+    }
     setIsWebAnswerVisible(true);
 
     if (!identicalPayload && settings.voiceOutputEnabled) {
@@ -324,6 +371,7 @@ export function DashboardPage() {
   }, [events]);
 
   function stopAudioPlayback() {
+    if (isSpeaking) setInterruptedAt(Date.now());
     voiceOrchestratorRef.current.stopSpeaking();
   }
 
@@ -393,12 +441,14 @@ export function DashboardPage() {
     }
 
     setIsSending(true);
+    setInteractionStartedAt(Date.now());
     setError(null);
 
     try {
       await sendAssistantMessage({ username, content: messageText, priority });
       setContent("");
     } catch (err) {
+      setErrorAt(Date.now());
       setError(err instanceof Error ? err.message : "Failed to send message to assistant.");
     } finally {
       setIsSending(false);
@@ -450,8 +500,31 @@ export function DashboardPage() {
   useEffect(() => {
     if (isSpeaking) {
       setSpeakingStartedAt((previous) => (Date.now() - previous > 320 ? Date.now() : previous));
+    } else if (speakingStartedAt > 0) {
+      setSpeakingEndedAt(Date.now());
     }
-  }, [isSpeaking]);
+  }, [isSpeaking, speakingStartedAt]);
+
+  useEffect(() => {
+    const stateEvent = events.find((event) => event.type === "assistant_state");
+    const assistantState = stateEvent?.payload?.["state"];
+    const eventKey = stateEvent ? `${stateEvent.timestamp}-${String(assistantState ?? "")}` : "";
+    if (!stateEvent || processedThinkingKeyRef.current === eventKey) return;
+    processedThinkingKeyRef.current = eventKey;
+    if (typeof assistantState === "string" && assistantState.toLowerCase() === "thinking") {
+      setSearchStartedAt(Date.now());
+    }
+  }, [events]);
+
+  useEffect(() => {
+    const errorEvent = events.find((event) => event.type === "error" || event.type === "voice:error");
+    const eventKey = errorEvent ? `${errorEvent.timestamp}-${errorEvent.type}` : "";
+    if (!errorEvent || processedErrorKeyRef.current === eventKey) return;
+    processedErrorKeyRef.current = eventKey;
+    if (errorEvent) {
+      setErrorAt(Date.now());
+    }
+  }, [events]);
 
   useEffect(() => {
     if (!overlayControllerRef.current) return;
@@ -523,6 +596,8 @@ export function DashboardPage() {
             onRecordingStarted={() => {
               setVoiceStatus("listening");
               setListeningStartedAt(Date.now());
+              setInteractionStartedAt(Date.now());
+              if (isSpeaking) setInterruptedAt(Date.now());
               void emitVoiceEvent("voice:recording_started");
             }}
             onRecordingStopped={() => {
@@ -619,6 +694,7 @@ export function DashboardPage() {
             void updateSettings(patch);
           }}
           onSummonNow={() => {
+            setSummonedAt(Date.now());
             void windowBridge.summonWindow();
           }}
         />
@@ -628,7 +704,10 @@ export function DashboardPage() {
           visible={isWebAnswerVisible}
           defaultCollapsedSources={settings.showSourceFooterCollapsed}
           onInteractionChange={setIsWebAnswerInteracting}
-          onSourceExpansionChange={setHasExpandedSources}
+          onSourceExpansionChange={(expanded) => {
+            setHasExpandedSources(expanded);
+            if (expanded) setSourceExpandedAt(Date.now());
+          }}
           onInteractionRegionReady={(element) => {
             webPanelRegionRef.current = element;
             overlayControllerRef.current?.setSecondaryInteractionRegion(element);
