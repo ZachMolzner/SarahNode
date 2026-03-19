@@ -15,6 +15,9 @@ import { SubtitleCaptions } from "../components/captions/SubtitleCaptions";
 import { useGesturePerformance } from "../hooks/useGesturePerformance";
 import { createVoiceOrchestrator, type TTSPlaybackPayload } from "../lib/voiceOrchestrator";
 import { pickNonRepeatingLine } from "../lib/voiceLines";
+import { SettingsPanel } from "../components/SettingsPanel";
+import { WebAnswerTextbox, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
+import { useSettingsStore } from "../hooks/useSettingsStore";
 
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
@@ -50,6 +53,8 @@ export function DashboardPage() {
   const [shutdownPerformanceDelivered, setShutdownPerformanceDelivered] = useState(false);
   const [listeningStartedAt, setListeningStartedAt] = useState(0);
   const [speakingStartedAt, setSpeakingStartedAt] = useState(0);
+  const [webAnswer, setWebAnswer] = useState<WebAnswerViewModel | null>(null);
+  const [lastWebGroundedAt, setLastWebGroundedAt] = useState(0);
   const voiceOrchestratorRef = useRef(
     createVoiceOrchestrator({
       onCaption: (text) => {
@@ -61,7 +66,11 @@ export function DashboardPage() {
   );
 
   const appShell = useMemo(() => createAppShell(), []);
-  const displayMode = appShell.displayMode;
+  const { settings, settingsOpen, setSettingsOpen, updateSettings, windowBridge } = useSettingsStore();
+  const displayMode = {
+    ...appShell.displayMode,
+    activeMode: settings.overlayMode ? "overlay" : "immersive",
+  };
   const overlayEnabled = isOverlayMode(displayMode);
   const [overlayControlsVisible, setOverlayControlsVisible] = useState(false);
   const overlayControllerRef = useRef<OverlayController | null>(null);
@@ -75,7 +84,7 @@ export function DashboardPage() {
       ? { ...baseAvatarState, mode: "shutting_down", mood: "goodbye", isSpeaking: false, mouthIntensity: 0.05 }
       : {
           ...baseAvatarState,
-          mode: isSpeaking ? "talking" : baseAvatarState.mode,
+          mode: webAnswer ? "presenting" : isSpeaking ? "talking" : baseAvatarState.mode,
           mood:
             baseAvatarState.mode === "listening"
               ? "listening"
@@ -146,7 +155,7 @@ export function DashboardPage() {
 
     const payload = (ttsEvent.payload ?? {}) as TTSPlaybackPayload;
     const sourceText = typeof payload.source_text === "string" ? payload.source_text : "";
-    if (!sourceText) return;
+    if (!sourceText || !settings.voiceOutputEnabled) return;
 
     void voiceOrchestratorRef.current.speakText(sourceText, { ttsPayload: payload, context: "reply", mood: "warm" }).then(() => {
       const orchestrationStatus = voiceOrchestratorRef.current.getVoiceStatus();
@@ -160,7 +169,7 @@ export function DashboardPage() {
       );
       setLastReplyAt(Date.now());
     });
-  }, [events, shutdownStatus]);
+  }, [events, settings.voiceOutputEnabled, shutdownStatus]);
 
   useEffect(() => {
     const replyEvent = events.find((event) => event.type === "reply_selected");
@@ -179,9 +188,39 @@ export function DashboardPage() {
       const latestTts = events.find((event) => event.type === "tts_output");
       const ttsSourceText = latestTts?.payload?.["source_text"];
       if (typeof ttsSourceText === "string" && ttsSourceText === replyText) return;
+      if (!settings.voiceOutputEnabled) return;
       void voiceOrchestratorRef.current.speakText(replyText, { context: "reply", mood: "warm" });
     }, 450);
-  }, [events]);
+  }, [events, settings.voiceOutputEnabled]);
+
+  useEffect(() => {
+    const groundedEvent = events.find((event) => event.type === "web_grounded_answer");
+    if (!groundedEvent) return;
+
+    const title = typeof groundedEvent.payload?.["title"] === "string" ? groundedEvent.payload["title"] : "Web-grounded summary";
+    const bullets = Array.isArray(groundedEvent.payload?.["bullets"])
+      ? groundedEvent.payload["bullets"].filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [];
+    const sourceTitles = Array.isArray(groundedEvent.payload?.["sources"])
+      ? groundedEvent.payload["sources"].filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [];
+
+    setWebAnswer({
+      title,
+      bullets: bullets.length
+        ? bullets.slice(0, 5)
+        : ["I checked live web sources and summarized the strongest evidence.", "Ask me to expand any point if you want details."],
+      sourceTitles,
+    });
+    setLastWebGroundedAt(Date.now());
+
+    if (settings.voiceOutputEnabled) {
+      const spoken = bullets.slice(0, 3).join(". ");
+      if (spoken) {
+        void voiceOrchestratorRef.current.speakText(`I checked the live web. ${spoken}`, { context: "reply", mood: "focused" });
+      }
+    }
+  }, [events, settings.voiceOutputEnabled]);
 
   useEffect(() => {
     const voiceEvent = events.find((event) => event.type.startsWith("voice:"));
@@ -347,6 +386,7 @@ export function DashboardPage() {
             transcriptEventAtMs: lastTranscriptAt,
             userSpokeAtMs: lastUserSpeechAt,
             replyAtMs: lastReplyAt,
+            presentingAtMs: lastWebGroundedAt,
           }}
         />
         <SubtitleCaptions
@@ -369,6 +409,9 @@ export function DashboardPage() {
           </button>
           <button type="button" onClick={() => setIsTranscriptOpen((open) => !open)} style={miniButtonStyle}>
             {isTranscriptOpen ? "Hide Transcript" : "Transcript"}
+          </button>
+          <button type="button" onClick={() => setSettingsOpen((open) => !open)} style={miniButtonStyle}>
+            {settingsOpen ? "Hide Settings" : "Settings"}
           </button>
         </div> : overlayEnabled ? <div style={overlayHintStyle}>Ctrl+Shift+O for controls</div> : null}
 
@@ -466,6 +509,20 @@ export function DashboardPage() {
             </div>
           </section>
         ) : null}
+
+        <SettingsPanel
+          open={settingsOpen}
+          settings={settings}
+          onClose={() => setSettingsOpen(false)}
+          onChange={(patch) => {
+            void updateSettings(patch);
+          }}
+          onSummonNow={() => {
+            void windowBridge.summonWindow();
+          }}
+        />
+
+        <WebAnswerTextbox answer={webAnswer} defaultCollapsedSources={settings.showSourceFooterCollapsed} />
 
         {shutdownStatus === "ended" ? (
           <div style={shutdownOverlayStyle}>

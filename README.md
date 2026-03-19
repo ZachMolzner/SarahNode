@@ -37,6 +37,10 @@ Desktop branding identity is standardized to:
 - Overlay grounded locomotion mode: in overlay display mode Sarah uses a desktop-ground model (bottom-edge walking path, horizontal-first travel, edge-zone settling) instead of free-stage floating.
 - Edge-aware resting behavior: Sarah can subtly lean/perch near left/right boundaries and relax into low-motion posture approximations when idle.
 - Mode-aware stage model: immersive mode keeps cinematic freer presentation while overlay mode uses grounded desktop behavior through one shared movement stack.
+- Desktop companion shell behavior: tray-first lifecycle (close hides to tray), always-on-top toggle, overlay/immersive toggles, and summon hotkey (`Ctrl+Shift+Space`) for fast restore.
+- Persistent local settings model + reusable frontend settings store to keep desktop preferences across launches.
+- Web-grounded answer textbox beside Sarah with a “Checked live web” badge, distilled bullets, and collapsible source titles.
+- Presence “presenting” behavior for web-grounded moments: Sarah shifts attention toward the web summary panel and can read key bullets aloud when voice output is enabled.
 - Assistant capability routing readiness: lightweight intent buckets for general Q&A, information lookup, web/browse tasks, coding help, shutdown commands, and greeting/smalltalk.
 - Intent-aware response style steering: coding requests get structured guidance; lookup/browse requests explicitly indicate when live web verification is needed vs local context answers.
 - Subtitle-style on-stage captions for user transcripts and Sarah replies (lightweight, auto-fading, and separate from transcript history).
@@ -200,6 +204,13 @@ Overlay click-through and runtime mode switching require explicit window permiss
 Added permissions:
 - `core:window:allow-set-ignore-cursor-events`
 - `core:window:allow-set-fullscreen`
+- `core:window:allow-show`
+- `core:window:allow-hide`
+- `core:window:allow-minimize`
+- `core:window:allow-unminimize`
+- `core:window:allow-set-focus`
+- `core:window:allow-set-always-on-top`
+- `core:window:allow-set-decorations`
 
 These are intentionally minimal additions on top of the existing close permission.
 
@@ -216,6 +227,22 @@ These are intentionally minimal additions on top of the existing close permissio
   - Run frontend with `npm run tauri:dev` and backend separately.
   - Shutdown flow can issue a **real native window close** through Tauri APIs.
   - Overlay mode includes transparent window + click-through behavior with a bounded Sarah interaction region.
+  - Closing the main window hides SarahNode to tray by default (instead of quitting).
+  - Tray menu supports: Show/Hide, Always-on-top toggle, Overlay mode toggle, and Quit.
+  - Global summon shortcut: `Ctrl+Shift+Space`.
+
+### Desktop Settings (Persisted)
+
+SarahNode now persists desktop settings locally (frontend local storage + Tauri desktop config file) so preferences survive relaunches:
+
+- `alwaysOnTop` (default: `true`)
+- `overlayMode` (default: `true`)
+- `closeToTrayOnClose` (default: `true`)
+- `voiceOutputEnabled` (default: `true`)
+- `preferredMode` (default: `overlay`)
+- `showSourceFooterCollapsed` (default: `true`)
+
+Settings can be adjusted in the lightweight in-app **Desktop Settings** panel.
 
 Mode detection and native window behavior are centralized in frontend utilities (`displayMode`, `overlayController`, `tauriEnvironment`, and `appShell`) so Tauri-specific calls are not scattered across UI components.
 

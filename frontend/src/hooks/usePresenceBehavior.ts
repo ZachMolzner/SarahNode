@@ -7,6 +7,7 @@ export type PresenceSignals = {
   transcriptEventAtMs: number;
   userSpokeAtMs: number;
   replyAtMs: number;
+  presentingAtMs: number;
 };
 
 export type PresenceBehaviorInput = {
@@ -33,6 +34,7 @@ export function usePresenceBehavior() {
       transcriptEventAtMs: input.signals.transcriptEventAtMs,
       userSpokeAtMs: input.signals.userSpokeAtMs,
       replyAtMs: input.signals.replyAtMs,
+      presentingAtMs: input.signals.presentingAtMs,
     });
   }, []);
 }

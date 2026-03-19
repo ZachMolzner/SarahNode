@@ -1,6 +1,6 @@
 export type StagePoint = { x: number; y: number };
 
-export type MovementState = "idle" | "walking" | "listening" | "thinking" | "talking" | "shutting_down";
+export type MovementState = "idle" | "walking" | "listening" | "thinking" | "talking" | "presenting" | "shutting_down";
 
 export type MovementSnapshot = {
   position: StagePoint;

@@ -3,6 +3,7 @@ export type EventType =
   | "moderation_decision"
   | "assistant_state"
   | "reply_selected"
+  | "web_grounded_answer"
   | "speaking_status"
   | "tts_output"
   | "avatar_event"
