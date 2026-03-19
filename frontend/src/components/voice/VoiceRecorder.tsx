@@ -1,21 +1,36 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type VoiceRecorderState = "idle" | "recording" | "transcribing";
 
 type VoiceRecorderProps = {
   disabled?: boolean;
+  shouldStop?: boolean;
   onRecordingStarted?: () => void;
+  onRecordingStopped?: () => void;
   onTranscript: (text: string) => Promise<void> | void;
   onTranscribe: (blob: Blob) => Promise<{ text: string }>;
 };
 
-export function VoiceRecorder({ disabled = false, onRecordingStarted, onTranscript, onTranscribe }: VoiceRecorderProps) {
+export function VoiceRecorder({
+  disabled = false,
+  shouldStop = false,
+  onRecordingStarted,
+  onRecordingStopped,
+  onTranscript,
+  onTranscribe,
+}: VoiceRecorderProps) {
   const [state, setState] = useState<VoiceRecorderState>("idle");
   const [error, setError] = useState<string | null>(null);
 
   const streamRef = useRef<MediaStream | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  useEffect(() => {
+    if (!shouldStop || state !== "recording") return;
+    recorderRef.current?.stop();
+    setState("transcribing");
+  }, [shouldStop, state]);
 
   async function startRecording() {
     if (disabled || state !== "idle") return;
@@ -42,6 +57,7 @@ export function VoiceRecorder({ disabled = false, onRecordingStarted, onTranscri
       };
 
       recorder.onstop = () => {
+        onRecordingStopped?.();
         void handleRecordingStop();
       };
 

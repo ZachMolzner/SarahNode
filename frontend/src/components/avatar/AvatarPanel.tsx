@@ -4,45 +4,31 @@ import { VRMAvatar } from "./VRMAvatar";
 
 type AvatarPanelProps = {
   avatarState: AvatarState;
-  latestReplyText?: string;
 };
 
-export function AvatarPanel({ avatarState, latestReplyText }: AvatarPanelProps) {
+export function AvatarPanel({ avatarState }: AvatarPanelProps) {
   return (
-    <section style={panelStyle}>
-      <h2 style={{ marginTop: 0 }}>Sarah Avatar</h2>
-      <p style={{ marginTop: 0, opacity: 0.85 }}>
-        Sarah.vrm loads automatically from <code>/assets/Sarah.vrm</code>. The avatar idles, blinks, and enters a
-        talking state during responses.
-      </p>
-
+    <section style={stageStyle}>
       <VRMAvatar avatarState={avatarState} />
-
       <div style={metaStyle}>
-        <span>Mode: {avatarState.mode}</span>
-        <span>Mood: {avatarState.mood}</span>
-        <span>Voice: {avatarState.isSpeaking ? "active" : "idle"}</span>
+        <span>Sarah • {avatarState.mode.replace("_", " ")}</span>
       </div>
-
-      <p style={{ marginBottom: 0, marginTop: 12, opacity: 0.85 }}>
-        Latest reply: {typeof latestReplyText === "string" ? latestReplyText : "No reply yet."}
-      </p>
     </section>
   );
 }
 
-const panelStyle: CSSProperties = {
-  border: "1px solid #2a2a2a",
-  borderRadius: 12,
-  padding: 14,
-  background: "#161616",
+const stageStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  position: "relative",
 };
 
 const metaStyle: CSSProperties = {
-  display: "flex",
-  gap: 12,
-  flexWrap: "wrap",
-  marginTop: 12,
-  fontSize: 14,
-  opacity: 0.95,
+  position: "absolute",
+  left: 14,
+  bottom: 10,
+  fontSize: 12,
+  opacity: 0.7,
+  letterSpacing: 0.3,
+  textTransform: "uppercase",
 };
