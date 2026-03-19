@@ -10,6 +10,10 @@ It uses:
 - **ElevenLabs** for real TTS audio (with mock fallback)
 - **Sarah.vrm** as the default visible assistant avatar
 
+Desktop branding identity is standardized to:
+- **App name**: `SarahNode`
+- **Desktop window title**: `SarahNode`
+
 ---
 
 ## Key Features
@@ -123,7 +127,42 @@ Tauri integration uses:
 - `beforeBuildCommand`: runs the existing frontend build
 - `frontendDist`: points Tauri to `frontend/dist` output
 
+Desktop launch behavior defaults:
+- Fullscreen immersive mode on startup (`fullscreen: true`)
+- Frameless presentation for reduced OS chrome (`decorations: false`)
+- Centering + maximized fallback retained for compatibility (`center: true`, `maximized: true`)
+- Title remains `SarahNode` when native title bars are enabled
+
 > Current backend expectation in this first desktop pass: run FastAPI separately (same as browser mode). Sidecar/backend bundling is intentionally deferred to a future phase for stability.
+
+### Desktop Icon Branding
+
+The source icon is maintained as text/vector at:
+
+- `frontend/src-tauri/icons/icon.svg`
+
+Design: bold **“S”** mark in blue with white outline for readability at small sizes.
+
+To generate platform binaries locally (not committed in git), run:
+
+```bash
+cd frontend/src-tauri
+cargo tauri icon icons/icon.svg
+```
+
+This generates standard Tauri icon outputs including PNG sizes and Windows `.ico`.
+
+### Changing Window Behavior Later
+
+If you want a less immersive startup for debugging or alternate workflows, edit:
+
+- `frontend/src-tauri/tauri.conf.json` → `app.windows[0]`
+
+Common toggles:
+- Set `fullscreen` to `false`
+- Keep `maximized: true` for large-window fallback
+- Set `decorations` to `true` to restore native title bar
+- Keep `resizable: true` for development flexibility
 
 ---
 
