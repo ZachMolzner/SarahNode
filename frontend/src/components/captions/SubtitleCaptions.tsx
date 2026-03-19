@@ -3,23 +3,30 @@ import { type CSSProperties, useEffect, useState } from "react";
 type SubtitleCaptionsProps = {
   speaker: "sarah" | "user" | null;
   text: string;
+  onVisibilityChange?: (visible: boolean) => void;
 };
 
 const CAPTION_TTL_MS = 5200;
 
-export function SubtitleCaptions({ speaker, text }: SubtitleCaptionsProps) {
+export function SubtitleCaptions({ speaker, text, onVisibilityChange }: SubtitleCaptionsProps) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
     if (!text.trim()) {
       setVisible(false);
+      onVisibilityChange?.(false);
       return;
     }
 
     setVisible(true);
+    onVisibilityChange?.(true);
     const hideTimer = window.setTimeout(() => setVisible(false), CAPTION_TTL_MS);
     return () => window.clearTimeout(hideTimer);
-  }, [text]);
+  }, [onVisibilityChange, text]);
+
+  useEffect(() => {
+    onVisibilityChange?.(visible);
+  }, [onVisibilityChange, visible]);
 
   if (!text.trim()) return null;
 

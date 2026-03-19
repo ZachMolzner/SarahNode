@@ -40,7 +40,11 @@ export function DashboardPage() {
   const [shutdownStatus, setShutdownStatus] = useState<"idle" | "starting" | "ended">("idle");
   const [captionText, setCaptionText] = useState("");
   const [captionSpeaker, setCaptionSpeaker] = useState<"sarah" | "user" | null>(null);
+  const [isCaptionVisible, setIsCaptionVisible] = useState(false);
   const [fallbackSpeechUntil, setFallbackSpeechUntil] = useState(0);
+  const [lastTranscriptAt, setLastTranscriptAt] = useState(0);
+  const [lastUserSpeechAt, setLastUserSpeechAt] = useState(0);
+  const [lastReplyAt, setLastReplyAt] = useState(0);
 
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
@@ -133,6 +137,7 @@ export function DashboardPage() {
 
     setCaptionSpeaker("sarah");
     setCaptionText(replyText);
+    setLastReplyAt(Date.now());
 
     const ttsAlreadyHandled = processedTtsKeyRef.current.startsWith(replyEvent.timestamp);
     if (!ttsAlreadyHandled) {
@@ -246,8 +251,21 @@ export function DashboardPage() {
   return (
     <main style={pageStyle}>
       <div style={stageStyle}>
-        <AvatarPanel avatarState={avatarState} />
-        <SubtitleCaptions speaker={captionSpeaker} text={captionText} />
+        <AvatarPanel
+          avatarState={avatarState}
+          overlayVisibility={{
+            controlsOpen: isControlsOpen,
+            transcriptOpen: isTranscriptOpen,
+            captionsVisible: isCaptionVisible,
+            shutdownVisible: shutdownStatus !== "idle",
+          }}
+          presenceSignals={{
+            transcriptEventAtMs: lastTranscriptAt,
+            userSpokeAtMs: lastUserSpeechAt,
+            replyAtMs: lastReplyAt,
+          }}
+        />
+        <SubtitleCaptions speaker={captionSpeaker} text={captionText} onVisibilityChange={setIsCaptionVisible} />
 
         <div style={topOverlayStyle}>
           <Pill label={`Connection: ${connectionState}`} muted={connectionState !== "open"} />
@@ -275,6 +293,8 @@ export function DashboardPage() {
             onTranscript={async (text) => {
               setCaptionSpeaker("user");
               setCaptionText(text);
+              setLastTranscriptAt(Date.now());
+              setLastUserSpeechAt(Date.now());
               setContent(text);
               await handleSend(text);
             }}

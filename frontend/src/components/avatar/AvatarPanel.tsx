@@ -2,14 +2,21 @@ import { type CSSProperties, useMemo, useRef } from "react";
 import type { AvatarState } from "../../types/avatar";
 import { VRMAvatar } from "./VRMAvatar";
 import { useStageController } from "../../lib/stageController";
+import type { OverlayVisibility } from "../../lib/stageZones";
+import type { PresenceSignals } from "../../hooks/usePresenceBehavior";
 
 type AvatarPanelProps = {
   avatarState: AvatarState;
+  overlayVisibility: OverlayVisibility;
+  presenceSignals: PresenceSignals;
 };
 
-export function AvatarPanel({ avatarState }: AvatarPanelProps) {
+export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals }: AvatarPanelProps) {
   const stageRef = useRef<HTMLElement | null>(null);
-  const stageMotion = useStageController(avatarState.mode, stageRef);
+  const stageMotion = useStageController(avatarState.mode, stageRef, {
+    overlays: overlayVisibility,
+    signals: presenceSignals,
+  });
 
   const glowColor = useMemo(() => {
     if (avatarState.mode === "shutting_down") return "rgba(151, 126, 190, 0.26)";
@@ -41,7 +48,9 @@ export function AvatarPanel({ avatarState }: AvatarPanelProps) {
       </div>
 
       <div style={metaStyle}>
-        <span>Sarah • {stageMotion.movementState.replace("_", " ")}</span>
+        <span>
+          Sarah • {stageMotion.movementState.replace("_", " ")} • {stageMotion.preferredZone.replace("_", " ")}
+        </span>
       </div>
     </section>
   );
