@@ -6,7 +6,7 @@ import { emitVoiceEvent, fetchAssistantState, sendAssistantMessage, transcribeAu
 import { AvatarPanel } from "../components/avatar/AvatarPanel";
 import { useAvatarState } from "../hooks/useAvatarState";
 import { VoiceRecorder } from "../components/voice/VoiceRecorder";
-import { browserAppShell } from "../lib/appShell";
+import { createAppShell } from "../lib/appShell";
 import { isShutdownCancellation, isShutdownConfirmation, matchShutdownIntent } from "../lib/shutdownIntent";
 import { runShutdownFlow } from "../lib/shutdownController";
 import { SubtitleCaptions } from "../components/captions/SubtitleCaptions";
@@ -58,6 +58,7 @@ export function DashboardPage() {
     })
   );
 
+  const appShell = useMemo(() => createAppShell(), []);
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
@@ -210,7 +211,7 @@ export function DashboardPage() {
       stopListening: () => setVoiceStatus("stopping"),
       stopAudio: stopAudioPlayback,
       stopAvatarSpeech: () => setIsAudioPlaying(false),
-      appShell: browserAppShell,
+      appShell,
     });
 
     if (result === "fallback") {
