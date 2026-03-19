@@ -21,6 +21,7 @@ export class OverlayController {
   private readonly mode: DisplayModeState;
   private readonly config: OverlayInteractionConfig;
   private interactionRegion: HTMLElement | null = null;
+  private secondaryInteractionRegion: HTMLElement | null = null;
   private started = false;
   private ignoreCursorEvents = false;
   private enableTimer: number | null = null;
@@ -40,6 +41,10 @@ export class OverlayController {
 
   setInteractionRegion(element: HTMLElement | null) {
     this.interactionRegion = element;
+  }
+
+  setSecondaryInteractionRegion(element: HTMLElement | null) {
+    this.secondaryInteractionRegion = element;
   }
 
   async start(): Promise<void> {
@@ -96,17 +101,17 @@ export class OverlayController {
   }
 
   private isPointerInsideRegion(clientX: number, clientY: number): boolean {
-    if (!this.interactionRegion) return false;
-
-    const rect = this.interactionRegion.getBoundingClientRect();
     const padding = this.config.hitRegionPaddingPx;
-
-    return (
-      clientX >= rect.left - padding &&
-      clientX <= rect.right + padding &&
-      clientY >= rect.top - padding &&
-      clientY <= rect.bottom + padding
-    );
+    const regions = [this.interactionRegion, this.secondaryInteractionRegion].filter((region): region is HTMLElement => Boolean(region));
+    return regions.some((region) => {
+      const rect = region.getBoundingClientRect();
+      return (
+        clientX >= rect.left - padding &&
+        clientX <= rect.right + padding &&
+        clientY >= rect.top - padding &&
+        clientY <= rect.bottom + padding
+      );
+    });
   }
 
   private readonly handlePointerMove = (event: PointerEvent) => {

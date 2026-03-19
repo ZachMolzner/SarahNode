@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { WebAnswerSource } from "../lib/webGroundedAnswer";
 
 export type WebAnswerViewModel = {
@@ -14,6 +14,7 @@ type WebAnswerTextboxProps = {
   visible: boolean;
   onInteractionChange: (interacting: boolean) => void;
   onSourceExpansionChange: (expanded: boolean) => void;
+  onInteractionRegionReady?: (element: HTMLElement | null) => void;
 };
 
 export function WebAnswerTextbox({
@@ -22,8 +23,12 @@ export function WebAnswerTextbox({
   visible,
   onInteractionChange,
   onSourceExpansionChange,
+  onInteractionRegionReady,
 }: WebAnswerTextboxProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsedSources);
+  const [hovered, setHovered] = useState(false);
+  const [focusedWithin, setFocusedWithin] = useState(false);
+  const rootRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     setCollapsed(defaultCollapsedSources);
@@ -33,17 +38,34 @@ export function WebAnswerTextbox({
     onSourceExpansionChange(!collapsed);
   }, [collapsed, onSourceExpansionChange]);
 
+  useEffect(() => {
+    onInteractionChange(hovered || focusedWithin);
+  }, [focusedWithin, hovered, onInteractionChange]);
+
+  useEffect(() => {
+    onInteractionRegionReady?.(rootRef.current);
+    return () => onInteractionRegionReady?.(null);
+  }, [onInteractionRegionReady]);
+
   const modeAwareStyle = useMemo(() => (answer?.mode === "overlay" ? overlayBoxStyle : immersiveBoxStyle), [answer?.mode]);
 
   if (!answer || !visible) return null;
 
   return (
     <aside
+      ref={rootRef}
       style={{ ...boxStyle, ...modeAwareStyle }}
-      onMouseEnter={() => onInteractionChange(true)}
-      onMouseLeave={() => onInteractionChange(false)}
-      onFocusCapture={() => onInteractionChange(true)}
-      onBlurCapture={() => onInteractionChange(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocusedWithin(true)}
+      onBlurCapture={(event) => {
+        const nextTarget = event.relatedTarget as Node | null;
+        if (!event.currentTarget.contains(nextTarget)) {
+          setFocusedWithin(false);
+        }
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
     >
       <div style={badgeStyle}>Checked live web</div>
       <h3 style={titleStyle}>{answer.title}</h3>
@@ -90,6 +112,10 @@ const boxStyle: CSSProperties = {
   zIndex: 24,
   lineHeight: 1.4,
   transition: "opacity 220ms ease, transform 260ms ease",
+  pointerEvents: "auto",
+  userSelect: "text",
+  overflowY: "auto",
+  maxHeight: "min(68vh, 620px)",
 };
 
 const overlayBoxStyle: CSSProperties = {

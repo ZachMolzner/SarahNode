@@ -34,6 +34,7 @@ export type VoiceStatus = {
 type VoiceOrchestratorDeps = {
   onCaption: (text: string) => void;
   onPlaybackStateChange: (isPlaying: boolean) => void;
+  onPlaybackAmplitudeChange?: (amplitude: number) => void;
   onDebugStatus?: (status: VoiceStatus) => void;
 };
 
@@ -84,7 +85,12 @@ function pickPreferredBrowserVoice(): SpeechSynthesisVoice | null {
 export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
   let activeAudio: HTMLAudioElement | null = null;
   let activeUtterance: SpeechSynthesisUtterance | null = null;
-  let replayAudio: HTMLAudioElement | null = null;
+  let replayAudioUrl: string | null = null;
+  let audioContext: AudioContext | null = null;
+  let analyser: AnalyserNode | null = null;
+  let sourceNode: MediaElementAudioSourceNode | null = null;
+  let analyserData: Uint8Array | null = null;
+  let analyserFrame: number | null = null;
 
   const status: VoiceStatus = {
     mode: "idle",
@@ -100,8 +106,77 @@ export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
 
   const notify = () => deps.onDebugStatus?.({ ...status });
 
+  const emitAmplitude = (next: number) => deps.onPlaybackAmplitudeChange?.(clamp(next, 0, 1));
+
+  const stopAmplitudeTracking = () => {
+    if (analyserFrame !== null) {
+      window.cancelAnimationFrame(analyserFrame);
+      analyserFrame = null;
+    }
+    if (sourceNode) {
+      try {
+        sourceNode.disconnect();
+      } catch {
+        // Keep teardown resilient across browser engines.
+      }
+      sourceNode = null;
+    }
+    if (analyser) {
+      try {
+        analyser.disconnect();
+      } catch {
+        // Keep teardown resilient across browser engines.
+      }
+      analyser = null;
+    }
+    analyserData = null;
+    emitAmplitude(0);
+  };
+
+  const startAmplitudeTracking = async (audio: HTMLAudioElement) => {
+    if (typeof window === "undefined" || typeof window.AudioContext === "undefined") {
+      emitAmplitude(0);
+      return;
+    }
+
+    stopAmplitudeTracking();
+    audioContext = audioContext ?? new window.AudioContext();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume().catch(() => null);
+    }
+
+    analyser = audioContext.createAnalyser();
+    analyser.fftSize = 1024;
+    analyser.smoothingTimeConstant = 0.06;
+    analyserData = new Uint8Array(analyser.fftSize);
+
+    sourceNode = audioContext.createMediaElementSource(audio);
+    sourceNode.connect(analyser);
+    analyser.connect(audioContext.destination);
+
+    const tick = () => {
+      if (!analyser || !analyserData) return;
+      analyser.getByteTimeDomainData(analyserData);
+
+      let sumSquares = 0;
+      for (let i = 0; i < analyserData.length; i += 1) {
+        const centered = (analyserData[i] - 128) / 128;
+        sumSquares += centered * centered;
+      }
+      const rms = Math.sqrt(sumSquares / analyserData.length);
+      const gated = Math.max(0, rms - 0.012);
+      const normalized = clamp(gated * 5.2, 0, 1);
+      emitAmplitude(normalized);
+
+      analyserFrame = window.requestAnimationFrame(tick);
+    };
+
+    analyserFrame = window.requestAnimationFrame(tick);
+  };
+
   const clearSpeaking = () => {
     status.mode = "idle";
+    stopAmplitudeTracking();
     deps.onPlaybackStateChange(false);
     notify();
   };
@@ -111,6 +186,7 @@ export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
       activeAudio.pause();
       activeAudio = null;
     }
+    stopAmplitudeTracking();
 
     if (canUseBrowserSpeech()) {
       window.speechSynthesis.cancel();
@@ -120,11 +196,44 @@ export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
   };
 
   const replayLastAudio = async () => {
-    if (!replayAudio) return false;
+    if (!replayAudioUrl) return false;
     try {
-      replayAudio.currentTime = 0;
-      await replayAudio.play();
-      return true;
+      stopSpeaking();
+      const audio = new Audio(replayAudioUrl);
+      activeAudio = audio;
+      const played = await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const finalize = (result: boolean) => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
+        audio.onplaying = () => {
+          status.mode = "playing_audio";
+          status.provider = "elevenlabs";
+          status.usingFallback = false;
+          deps.onPlaybackStateChange(true);
+          void startAmplitudeTracking(audio);
+          notify();
+        };
+        audio.onended = () => {
+          if (activeAudio === audio) activeAudio = null;
+          clearSpeaking();
+          finalize(true);
+        };
+        audio.onerror = () => {
+          if (activeAudio === audio) activeAudio = null;
+          clearSpeaking();
+          finalize(false);
+        };
+
+        void audio.play().catch(() => {
+          if (activeAudio === audio) activeAudio = null;
+          clearSpeaking();
+          finalize(false);
+        });
+      });
+      return played;
     } catch {
       return false;
     }
@@ -196,30 +305,42 @@ export function createVoiceOrchestrator(deps: VoiceOrchestratorDeps) {
     if (audioSource && normalizedProvider === SARAH_VOICE_PROFILE.elevenLabs.provider) {
       const audio = new Audio(audioSource);
       activeAudio = audio;
-      replayAudio = audio;
+      replayAudioUrl = audioSource;
       status.hasReplayableAudio = true;
 
       const played = await new Promise<boolean>((resolve) => {
+        let settled = false;
+        const finalize = (result: boolean) => {
+          if (settled) return;
+          settled = true;
+          resolve(result);
+        };
         audio.onplaying = () => {
           status.mode = "playing_audio";
           status.provider = "elevenlabs";
           status.usingFallback = false;
           deps.onPlaybackStateChange(true);
+          void startAmplitudeTracking(audio);
           notify();
         };
         audio.onended = () => {
           if (activeAudio === audio) activeAudio = null;
           clearSpeaking();
-          resolve(true);
+          finalize(true);
         };
         audio.onerror = () => {
           status.lastError = "ElevenLabs audio playback failed";
           if (activeAudio === audio) activeAudio = null;
           clearSpeaking();
-          resolve(false);
+          finalize(false);
         };
 
-        void audio.play().then(() => resolve(true)).catch(() => resolve(false));
+        void audio.play().catch(() => {
+          status.lastError = "ElevenLabs audio playback failed";
+          if (activeAudio === audio) activeAudio = null;
+          clearSpeaking();
+          finalize(false);
+        });
       });
 
       if (played) return true;

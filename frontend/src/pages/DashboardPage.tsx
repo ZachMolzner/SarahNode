@@ -33,6 +33,8 @@ export function DashboardPage() {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
+  const [playbackAmplitude, setPlaybackAmplitude] = useState(0);
+  const [mouthOpenAmount, setMouthOpenAmount] = useState(0);
   const [audioReady, setAudioReady] = useState(false);
   const [llmStatus, setLlmStatus] = useState("loading");
   const [ttsStatus, setTtsStatus] = useState("loading");
@@ -69,6 +71,7 @@ export function DashboardPage() {
         setCaptionText(text);
       },
       onPlaybackStateChange: (isPlaying) => setIsAudioPlaying(isPlaying),
+      onPlaybackAmplitudeChange: (amplitude) => setPlaybackAmplitude(amplitude),
     })
   );
 
@@ -81,6 +84,7 @@ export function DashboardPage() {
   const overlayEnabled = isOverlayMode(displayMode);
   const [overlayControlsVisible, setOverlayControlsVisible] = useState(false);
   const overlayControllerRef = useRef<OverlayController | null>(null);
+  const webPanelRegionRef = useRef<HTMLElement | null>(null);
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
@@ -101,7 +105,7 @@ export function DashboardPage() {
                   ? "warm"
                   : baseAvatarState.mood,
           isSpeaking,
-          mouthIntensity: isAudioPlaying ? 0.8 : isSpeaking ? 0.58 : 0.02,
+          mouthIntensity: mouthOpenAmount,
         };
   const latestReplyText = typeof latestReply === "string" ? latestReply : "";
 
@@ -134,6 +138,21 @@ export function DashboardPage() {
   useEffect(() => {
     return () => voiceOrchestratorRef.current.stopSpeaking();
   }, []);
+
+  useEffect(() => {
+    let frame = 0;
+    let current = 0;
+    const tick = () => {
+      const target = isAudioPlaying ? Math.min(0.9, playbackAmplitude * 0.92) : 0;
+      const smoothing = isAudioPlaying ? 0.42 : 0.2;
+      current += (target - current) * smoothing;
+      const next = isAudioPlaying ? Math.max(0, current) : current < 0.008 ? 0 : current;
+      setMouthOpenAmount((prev) => (Math.abs(prev - next) > 0.01 || next === 0 ? next : prev));
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
+  }, [isAudioPlaying, playbackAmplitude]);
 
   useEffect(() => {
     void fetchAssistantState()
@@ -435,6 +454,11 @@ export function DashboardPage() {
   }, [isSpeaking]);
 
   useEffect(() => {
+    if (!overlayControllerRef.current) return;
+    overlayControllerRef.current.setSecondaryInteractionRegion(webPanelRegionRef.current);
+  }, [isWebAnswerVisible, webAnswer?.title]);
+
+  useEffect(() => {
     setWebAnswer((current) => (current ? { ...current, mode: overlayEnabled ? "overlay" : "immersive" } : current));
   }, [overlayEnabled]);
 
@@ -605,6 +629,10 @@ export function DashboardPage() {
           defaultCollapsedSources={settings.showSourceFooterCollapsed}
           onInteractionChange={setIsWebAnswerInteracting}
           onSourceExpansionChange={setHasExpandedSources}
+          onInteractionRegionReady={(element) => {
+            webPanelRegionRef.current = element;
+            overlayControllerRef.current?.setSecondaryInteractionRegion(element);
+          }}
         />
 
         {shutdownStatus === "ended" ? (
