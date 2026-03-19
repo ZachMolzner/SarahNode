@@ -21,6 +21,12 @@ import { useSettingsStore } from "../hooks/useSettingsStore";
 import { computeWebGroundedSignature, normalizeWebGroundedPayload, shouldKeepWebPanelPinned } from "../lib/webGroundedAnswer";
 import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
 
+const EXPRESSION_REACTION_COOLDOWN_MS = {
+  interrupted: 2400,
+  error: 2800,
+  groundedResult: 3600,
+} as const;
+
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
   const processedTtsKeyRef = useRef<string>("");
@@ -76,6 +82,11 @@ export function DashboardPage() {
   const latestGroundedEventRef = useRef<string>("");
   const lastGroundedSignatureRef = useRef<string>("");
   const groundedDismissTimerRef = useRef<number | null>(null);
+  const reactionCooldownRef = useRef({
+    interrupted: 0,
+    error: 0,
+    groundedResult: 0,
+  });
   const voiceOrchestratorRef = useRef(
     createVoiceOrchestrator({
       onCaption: (text) => {
@@ -86,6 +97,14 @@ export function DashboardPage() {
       onPlaybackAmplitudeChange: (amplitude) => setPlaybackAmplitude(amplitude),
     })
   );
+
+  const stampReactionWithCooldown = useCallback((key: keyof typeof EXPRESSION_REACTION_COOLDOWN_MS, setter: (value: number) => void) => {
+    const now = Date.now();
+    if (now - reactionCooldownRef.current[key] < EXPRESSION_REACTION_COOLDOWN_MS[key]) return false;
+    reactionCooldownRef.current[key] = now;
+    setter(now);
+    return true;
+  }, []);
 
   const appShell = useMemo(() => createAppShell(), []);
   const { settings, settingsReady, settingsOpen, setSettingsOpen, updateSettings, windowBridge } = useSettingsStore();
@@ -328,9 +347,9 @@ export function DashboardPage() {
       sources: normalized.sources,
       mode: overlayEnabled ? "overlay" : "immersive",
     });
-    setLastWebGroundedAt(Date.now());
+    stampReactionWithCooldown("groundedResult", setLastWebGroundedAt);
     if (normalized.bullets.length === 0) {
-      setNoResultAt(Date.now());
+      stampReactionWithCooldown("error", setNoResultAt);
     }
     setIsWebAnswerVisible(true);
 
@@ -342,7 +361,7 @@ export function DashboardPage() {
     }
 
     scheduleWebAnswerDismiss(identicalPayload ? 2600 : 7000);
-  }, [events, overlayEnabled, scheduleWebAnswerDismiss, settings.voiceOutputEnabled]);
+  }, [events, overlayEnabled, scheduleWebAnswerDismiss, settings.voiceOutputEnabled, stampReactionWithCooldown]);
 
   useEffect(() => {
     if (!isWebAnswerVisible) return;
@@ -371,7 +390,7 @@ export function DashboardPage() {
   }, [events]);
 
   function stopAudioPlayback() {
-    if (isSpeaking) setInterruptedAt(Date.now());
+    if (isSpeaking) stampReactionWithCooldown("interrupted", setInterruptedAt);
     voiceOrchestratorRef.current.stopSpeaking();
   }
 
@@ -448,7 +467,7 @@ export function DashboardPage() {
       await sendAssistantMessage({ username, content: messageText, priority });
       setContent("");
     } catch (err) {
-      setErrorAt(Date.now());
+      stampReactionWithCooldown("error", setErrorAt);
       setError(err instanceof Error ? err.message : "Failed to send message to assistant.");
     } finally {
       setIsSending(false);
@@ -522,9 +541,9 @@ export function DashboardPage() {
     if (!errorEvent || processedErrorKeyRef.current === eventKey) return;
     processedErrorKeyRef.current = eventKey;
     if (errorEvent) {
-      setErrorAt(Date.now());
+      stampReactionWithCooldown("error", setErrorAt);
     }
-  }, [events]);
+  }, [events, stampReactionWithCooldown]);
 
   useEffect(() => {
     if (!overlayControllerRef.current) return;
@@ -597,7 +616,7 @@ export function DashboardPage() {
               setVoiceStatus("listening");
               setListeningStartedAt(Date.now());
               setInteractionStartedAt(Date.now());
-              if (isSpeaking) setInterruptedAt(Date.now());
+              if (isSpeaking) stampReactionWithCooldown("interrupted", setInterruptedAt);
               void emitVoiceEvent("voice:recording_started");
             }}
             onRecordingStopped={() => {

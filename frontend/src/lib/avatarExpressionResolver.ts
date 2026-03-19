@@ -29,13 +29,19 @@ export type ExpressionResolverOutput = {
 };
 
 const REACTION_MS = {
-  summoned_perk: 1400,
-  interaction_start: 900,
-  grounded_result: 1800,
-  source_expanded: 1500,
-  interrupted: 1100,
-  error: 1900,
+  summoned_perk: 1050,
+  interaction_start: 760,
+  grounded_result: 1450,
+  source_expanded: 900,
+  interrupted: 820,
+  error: 1600,
 } as const;
+
+const SEARCH_FOCUS_HOLD_MS = 1200;
+const SPEAKING_SETTLE_MS = 1200;
+const INTERRUPTION_RECOVERY_MS = 1400;
+const ERROR_RECOVERY_MS = 1750;
+const SOURCE_ACK_PULSE_MS = 520;
 
 function isRecent(nowMs: number, atMs: number, windowMs: number) {
   return atMs > 0 && nowMs - atMs >= 0 && nowMs - atMs <= windowMs;
@@ -63,7 +69,7 @@ function reactionFromInput(input: ExpressionResolverInput): AvatarReaction {
     return "grounded_result";
   }
 
-  if (isRecent(input.nowMs, input.searchStartedAtMs, 1800)) {
+  if (isRecent(input.nowMs, input.searchStartedAtMs, SEARCH_FOCUS_HOLD_MS)) {
     return "interaction_start";
   }
 
@@ -94,14 +100,44 @@ export function resolveAvatarExpression(input: ExpressionResolverInput): Express
   if (reaction === "grounded_result") expression = "presenting";
   if (reaction === "source_expanded") expression = "focused";
 
-  if (input.speakingEndedAtMs > 0 && input.nowMs - input.speakingEndedAtMs < 900 && !input.isSpeaking) {
+  const sinceSpeakingEnded = input.speakingEndedAtMs > 0 ? input.nowMs - input.speakingEndedAtMs : Number.POSITIVE_INFINITY;
+  const withinSpeakingSettle = !input.isSpeaking && sinceSpeakingEnded >= 0 && sinceSpeakingEnded < SPEAKING_SETTLE_MS;
+  if (withinSpeakingSettle) {
     expression = "attentive";
   }
 
-  const intensityBase = input.isOverlayMode ? 0.78 : 1;
-  const intensityBoost =
-    reaction === "none" ? 0 : reaction === "error" ? 0.18 : reaction === "interrupted" ? 0.22 : 0.12;
-  const intensity = Math.min(1, intensityBase + intensityBoost);
+  const withinInterruptionRecovery =
+    input.interruptedAtMs > 0 &&
+    input.nowMs - input.interruptedAtMs > REACTION_MS.interrupted &&
+    input.nowMs - input.interruptedAtMs <= INTERRUPTION_RECOVERY_MS &&
+    !input.isSpeaking;
+
+  const withinErrorRecovery =
+    (input.errorAtMs > 0 && input.nowMs - input.errorAtMs > REACTION_MS.error && input.nowMs - input.errorAtMs <= ERROR_RECOVERY_MS) ||
+    (input.noResultAtMs > 0 &&
+      input.nowMs - input.noResultAtMs > REACTION_MS.error &&
+      input.nowMs - input.noResultAtMs <= ERROR_RECOVERY_MS);
+
+  if ((withinInterruptionRecovery || withinErrorRecovery) && !input.isPresenting) {
+    expression = "attentive";
+  }
+
+  const sourcePulseBoost = isRecent(input.nowMs, input.sourceExpandedAtMs, SOURCE_ACK_PULSE_MS) ? 0.03 : 0;
+  const overlayBase = input.isOverlayMode ? 0.69 : 0.85;
+  const immersiveBoost = input.isOverlayMode ? 0 : 0.06;
+  const reactionBoost =
+    reaction === "none"
+      ? 0
+      : reaction === "interrupted"
+        ? 0.11
+        : reaction === "error"
+          ? 0.08
+          : reaction === "grounded_result"
+            ? 0.06
+            : 0.045;
+  const modeExpressionBias = input.isOverlayMode && (expression === "surprised" || expression === "apologetic") ? -0.02 : 0;
+  const settleReduction = withinSpeakingSettle || withinInterruptionRecovery || withinErrorRecovery ? -0.04 : 0;
+  const intensity = Math.min(1, Math.max(0.56, overlayBase + immersiveBoost + reactionBoost + sourcePulseBoost + modeExpressionBias + settleReduction));
 
   const mood: AvatarMood =
     expression === "warm"
