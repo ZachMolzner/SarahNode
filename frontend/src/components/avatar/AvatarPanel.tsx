@@ -52,46 +52,57 @@ export function AvatarPanel({
     return "rgba(145, 167, 255, 0.2)";
   }, [avatarState.mode, avatarState.reaction]);
 
-  const showCinematicBackdrop = displayMode.activeMode === "immersive" && !reducedEffects;
   const isOverlayGrounded = displayMode.activeMode === "overlay";
-  const glowIntensity = showCinematicBackdrop ? 1 + gesturePerformance.glowBoost : 0.18;
+  const dynamicAvatarScale = useMemo(() => {
+    if (avatarState.mode === "idle") return 0.84;
+    if (avatarState.mode === "listening" || avatarState.mode === "thinking") return 0.9;
+    if (avatarState.mode === "talking" || avatarState.mode === "presenting") return 0.97;
+    if (avatarState.mode === "shutting_down") return 0.88;
+    return 0.9;
+  }, [avatarState.mode]);
+
+  const glowIntensity = Math.min(0.35, 0.18 + gesturePerformance.glowBoost * 0.16);
 
   return (
     <section ref={stageRef} style={stageStyle}>
-      {showCinematicBackdrop ? <div style={backdropLayerStyle} /> : null}
-      {showCinematicBackdrop ? <div style={vignetteLayerStyle} /> : null}
-      {showCinematicBackdrop ? (
-        <div
-          style={{
-            ...spotlightLayerStyle,
-            background: `radial-gradient(circle at 50% 50%, ${glowColor} 0%, rgba(10, 13, 24, 0.02) 60%, transparent 78%)`,
-            opacity: Math.min(1, 0.82 * glowIntensity),
-            transform: `${stageMotion.transform} scale(${Math.min(1.08, 0.98 + glowIntensity * 0.04)}) translateZ(0)`,
-          }}
-        />
-      ) : null}
+      <div
+        style={{
+          ...spotlightLayerStyle,
+          background: `radial-gradient(circle at 50% 50%, ${glowColor} 0%, rgba(10, 13, 24, 0.01) 58%, transparent 76%)`,
+          opacity: glowIntensity,
+          transform: `${stageMotion.transform} scale(0.94) translateZ(0)`,
+        }}
+      />
 
       <div
         ref={interactionRegionRef}
           style={{
             ...interactionRegionStyle,
-            top: isOverlayGrounded ? "72%" : interactionRegionStyle.top,
-            height: isOverlayGrounded ? "min(58vh, 620px)" : reducedEffects ? "min(74vh, 760px)" : interactionRegionStyle.height,
+            top: isOverlayGrounded ? "74%" : interactionRegionStyle.top,
+            height: isOverlayGrounded ? "min(52vh, 520px)" : reducedEffects ? "min(52vh, 520px)" : interactionRegionStyle.height,
           }}
           aria-label="Sarah interaction region"
       >
         <div
           style={{
-            ...avatarAnchorStyle,
-            transform: `${stageMotion.transform} scaleX(${stageMotion.facingDirection})`,
+            ...avatarMotionStyle,
+            transform: `${stageMotion.transform} scale(${dynamicAvatarScale})`,
+            transition: "transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1)",
           }}
         >
-          <VRMAvatar
-            avatarState={avatarState}
-            stageMotion={stageMotion}
-            gesturePerformance={gesturePerformance}
-            reducedEffects={reducedEffects}
-          />
+          <div
+            style={{
+              ...avatarAnchorStyle,
+              transform: `translate(-50%, -50%) scaleX(${stageMotion.facingDirection})`,
+            }}
+          >
+            <VRMAvatar
+              avatarState={avatarState}
+              stageMotion={stageMotion}
+              gesturePerformance={gesturePerformance}
+              reducedEffects={reducedEffects}
+            />
+          </div>
         </div>
       </div>
 
@@ -113,47 +124,38 @@ const stageStyle: CSSProperties = {
   isolation: "isolate",
 };
 
-const backdropLayerStyle: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background:
-    "linear-gradient(180deg, #141c33 0%, #0b1020 35%, #070a14 65%, #04060d 100%), radial-gradient(circle at 25% 20%, rgba(79, 112, 186, 0.25), transparent 45%)",
-};
-
-const vignetteLayerStyle: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  background: "radial-gradient(circle at 50% 55%, rgba(13, 17, 31, 0.03), rgba(4, 6, 12, 0.72) 85%)",
-};
-
 const spotlightLayerStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
-  top: "57%",
-  width: "min(66vw, 540px)",
-  height: "min(66vw, 540px)",
-  filter: "blur(5px)",
+  top: "62%",
+  width: "min(46vw, 340px)",
+  height: "min(46vw, 340px)",
+  filter: "blur(6px)",
   pointerEvents: "none",
 };
 
 const interactionRegionStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
-  top: "57%",
-  width: "min(68vw, 640px)",
-  height: "min(88vh, 920px)",
+  top: "64%",
+  width: "min(52vw, 460px)",
+  height: "min(54vh, 560px)",
   transform: "translate(-50%, -50%)",
   pointerEvents: "none",
+};
+
+const avatarMotionStyle: CSSProperties = {
+  position: "absolute",
+  inset: 0,
 };
 
 const avatarAnchorStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
   top: "50%",
-  width: "min(62vw, 560px)",
-  height: "min(84vh, 860px)",
-  maxHeight: "86vh",
-  transform: "translate(-50%, -50%)",
+  width: "min(34vw, 340px)",
+  height: "min(50vh, 500px)",
+  maxHeight: "52vh",
 };
 
 const metaStyle: CSSProperties = {

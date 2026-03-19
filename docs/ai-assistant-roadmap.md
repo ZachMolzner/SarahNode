@@ -35,6 +35,13 @@ SarahNode currently runs as:
 - Add richer expression mapping from assistant events
 - Support plug-in renderer choices without coupling core assistant behavior to avatar tech
 
+### Milestone E — Self-contained Windows runtime
+
+- Package frontend + backend + local data as one desktop application
+- Remove manual backend startup for end users
+- Add local/offline adapters for LLM/STT/TTS to support local-only mode
+- Keep external/cloud providers optional rather than required
+
 ## Design principles
 
 - Local-first defaults

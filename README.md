@@ -25,8 +25,8 @@ Desktop branding identity is standardized to:
   - `TTS_PROVIDER=auto|mock|elevenlabs`
   - `STT_PROVIDER=auto|openai`
 - Automatic fallback behavior and clear errors when required credentials are missing.
-- Immersive avatar-first launch mode where Sarah is the dominant fullscreen presence.
-- Cinematic stage presentation with layered gradients, spotlight glow, and subtle depth/vignette treatment to keep Sarah as the focal point.
+- Modern desktop companion layout with clean assistant-first panels and restrained visual treatment.
+- Companion-safe avatar framing with capped full-body height (about half-screen by default).
 - Presence behavior system: Sarah now uses deterministic contextual stage behavior (not random motion) to choose where to stand, when to approach, and when to settle.
 - Reactive gesture/performance system layered above movement + presence for intentional startup greeting, listening acknowledgments, thinking posture, response-delivery emphasis, and calm reset behavior.
 - Stage zones and contextual occupancy: center presentation, relaxed side anchors, listening anchor, caption-friendly zone, and shutdown settle zone.
@@ -84,7 +84,7 @@ When a message indicates freshness or explicit web lookup need, Sarah now runs:
 If no provider is configured, Sarah answers honestly that live browsing is unavailable.
 
 ### Frontend (`/frontend`)
-- Immersive React stage with Sarah centered by default and controls behind compact overlays/drawers.
+- Modern React desktop companion stage with Sarah anchored near desktop baseline and side panels for controls/web answers.
 - Push-to-talk microphone capture via `getUserMedia` + `MediaRecorder`.
 - Transcript is auto-submitted through the existing assistant text message path.
 - Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm` with smooth mood/state transitions.
@@ -97,6 +97,37 @@ If no provider is configured, Sarah answers honestly that live browsing is unava
 - Auto-play + replay support for generated speech audio.
 
 ---
+
+
+## Windows Single-App Packaging Direction (Target: self-contained .exe)
+
+SarahNode is being aligned to a **single local Windows executable** target:
+
+- One installer / executable entrypoint for end users
+- Bundled UI + API + local data storage
+- No hosted infrastructure required for core runtime
+- No manual backend startup step for normal desktop usage
+
+### Dependency audit for local-first runtime
+
+| Component | Current state | Local/bundled target |
+|---|---|---|
+| Frontend (React/Vite) | Bundled into Tauri desktop shell | Keep bundled |
+| Desktop shell (Tauri) | Bundled | Keep bundled, default companion-sized window |
+| FastAPI backend | Separate process in dev flow | Launch as bundled sidecar/background process from Tauri |
+| Identity/memory data | Local JSON files | Keep local, bundle schema/defaults, persist in app data dir |
+| OpenAI LLM | External API dependency | Optional cloud mode; add local model adapter for offline mode |
+| OpenAI STT | External API dependency | Add local/offline STT adapter and runtime packaging |
+| ElevenLabs TTS | External API dependency | Keep browser/local fallback now; add local TTS adapter for full offline mode |
+| Web search providers | External dependency | Disable in offline mode with explicit user messaging |
+
+### Packaging architecture notes (in progress)
+
+1. Tauri app starts and initializes local settings/storage paths.
+2. App launches bundled backend sidecar (FastAPI) on localhost ephemeral port.
+3. Frontend resolves API base URL from runtime bridge (no hardcoded manual server setup).
+4. On app close/tray exit, frontend requests graceful backend shutdown.
+5. Offline mode profile forces local model/tts/stt adapters and disables remote web search.
 
 ## Setup
 
@@ -194,7 +225,7 @@ Overlay mode details (Tauri desktop):
 - Sarah interaction region temporarily re-enables clicks, then restores click-through on leave.
 - Interaction hit-testing is region/bounds-based (not per-pixel mesh hit-testing).
 
-> Current backend expectation in this first desktop pass: run FastAPI separately (same as browser mode). Sidecar/backend bundling is intentionally deferred to a future phase for stability.
+> Packaging transition status: current builds still launch FastAPI separately during development. Production target is a single Windows app bundle that includes the backend runtime, frontend assets, and local data directories with no manual backend startup.
 
 ### Desktop Icon Branding
 

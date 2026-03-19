@@ -38,7 +38,7 @@ class IdentityService:
             display_name="Zach",
             preferred_address="Zach",
             relation=RelationType.self_user,
-            tone_preference=TonePreference.direct,
+            tone_preference=TonePreference.playful_flirt,
             response_style=ResponseStyle.concise,
         )
         aleena = PersonProfile(
@@ -299,6 +299,7 @@ class IdentityService:
             return AddressingContext(
                 mode="shared",
                 address_name="Zach and Aleena",
+                tone_directive="Use warm collaborative language; avoid flirtatious phrasing in shared mode.",
                 deterministic_rule="Shared context uses household addressing",
             )
 
@@ -308,6 +309,10 @@ class IdentityService:
                 mode="personal",
                 address_name=profile.preferred_address,
                 tone_hint=profile.tone_preference,
+                tone_directive=(
+                    "Zach-only tone: be playful and lightly flirtatious while remaining respectful, useful, and controlled. "
+                    "Keep technical guidance precise and concise."
+                ),
                 response_style_hint=profile.response_style,
                 deterministic_rule="Identified Zach: use direct concise defaults",
             )
@@ -327,6 +332,7 @@ class IdentityService:
                 allow_alternate=bool(profile.alternate_addresses),
                 alternate_candidates=profile.alternate_addresses,
                 tone_hint=profile.tone_preference,
+                tone_directive="Use warm and supportive tone for Aleena. Avoid flirtatious language.",
                 response_style_hint=profile.response_style,
                 deterministic_rule="Identified Aleena: default Aleena, occasional Mama",
             )
@@ -335,6 +341,7 @@ class IdentityService:
             mode="unknown",
             address_name="there",
             tone_hint=TonePreference.neutral,
+            tone_directive="Unknown speaker: keep tone neutral, polite, and practical.",
             response_style_hint=ResponseStyle.balanced,
             deterministic_rule="Unknown speaker fallback",
         )

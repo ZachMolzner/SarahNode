@@ -134,19 +134,19 @@ const boxStyle: CSSProperties = {
   pointerEvents: "auto",
   userSelect: "text",
   overflowY: "auto",
-  maxHeight: "min(68vh, 620px)",
+  maxHeight: "min(46vh, 420px)",
 };
 
 const overlayBoxStyle: CSSProperties = {
-  right: 18,
-  top: "24%",
-  width: "min(340px, 42vw)",
+  right: 20,
+  top: "30%",
+  width: "min(320px, 36vw)",
 };
 
 const immersiveBoxStyle: CSSProperties = {
-  right: 28,
-  top: "20%",
-  width: "min(430px, 46vw)",
+  right: 26,
+  top: "28%",
+  width: "min(360px, 34vw)",
 };
 
 const badgeStyle: CSSProperties = {

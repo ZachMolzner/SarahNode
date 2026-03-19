@@ -245,6 +245,7 @@ class StreamOrchestrator:
                     f"Deterministic identity: speaker={speaker_identity.speaker_id}, "
                     f"confidence={speaker_identity.confidence:.2f}, mode={addressing_context.mode}. "
                     f"Address as '{addressing_context.address_name}'. "
+                    f"Tone directive: {addressing_context.tone_directive} "
                     "If speaker is unknown, use neutral greetings like 'Hey there' or 'How can I help?'. "
                     "Do not invent nicknames. Never repeat 'Mama' more than once in a response."
                 ),
