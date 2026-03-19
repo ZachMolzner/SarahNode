@@ -1,5 +1,8 @@
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
-import { MovementController, type MovementSnapshot, type MovementState, type StagePoint } from "./movementController";
+import { MovementController, type MovementSnapshot, type MovementState } from "./movementController";
+import type { OverlayVisibility, StageZoneName } from "./stageZones";
+import { usePresenceBehavior, type PresenceSignals } from "../hooks/usePresenceBehavior";
+import type { AttentionTarget } from "./presenceController";
 
 export type DisplayRegion = {
   id: string;
@@ -17,6 +20,11 @@ export interface StageBoundsProvider {
   getBounds: () => { width: number; height: number };
 }
 
+export type StageBehaviorContext = {
+  overlays: OverlayVisibility;
+  signals: PresenceSignals;
+};
+
 export type StageMotion = {
   transform: string;
   movementState: MovementState;
@@ -24,6 +32,10 @@ export type StageMotion = {
   bob: number;
   lean: number;
   pace: number;
+  attentionTarget: AttentionTarget;
+  attentionOffset: { x: number; y: number };
+  engagementLevel: number;
+  preferredZone: StageZoneName;
 };
 
 export function createBrowserScreenEnvironment(): ScreenEnvironment {
@@ -61,27 +73,19 @@ export function createBrowserScreenEnvironment(): ScreenEnvironment {
   };
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function normalizeTarget(point: StagePoint): StagePoint {
-  return {
-    x: clamp(point.x, 0.18, 0.82),
-    y: clamp(point.y, 0.28, 0.76),
-  };
-}
-
-function nextIdleTarget(now: number): StagePoint {
-  const drift = (Math.sin(now * 0.00013) + 1) * 0.5;
-  return normalizeTarget({
-    x: 0.35 + drift * 0.3,
-    y: 0.56 + Math.cos(now * 0.00017) * 0.06,
-  });
-}
-
-export function useStageController(mode: MovementState, stageRef: RefObject<HTMLElement>): StageMotion {
+export function useStageController(
+  mode: MovementState,
+  stageRef: RefObject<HTMLElement>,
+  behaviorContext: StageBehaviorContext
+): StageMotion {
   const motionController = useRef<MovementController>(new MovementController({ x: 0.52, y: 0.58 }));
+  const computePresence = usePresenceBehavior();
+  const behaviorRef = useRef(behaviorContext);
+
+  useEffect(() => {
+    behaviorRef.current = behaviorContext;
+  }, [behaviorContext]);
+
   const [snapshot, setSnapshot] = useState<MovementSnapshot>({
     position: { x: 0.52, y: 0.58 },
     facingDirection: 1,
@@ -90,8 +94,14 @@ export function useStageController(mode: MovementState, stageRef: RefObject<HTML
     lean: 0,
     pace: 0,
   });
+  const [presenceSnapshot, setPresenceSnapshot] = useState({
+    attentionTarget: "idle_neutral" as AttentionTarget,
+    attentionOffset: { x: 0, y: 0 },
+    engagementLevel: 0.3,
+    preferredZone: "right_relaxed" as StageZoneName,
+  });
+
   const lastTimeRef = useRef<number>(performance.now());
-  const idleDeadlineRef = useRef<number>(performance.now() + 6500);
 
   const movementState = mode === "walking" ? "walking" : mode;
 
@@ -113,34 +123,39 @@ export function useStageController(mode: MovementState, stageRef: RefObject<HTML
       const deltaSeconds = Math.min(0.05, (now - lastTimeRef.current) / 1000);
       lastTimeRef.current = now;
 
-      const { width } = boundsProvider.getBounds();
-      const centerBias = width < 700 ? 0.5 : 0.56;
+      const bounds = boundsProvider.getBounds();
+      const currentPosition = motionController.current.getCurrentPosition();
+      const behavior = behaviorRef.current;
+      const presence = computePresence({
+        mode: movementState,
+        overlays: behavior.overlays,
+        bounds,
+        nowMs: now,
+        deltaSeconds,
+        currentPosition,
+        signals: behavior.signals,
+      });
 
-      if (movementState === "listening") {
-        motionController.current.setTarget({ x: centerBias, y: 0.58 });
-      } else if (movementState === "talking") {
-        motionController.current.setTarget({ x: centerBias + 0.02, y: 0.58 });
-      } else if (movementState === "thinking") {
-        motionController.current.setTarget({ x: centerBias + 0.05, y: 0.59 });
-      } else if (movementState === "shutting_down") {
-        motionController.current.setTarget({ x: centerBias, y: 0.62 });
-      } else {
-        if (now > idleDeadlineRef.current) {
-          motionController.current.setTarget(nextIdleTarget(now));
-          idleDeadlineRef.current = now + 9000 + Math.random() * 7000;
-        }
-      }
+      motionController.current.setTarget(presence.targetPosition);
 
       const regions = screenEnvironment.getRegions();
       const regionScale = regions.length > 1 ? 0.95 : 1;
-      const next = motionController.current.update(deltaSeconds * regionScale, movementState, now);
+      const willingnessScale = 0.85 + presence.movementWillingness;
+      const next = motionController.current.update(deltaSeconds * regionScale * willingnessScale, movementState, now);
       setSnapshot(next);
+      setPresenceSnapshot({
+        attentionTarget: presence.attentionTarget,
+        attentionOffset: presence.attentionOffset,
+        engagementLevel: presence.engagementLevel,
+        preferredZone: presence.preferredZone,
+      });
+
       raf = requestAnimationFrame(animate);
     };
 
     raf = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(raf);
-  }, [movementState, stageRef]);
+  }, [computePresence, movementState, stageRef]);
 
   return useMemo(() => {
     const motionMode: MovementState = snapshot.isMoving && mode === "idle" ? "walking" : movementState;
@@ -151,6 +166,10 @@ export function useStageController(mode: MovementState, stageRef: RefObject<HTML
       bob: snapshot.bob,
       lean: snapshot.lean,
       pace: snapshot.pace,
+      attentionTarget: presenceSnapshot.attentionTarget,
+      attentionOffset: presenceSnapshot.attentionOffset,
+      engagementLevel: presenceSnapshot.engagementLevel,
+      preferredZone: presenceSnapshot.preferredZone,
     };
-  }, [movementState, mode, snapshot]);
+  }, [movementState, mode, presenceSnapshot, snapshot]);
 }

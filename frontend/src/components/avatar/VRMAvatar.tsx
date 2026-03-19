@@ -105,6 +105,9 @@ export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
         const moveBob = motion.bob * (state.mode === "walking" ? 1.35 : 0.75);
         vrm.scene.position.y = -1.05 + idleBob + moveBob;
 
+        const engagementLift = motion.engagementLevel * 0.018;
+        vrm.scene.position.z += (-0.02 - engagementLift - vrm.scene.position.z) * 0.06;
+
         const targetRot =
           state.mode === "thinking"
             ? Math.PI + 0.08
@@ -127,10 +130,17 @@ export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
                     ? -0.12
                     : 0.02;
             head.rotation.z += (headTarget - head.rotation.z) * 0.08;
+            const headPitchTarget = motion.attentionOffset.y;
+            const headYawTarget = motion.attentionOffset.x;
+            head.rotation.x += (headPitchTarget - head.rotation.x) * 0.06;
+            head.rotation.y += (headYawTarget - head.rotation.y) * 0.07;
           }
           if (spine) {
-            const spineTarget = state.mode === "walking" ? motion.lean * 0.5 : motion.lean * 0.25;
+            const focusLean = motion.attentionOffset.x * 0.6;
+            const spineTarget = state.mode === "walking" ? motion.lean * 0.5 : motion.lean * 0.25 + focusLean;
             spine.rotation.z += (spineTarget - spine.rotation.z) * 0.08;
+            const postureTarget = motion.engagementLevel * 0.045;
+            spine.rotation.x += (postureTarget - spine.rotation.x) * 0.04;
           }
         }
 

@@ -23,7 +23,12 @@ It uses:
 - Automatic fallback behavior and clear errors when required credentials are missing.
 - Immersive avatar-first launch mode where Sarah is the dominant fullscreen presence.
 - Cinematic stage presentation with layered gradients, spotlight glow, and subtle depth/vignette treatment to keep Sarah as the focal point.
-- Stage-presence movement system: Sarah can smoothly reposition across the stage, settle during high-priority states, and drift occasionally while idle.
+- Presence behavior system: Sarah now uses deterministic contextual stage behavior (not random motion) to choose where to stand, when to approach, and when to settle.
+- Stage zones and contextual occupancy: center presentation, relaxed side anchors, listening anchor, caption-friendly zone, and shutdown settle zone.
+- Engagement-based positioning: interaction heat rises during voice/transcript/reply activity and softly decays during idle to guide approach/retreat behavior.
+- Attention and focus behavior: Sarah blends viewer focus, neutral idle gaze, thinking/inward focus, and subtle caption/overlay-aware focus shifts.
+- Idle micro-behaviors: gentle low-amplitude shifts and posture/gaze adjustments when calm, with suppression during listening/thinking/shutdown.
+- Overlay awareness: menu/transcript/caption/shutdown overlays softly bias zone selection to reduce visual conflict without mechanical snapping.
 - Subtitle-style on-stage captions for user transcripts and Sarah replies (lightweight, auto-fading, and separate from transcript history).
 - Minimal overlays for mic/listening, connection status, optional transcript, and tucked-away controls.
 - Voice shutdown intent handling with confirmation and graceful browser-safe fallback.
@@ -50,6 +55,7 @@ It uses:
 - Push-to-talk microphone capture via `getUserMedia` + `MediaRecorder`.
 - Transcript is auto-submitted through the existing assistant text message path.
 - Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm` with smooth mood/state transitions.
+- Presence layer is implemented above raw movement interpolation (`presenceController` + `stageZones` + `usePresenceBehavior`) and feeds zone, target, engagement, and focus outputs into the existing movement/VRM pipeline.
 - Speaking sync improvements: talking motion now follows TTS playback timing when available, with text-duration fallback when no audio payload exists.
 - Browser-safe stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) for future native monitor-aware movement in Tauri/Electron.
 - Auto-play + replay support for generated speech audio.
@@ -142,7 +148,9 @@ The frontend loads it from:
 ## Stage Presence and Display-Space Notes
 
 What works now in browser:
-- Sarah can move smoothly across the visible stage area with intentional behavior rules (idle drift, settle while listening/talking, reduced motion while thinking, stop on shutdown).
+- Sarah can move smoothly across the visible stage area with intentional behavior priorities (shutdown > listening > talking > thinking > overlay-aware reposition > idle relaxed presence).
+- Stage zones are computed from normalized stage coordinates and adapt to viewport bounds, preserving browser-safe behavior while remaining ready for native display-region inputs.
+- Presence behaviors include anti-pacing safeguards (zone dwell time, movement cooldowns, target hysteresis, and movement suppression during high-priority states).
 - Stage movement uses normalized stage coordinates and interpolation to avoid jitter, with graceful pseudo-walking body rhythm when no dedicated walk animation exists.
 - The browser implementation uses current viewport/stage bounds and can optionally read segmented window regions where supported.
 
@@ -153,8 +161,9 @@ What needs a native wrapper for full monitor-aware behavior:
 
 Planned extension path:
 1. Keep movement logic display-agnostic via `ScreenEnvironment` / `StageBoundsProvider`.
-2. Add a Tauri/Electron monitor provider that supplies monitor regions and active-window coordinates.
-3. Feed those regions into the same movement controller without rewriting avatar behavior logic.
+2. Keep presence behavior display-agnostic via normalized stage zones + overlay/layout inputs.
+3. Add a Tauri/Electron monitor provider that supplies monitor regions and active-window coordinates.
+4. Feed those regions into the same movement + presence controllers without rewriting avatar behavior logic.
 
 
 ## Shutdown Behavior
@@ -165,4 +174,3 @@ SarahNode supports voice-triggered shutdown intents (for example: "Sarah, close 
 - On confirmed shutdown, the frontend stops active listening, halts audio playback, transitions Sarah into a goodbye state, and shows a subtle shutdown overlay.
 - Browser tabs may block programmatic close calls; when that happens SarahNode falls back to: **"Session closed. You can now close this tab."**
 - The close behavior is isolated behind a shell abstraction so Tauri/Electron window-close APIs can be added later without changing intent parsing logic.
-
