@@ -24,12 +24,15 @@ It uses:
 - Immersive avatar-first launch mode where Sarah is the dominant fullscreen presence.
 - Cinematic stage presentation with layered gradients, spotlight glow, and subtle depth/vignette treatment to keep Sarah as the focal point.
 - Presence behavior system: Sarah now uses deterministic contextual stage behavior (not random motion) to choose where to stand, when to approach, and when to settle.
+- Reactive gesture/performance system layered above movement + presence for intentional startup greeting, listening acknowledgments, thinking posture, response-delivery emphasis, and calm reset behavior.
 - Stage zones and contextual occupancy: center presentation, relaxed side anchors, listening anchor, caption-friendly zone, and shutdown settle zone.
 - Engagement-based positioning: interaction heat rises during voice/transcript/reply activity and softly decays during idle to guide approach/retreat behavior.
 - Attention and focus behavior: Sarah blends viewer focus, neutral idle gaze, thinking/inward focus, and subtle caption/overlay-aware focus shifts.
 - Idle micro-behaviors: gentle low-amplitude shifts and posture/gaze adjustments when calm, with suppression during listening/thinking/shutdown.
 - Overlay awareness: menu/transcript/caption/shutdown overlays softly bias zone selection to reduce visual conflict without mechanical snapping.
 - Subtitle-style on-stage captions for user transcripts and Sarah replies (lightweight, auto-fading, and separate from transcript history).
+- Startup now includes a one-time happy/excited Sarah greeting with caption fallback and optional local voice synthesis.
+- Shutdown now includes a dedicated goodbye line plus a respectful Japanese-bow-inspired performance before close/fallback handling.
 - Minimal overlays for mic/listening, connection status, optional transcript, and tucked-away controls.
 - Voice shutdown intent handling with confirmation and graceful browser-safe fallback.
 - VRM avatar panel with Sarah.vrm loaded from `/assets/Sarah.vrm`.
@@ -56,6 +59,7 @@ It uses:
 - Transcript is auto-submitted through the existing assistant text message path.
 - Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm` with smooth mood/state transitions.
 - Presence layer is implemented above raw movement interpolation (`presenceController` + `stageZones` + `usePresenceBehavior`) and feeds zone, target, engagement, and focus outputs into the existing movement/VRM pipeline.
+- Gesture/performance layer is implemented above presence and locomotion (`gestureController` + `useGesturePerformance`) and contributes deterministic expressive offsets, priorities, cooldowns, and recovery easing.
 - Speaking sync improvements: talking motion now follows TTS playback timing when available, with text-duration fallback when no audio payload exists.
 - Browser-safe stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) for future native monitor-aware movement in Tauri/Electron.
 - Auto-play + replay support for generated speech audio.
@@ -171,6 +175,6 @@ Planned extension path:
 SarahNode supports voice-triggered shutdown intents (for example: "Sarah, close program" or "close SarahNode").
 
 - Most shutdown phrases require confirmation (e.g., "yes" / "confirm") before ending the session.
-- On confirmed shutdown, the frontend stops active listening, halts audio playback, transitions Sarah into a goodbye state, and shows a subtle shutdown overlay.
+- On confirmed shutdown, Sarah performs a dedicated goodbye sequence: a spoken/captioned goodbye line plus a respectful Japanese-bow-inspired animation, then active listening/audio are halted and close is requested.
 - Browser tabs may block programmatic close calls; when that happens SarahNode falls back to: **"Session closed. You can now close this tab."**
 - The close behavior is isolated behind a shell abstraction so Tauri/Electron window-close APIs can be added later without changing intent parsing logic.

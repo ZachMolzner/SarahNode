@@ -1,5 +1,6 @@
 import { type CSSProperties, useMemo, useRef } from "react";
 import type { AvatarState } from "../../types/avatar";
+import type { GesturePerformanceSnapshot } from "../../lib/gestureController";
 import { VRMAvatar } from "./VRMAvatar";
 import { useStageController } from "../../lib/stageController";
 import type { OverlayVisibility } from "../../lib/stageZones";
@@ -9,9 +10,10 @@ type AvatarPanelProps = {
   avatarState: AvatarState;
   overlayVisibility: OverlayVisibility;
   presenceSignals: PresenceSignals;
+  gesturePerformance: GesturePerformanceSnapshot;
 };
 
-export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals }: AvatarPanelProps) {
+export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals, gesturePerformance }: AvatarPanelProps) {
   const stageRef = useRef<HTMLElement | null>(null);
   const stageMotion = useStageController(avatarState.mode, stageRef, {
     overlays: overlayVisibility,
@@ -26,6 +28,8 @@ export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals }:
     return "rgba(145, 167, 255, 0.2)";
   }, [avatarState.mode]);
 
+  const glowIntensity = 1 + gesturePerformance.glowBoost;
+
   return (
     <section ref={stageRef} style={stageStyle}>
       <div style={backdropLayerStyle} />
@@ -34,7 +38,8 @@ export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals }:
         style={{
           ...spotlightLayerStyle,
           background: `radial-gradient(circle at 50% 50%, ${glowColor} 0%, rgba(10, 13, 24, 0.02) 60%, transparent 78%)`,
-          transform: `${stageMotion.transform} translateZ(0)`,
+          opacity: Math.min(1, 0.82 * glowIntensity),
+          transform: `${stageMotion.transform} scale(${Math.min(1.08, 0.98 + glowIntensity * 0.04)}) translateZ(0)`,
         }}
       />
 
@@ -44,7 +49,7 @@ export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals }:
           transform: `${stageMotion.transform} scaleX(${stageMotion.facingDirection})`,
         }}
       >
-        <VRMAvatar avatarState={avatarState} stageMotion={stageMotion} />
+        <VRMAvatar avatarState={avatarState} stageMotion={stageMotion} gesturePerformance={gesturePerformance} />
       </div>
 
       <div style={metaStyle}>
