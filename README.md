@@ -128,10 +128,18 @@ Tauri integration uses:
 - `frontendDist`: points Tauri to `frontend/dist` output
 
 Desktop launch behavior defaults:
-- Fullscreen immersive mode on startup (`fullscreen: true`)
+- App title remains `SarahNode`
 - Frameless presentation for reduced OS chrome (`decorations: false`)
-- Centering + maximized fallback retained for compatibility (`center: true`, `maximized: true`)
-- Title remains `SarahNode` when native title bars are enabled
+- Transparent native window enabled (`transparent: true`)
+- Startup display mode is configurable with `VITE_DISPLAY_MODE=immersive|overlay`
+- Immersive mode requests fullscreen at runtime; overlay mode stays windowed and transparent
+
+Overlay mode details (Tauri desktop):
+- Native window is transparent and frameless, so there is no visible rectangular app box.
+- Cinematic stage background layers are disabled; Sarah is the primary visible element.
+- Empty space is click-through via `setIgnoreCursorEvents(true, { forward: true })`.
+- Sarah interaction region temporarily re-enables clicks, then restores click-through on leave.
+- Interaction hit-testing is region/bounds-based (not per-pixel mesh hit-testing).
 
 > Current backend expectation in this first desktop pass: run FastAPI separately (same as browser mode). Sidecar/backend bundling is intentionally deferred to a future phase for stability.
 
@@ -164,6 +172,18 @@ Common toggles:
 - Set `decorations` to `true` to restore native title bar
 - Keep `resizable: true` for development flexibility
 
+### Tauri Permissions for Overlay Mode
+
+Overlay click-through and runtime mode switching require explicit window permissions in:
+
+- `frontend/src-tauri/capabilities/default.json`
+
+Added permissions:
+- `core:window:allow-set-ignore-cursor-events`
+- `core:window:allow-set-fullscreen`
+
+These are intentionally minimal additions on top of the existing close permission.
+
 ---
 
 ## Runtime Modes
@@ -171,12 +191,14 @@ Common toggles:
 - **Browser mode**
   - Run frontend with `npm run dev` and backend separately.
   - Shutdown uses browser-safe close fallback behavior when tab close is blocked.
+  - Overlay visuals can be previewed, but native click-through/window behavior is not available in browser runtime.
 
 - **Tauri desktop mode**
   - Run frontend with `npm run tauri:dev` and backend separately.
   - Shutdown flow can issue a **real native window close** through Tauri APIs.
+  - Overlay mode includes transparent window + click-through behavior with a bounded Sarah interaction region.
 
-Mode detection is centralized in frontend utilities (`tauriEnvironment` + `appShell`) so Tauri-specific code is not scattered across UI components.
+Mode detection and native window behavior are centralized in frontend utilities (`displayMode`, `overlayController`, `tauriEnvironment`, and `appShell`) so Tauri-specific calls are not scattered across UI components.
 
 ---
 
@@ -196,6 +218,7 @@ Mode detection is centralized in frontend utilities (`tauriEnvironment` + `appSh
 ### Frontend
 - `VITE_PUBLIC_API_BASE_URL` (default `http://localhost:8000`)
 - `VITE_PUBLIC_WS_BASE_URL` (default `ws://localhost:8000`)
+- `VITE_DISPLAY_MODE` = `immersive` | `overlay` (default `immersive`)
 
 ---
 

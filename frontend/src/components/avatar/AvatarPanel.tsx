@@ -1,24 +1,40 @@
-import { type CSSProperties, useMemo, useRef } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef } from "react";
 import type { AvatarState } from "../../types/avatar";
 import type { GesturePerformanceSnapshot } from "../../lib/gestureController";
 import { VRMAvatar } from "./VRMAvatar";
 import { useStageController } from "../../lib/stageController";
 import type { OverlayVisibility } from "../../lib/stageZones";
 import type { PresenceSignals } from "../../hooks/usePresenceBehavior";
+import type { DisplayModeState } from "../../lib/displayMode";
 
 type AvatarPanelProps = {
   avatarState: AvatarState;
   overlayVisibility: OverlayVisibility;
   presenceSignals: PresenceSignals;
   gesturePerformance: GesturePerformanceSnapshot;
+  displayMode: DisplayModeState;
+  onInteractionRegionReady?: (element: HTMLElement | null) => void;
 };
 
-export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals, gesturePerformance }: AvatarPanelProps) {
+export function AvatarPanel({
+  avatarState,
+  overlayVisibility,
+  presenceSignals,
+  gesturePerformance,
+  displayMode,
+  onInteractionRegionReady,
+}: AvatarPanelProps) {
   const stageRef = useRef<HTMLElement | null>(null);
+  const interactionRegionRef = useRef<HTMLDivElement | null>(null);
   const stageMotion = useStageController(avatarState.mode, stageRef, {
     overlays: overlayVisibility,
     signals: presenceSignals,
   });
+
+  useEffect(() => {
+    onInteractionRegionReady?.(interactionRegionRef.current);
+    return () => onInteractionRegionReady?.(null);
+  }, [onInteractionRegionReady]);
 
   const glowColor = useMemo(() => {
     if (avatarState.mode === "shutting_down") return "rgba(151, 126, 190, 0.26)";
@@ -28,35 +44,42 @@ export function AvatarPanel({ avatarState, overlayVisibility, presenceSignals, g
     return "rgba(145, 167, 255, 0.2)";
   }, [avatarState.mode]);
 
-  const glowIntensity = 1 + gesturePerformance.glowBoost;
+  const showCinematicBackdrop = displayMode.activeMode === "immersive";
+  const glowIntensity = showCinematicBackdrop ? 1 + gesturePerformance.glowBoost : 0.18;
 
   return (
     <section ref={stageRef} style={stageStyle}>
-      <div style={backdropLayerStyle} />
-      <div style={vignetteLayerStyle} />
-      <div
-        style={{
-          ...spotlightLayerStyle,
-          background: `radial-gradient(circle at 50% 50%, ${glowColor} 0%, rgba(10, 13, 24, 0.02) 60%, transparent 78%)`,
-          opacity: Math.min(1, 0.82 * glowIntensity),
-          transform: `${stageMotion.transform} scale(${Math.min(1.08, 0.98 + glowIntensity * 0.04)}) translateZ(0)`,
-        }}
-      />
+      {showCinematicBackdrop ? <div style={backdropLayerStyle} /> : null}
+      {showCinematicBackdrop ? <div style={vignetteLayerStyle} /> : null}
+      {showCinematicBackdrop ? (
+        <div
+          style={{
+            ...spotlightLayerStyle,
+            background: `radial-gradient(circle at 50% 50%, ${glowColor} 0%, rgba(10, 13, 24, 0.02) 60%, transparent 78%)`,
+            opacity: Math.min(1, 0.82 * glowIntensity),
+            transform: `${stageMotion.transform} scale(${Math.min(1.08, 0.98 + glowIntensity * 0.04)}) translateZ(0)`,
+          }}
+        />
+      ) : null}
 
-      <div
-        style={{
-          ...avatarAnchorStyle,
-          transform: `${stageMotion.transform} scaleX(${stageMotion.facingDirection})`,
-        }}
-      >
-        <VRMAvatar avatarState={avatarState} stageMotion={stageMotion} gesturePerformance={gesturePerformance} />
+      <div ref={interactionRegionRef} style={interactionRegionStyle} aria-label="Sarah interaction region">
+        <div
+          style={{
+            ...avatarAnchorStyle,
+            transform: `${stageMotion.transform} scaleX(${stageMotion.facingDirection})`,
+          }}
+        >
+          <VRMAvatar avatarState={avatarState} stageMotion={stageMotion} gesturePerformance={gesturePerformance} />
+        </div>
       </div>
 
-      <div style={metaStyle}>
-        <span>
-          Sarah • {stageMotion.movementState.replace("_", " ")} • {stageMotion.preferredZone.replace("_", " ")}
-        </span>
-      </div>
+      {displayMode.activeMode === "immersive" ? (
+        <div style={metaStyle}>
+          <span>
+            Sarah • {stageMotion.movementState.replace("_", " ")} • {stageMotion.preferredZone.replace("_", " ")}
+          </span>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -91,13 +114,24 @@ const spotlightLayerStyle: CSSProperties = {
   pointerEvents: "none",
 };
 
-const avatarAnchorStyle: CSSProperties = {
+const interactionRegionStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
   top: "57%",
+  width: "min(68vw, 640px)",
+  height: "min(88vh, 920px)",
+  transform: "translate(-50%, -50%)",
+  pointerEvents: "none",
+};
+
+const avatarAnchorStyle: CSSProperties = {
+  position: "absolute",
+  left: "50%",
+  top: "50%",
   width: "min(62vw, 560px)",
   height: "min(84vh, 860px)",
   maxHeight: "86vh",
+  transform: "translate(-50%, -50%)",
 };
 
 const metaStyle: CSSProperties = {
