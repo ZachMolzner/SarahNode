@@ -10,24 +10,16 @@ import { browserAppShell } from "../lib/appShell";
 import { isShutdownCancellation, isShutdownConfirmation, matchShutdownIntent } from "../lib/shutdownIntent";
 import { runShutdownFlow } from "../lib/shutdownController";
 import { SubtitleCaptions } from "../components/captions/SubtitleCaptions";
-import { STARTUP_GREETING_LINE, SHUTDOWN_GOODBYE_LINE } from "../lib/performanceLines";
 import { useGesturePerformance } from "../hooks/useGesturePerformance";
-
-function estimateSpeechDurationMs(text: string): number {
-  const chars = text.trim().length;
-  if (!chars) return 0;
-  return Math.min(7800, Math.max(1300, chars * 52));
-}
-
-function canUseBrowserSpeech() {
-  return typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
-}
+import { createVoiceOrchestrator, type TTSPlaybackPayload } from "../lib/voiceOrchestrator";
+import { pickNonRepeatingLine } from "../lib/voiceLines";
 
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedTtsKeyRef = useRef<string>("");
   const processedReplyKeyRef = useRef<string>("");
+  const startupLineRef = useRef<string | null>(null);
+  const shutdownLineRef = useRef<string | null>(null);
 
   const [username, setUsername] = useState("local-user");
   const [content, setContent] = useState("Give me a quick plan for today.");
@@ -47,7 +39,6 @@ export function DashboardPage() {
   const [captionText, setCaptionText] = useState("");
   const [captionSpeaker, setCaptionSpeaker] = useState<"sarah" | "user" | null>(null);
   const [isCaptionVisible, setIsCaptionVisible] = useState(false);
-  const [fallbackSpeechUntil, setFallbackSpeechUntil] = useState(0);
   const [lastTranscriptAt, setLastTranscriptAt] = useState(0);
   const [lastUserSpeechAt, setLastUserSpeechAt] = useState(0);
   const [lastReplyAt, setLastReplyAt] = useState(0);
@@ -57,12 +48,20 @@ export function DashboardPage() {
   const [shutdownPerformanceDelivered, setShutdownPerformanceDelivered] = useState(false);
   const [listeningStartedAt, setListeningStartedAt] = useState(0);
   const [speakingStartedAt, setSpeakingStartedAt] = useState(0);
+  const voiceOrchestratorRef = useRef(
+    createVoiceOrchestrator({
+      onCaption: (text) => {
+        setCaptionSpeaker("sarah");
+        setCaptionText(text);
+      },
+      onPlaybackStateChange: (isPlaying) => setIsAudioPlaying(isPlaying),
+    })
+  );
 
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
-  const isFallbackSpeaking = Date.now() < fallbackSpeechUntil;
-  const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying || isFallbackSpeaking;
+  const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying;
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
@@ -104,29 +103,14 @@ export function DashboardPage() {
   useEffect(() => {
     if (startupGreetingDelivered || !startupGreetingRequested || !sessionReadyAt || shutdownStatus !== "idle") return;
     setStartupGreetingDelivered(true);
-    setCaptionSpeaker("sarah");
-    setCaptionText(STARTUP_GREETING_LINE);
-    const lineDuration = estimateSpeechDurationMs(STARTUP_GREETING_LINE);
-    const now = Date.now();
-    if (canUseBrowserSpeech()) {
-      const utterance = new SpeechSynthesisUtterance(STARTUP_GREETING_LINE);
-      utterance.rate = 1.01;
-      utterance.pitch = 1.05;
-      utterance.onstart = () => {
-        setIsAudioPlaying(true);
-        setFallbackSpeechUntil(now + lineDuration);
-      };
-      utterance.onend = () => {
-        setIsAudioPlaying(false);
-        setFallbackSpeechUntil(0);
-      };
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(utterance);
-    } else {
-      setFallbackSpeechUntil(now + lineDuration);
-      window.setTimeout(() => setFallbackSpeechUntil(0), lineDuration + 120);
-    }
+    const line = pickNonRepeatingLine("startup", startupLineRef.current);
+    startupLineRef.current = line;
+    void voiceOrchestratorRef.current.speakText(line, { context: "startup", mood: "cheerful" });
   }, [sessionReadyAt, shutdownStatus, startupGreetingDelivered, startupGreetingRequested]);
+
+  useEffect(() => {
+    return () => voiceOrchestratorRef.current.stopSpeaking();
+  }, []);
 
   useEffect(() => {
     void fetchAssistantState()
@@ -147,40 +131,28 @@ export function DashboardPage() {
     const ttsEvent = events.find((event) => event.type === "tts_output");
     if (!ttsEvent) return;
 
-    const audioBase64 = ttsEvent.payload?.["audio_base64"];
-    const mimeType = ttsEvent.payload?.["mime_type"];
-
-    if (typeof audioBase64 !== "string" || !audioBase64 || typeof mimeType !== "string") {
-      return;
-    }
-
-    const ttsEventKey = `${ttsEvent.timestamp}-${audioBase64.length}`;
+    const ttsEventKey = `${ttsEvent.timestamp}-${JSON.stringify(ttsEvent.payload ?? {}).length}`;
     if (processedTtsKeyRef.current === ttsEventKey) {
       return;
     }
     processedTtsKeyRef.current = ttsEventKey;
 
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current = null;
-    }
+    const payload = (ttsEvent.payload ?? {}) as TTSPlaybackPayload;
+    const sourceText = typeof payload.source_text === "string" ? payload.source_text : "";
+    if (!sourceText) return;
 
-    const audio = new Audio(`data:${mimeType};base64,${audioBase64}`);
-    audioRef.current = audio;
-    setAudioReady(true);
-
-    const onEnded = () => setIsAudioPlaying(false);
-    const onError = () => setIsAudioPlaying(false);
-
-    audio.addEventListener("ended", onEnded);
-    audio.addEventListener("error", onError);
-    void audio.play().then(() => setIsAudioPlaying(true)).catch(() => setIsAudioPlaying(false));
-
-    return () => {
-      audio.pause();
-      audio.removeEventListener("ended", onEnded);
-      audio.removeEventListener("error", onError);
-    };
+    void voiceOrchestratorRef.current.speakText(sourceText, { ttsPayload: payload, context: "reply", mood: "warm" }).then(() => {
+      const orchestrationStatus = voiceOrchestratorRef.current.getVoiceStatus();
+      setAudioReady(orchestrationStatus.hasReplayableAudio);
+      setTtsStatus(
+        orchestrationStatus.backendProvider
+          ? `${orchestrationStatus.backendProvider}${orchestrationStatus.backendModel ? ` · ${orchestrationStatus.backendModel}` : ""}${
+              orchestrationStatus.backendVoice ? ` · ${orchestrationStatus.backendVoice}` : ""
+            }`
+          : orchestrationStatus.provider
+      );
+      setLastReplyAt(Date.now());
+    });
   }, [events, shutdownStatus]);
 
   useEffect(() => {
@@ -196,15 +168,12 @@ export function DashboardPage() {
     setCaptionSpeaker("sarah");
     setCaptionText(replyText);
     setLastReplyAt(Date.now());
-
-    const ttsAlreadyHandled = processedTtsKeyRef.current.startsWith(replyEvent.timestamp);
-    if (!ttsAlreadyHandled) {
-      const until = Date.now() + estimateSpeechDurationMs(replyText);
-      setFallbackSpeechUntil(until);
-      window.setTimeout(() => {
-        if (Date.now() >= until) setFallbackSpeechUntil(0);
-      }, estimateSpeechDurationMs(replyText) + 80);
-    }
+    window.setTimeout(() => {
+      const latestTts = events.find((event) => event.type === "tts_output");
+      const ttsSourceText = latestTts?.payload?.["source_text"];
+      if (typeof ttsSourceText === "string" && ttsSourceText === replyText) return;
+      void voiceOrchestratorRef.current.speakText(replyText, { context: "reply", mood: "warm" });
+    }, 450);
   }, [events]);
 
   useEffect(() => {
@@ -222,38 +191,15 @@ export function DashboardPage() {
   }, [events]);
 
   function stopAudioPlayback() {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
-    setIsAudioPlaying(false);
+    voiceOrchestratorRef.current.stopSpeaking();
   }
 
   async function runConfirmedShutdown() {
     if (!shutdownPerformanceDelivered) {
       setShutdownPerformanceDelivered(true);
-      setCaptionSpeaker("sarah");
-      setCaptionText(SHUTDOWN_GOODBYE_LINE);
-      const lineDuration = estimateSpeechDurationMs(SHUTDOWN_GOODBYE_LINE);
-      const now = Date.now();
-      if (canUseBrowserSpeech()) {
-        const utterance = new SpeechSynthesisUtterance(SHUTDOWN_GOODBYE_LINE);
-        utterance.rate = 0.96;
-        utterance.pitch = 0.92;
-        utterance.onstart = () => {
-          setIsAudioPlaying(true);
-          setFallbackSpeechUntil(now + lineDuration);
-        };
-        utterance.onend = () => {
-          setIsAudioPlaying(false);
-          setFallbackSpeechUntil(0);
-        };
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.speak(utterance);
-      } else {
-        setFallbackSpeechUntil(now + lineDuration);
-        window.setTimeout(() => setFallbackSpeechUntil(0), lineDuration + 120);
-      }
+      const line = pickNonRepeatingLine("shutdown", shutdownLineRef.current);
+      shutdownLineRef.current = line;
+      await voiceOrchestratorRef.current.speakText(line, { context: "shutdown", mood: "goodbye" });
     }
 
     setShutdownStatus("starting");
@@ -327,13 +273,7 @@ export function DashboardPage() {
   }
 
   async function replayAudio() {
-    if (!audioRef.current) return;
-    try {
-      await audioRef.current.play();
-      setIsAudioPlaying(true);
-    } catch {
-      setIsAudioPlaying(false);
-    }
+    await voiceOrchestratorRef.current.replayLastAudio();
   }
 
   useEffect(() => {

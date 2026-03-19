@@ -31,8 +31,12 @@ It uses:
 - Idle micro-behaviors: gentle low-amplitude shifts and posture/gaze adjustments when calm, with suppression during listening/thinking/shutdown.
 - Overlay awareness: menu/transcript/caption/shutdown overlays softly bias zone selection to reduce visual conflict without mechanical snapping.
 - Subtitle-style on-stage captions for user transcripts and Sarah replies (lightweight, auto-fading, and separate from transcript history).
-- Startup now includes a one-time happy/excited Sarah greeting with caption fallback and optional local voice synthesis.
-- Shutdown now includes a dedicated goodbye line plus a respectful Japanese-bow-inspired performance before close/fallback handling.
+- Centralized voice orchestration layer that is ElevenLabs-first with graceful browser speech fallback.
+- Startup greeting, assistant replies, and shutdown goodbye now all route through one shared voice orchestration API.
+- Sarah voice profile tuning is centralized (`frontend/src/lib/voiceProfile.ts`) for tone + ElevenLabs + browser fallback behavior.
+- Startup and shutdown use curated line pools with anti-repeat selection (`frontend/src/lib/voiceLines.ts`).
+- Startup includes a one-time happy/excited Sarah greeting with caption sync and provider fallback handling.
+- Shutdown includes a dedicated goodbye line plus a respectful Japanese-bow-inspired performance before close/fallback handling.
 - Minimal overlays for mic/listening, connection status, optional transcript, and tucked-away controls.
 - Voice shutdown intent handling with confirmation and graceful browser-safe fallback.
 - VRM avatar panel with Sarah.vrm loaded from `/assets/Sarah.vrm`.
@@ -61,6 +65,7 @@ It uses:
 - Presence layer is implemented above raw movement interpolation (`presenceController` + `stageZones` + `usePresenceBehavior`) and feeds zone, target, engagement, and focus outputs into the existing movement/VRM pipeline.
 - Gesture/performance layer is implemented above presence and locomotion (`gestureController` + `useGesturePerformance`) and contributes deterministic expressive offsets, priorities, cooldowns, and recovery easing.
 - Speaking sync improvements: talking motion now follows TTS playback timing when available, with text-duration fallback when no audio payload exists.
+- Voice orchestration module (`voiceOrchestrator`) provides `speakText`, `stopSpeaking`, and status/debug metadata across ElevenLabs and browser fallback paths.
 - Browser-safe stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) for future native monitor-aware movement in Tauri/Electron.
 - Auto-play + replay support for generated speech audio.
 
@@ -122,8 +127,29 @@ npm run dev -- --host 0.0.0.0 --port 5173
 4. Speak, then click **Stop Recording**.
 5. Confirm UI shows transcribing, transcript appears in message box, and message is sent.
 6. Confirm assistant response appears and (if TTS enabled) audio plays.
+7. Confirm startup line and shutdown goodbye are selected from small anti-repeat pools.
+8. If ElevenLabs is unavailable, confirm browser speech fallback still speaks with captions intact.
 
 If mic permission is denied or transcription fails, typed chat remains fully usable.
+
+## Voice Profile Tuning
+
+Tune Sarah's voice behavior in:
+
+- `frontend/src/lib/voiceProfile.ts`
+  - ElevenLabs defaults:
+    - `stability: 0.46`
+    - `similarity_boost: 0.76`
+    - `style: 0.18`
+    - `use_speaker_boost: false`
+  - Browser fallback defaults:
+    - `rate: 0.92`
+    - `pitch: 1.3`
+    - `volume: 1.0`
+
+Startup/listening/shutdown line pools and anti-repeat behavior live in:
+
+- `frontend/src/lib/voiceLines.ts`
 
 ---
 

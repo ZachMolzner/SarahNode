@@ -32,7 +32,12 @@ class ElevenLabsClient(TTSClient):
         payload = {
             "text": text,
             "model_id": self.model_id,
-            "voice_settings": {"stability": 0.45, "similarity_boost": 0.8},
+            "voice_settings": {
+                "stability": 0.46,
+                "similarity_boost": 0.76,
+                "style": 0.18,
+                "use_speaker_boost": False,
+            },
         }
 
         async with httpx.AsyncClient(timeout=40.0) as client:
@@ -45,8 +50,11 @@ class ElevenLabsClient(TTSClient):
 
         return {
             "provider": "elevenlabs",
+            "model": self.model_id,
+            "voice_id": self.voice_id,
             "mime_type": "audio/mpeg",
             "audio_base64": audio_base64,
             "duration_seconds": round(approx_duration, 2),
+            "source_text": text,
             "text_preview": text[:120],
         }
