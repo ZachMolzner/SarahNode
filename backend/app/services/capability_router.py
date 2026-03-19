@@ -59,7 +59,7 @@ class CapabilityRouter:
             return CapabilityRoute(
                 intent="lookup_information",
                 confidence=0.78,
-                requires_web_lookup=True,
+                requires_web_lookup=False,
                 style_hint=(
                     "Focus on factual lookup/explanation. Distinguish known context from data that should be verified via search."
                 ),

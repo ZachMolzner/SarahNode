@@ -27,8 +27,10 @@ class OpenAIClient(LLMClient):
         recent_history: list[str],
         persona: dict[str, Any],
         capability_route: CapabilityRoute,
+        system_prompt_override: str | None = None,
+        user_prompt_override: str | None = None,
     ) -> AssistantReply:
-        system_prompt = str(persona.get("system_prompt", settings.persona_system_prompt))
+        system_prompt = system_prompt_override or str(persona.get("system_prompt", settings.persona_system_prompt))
         persona_name = str(persona.get("name", settings.persona_name))
         persona_style = str(persona.get("style", settings.persona_style))
 
@@ -61,9 +63,12 @@ class OpenAIClient(LLMClient):
                         {
                             "type": "text",
                             "text": (
-                                f"Recent memory summary:\n{memory_summary}\n\n"
-                                f"Recent turns:\n{history_text}\n\n"
-                                f"New message from {message.username}: {message.content}"
+                                user_prompt_override
+                                or (
+                                    f"Recent memory summary:\n{memory_summary}\n\n"
+                                    f"Recent turns:\n{history_text}\n\n"
+                                    f"New message from {message.username}: {message.content}"
+                                )
                             ),
                         }
                     ],

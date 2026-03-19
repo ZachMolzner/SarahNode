@@ -93,10 +93,19 @@ async def send_chat_legacy(request: AssistantMessageRequest) -> dict[str, str]:
 
 @router.get("/assistant/state")
 def get_assistant_state() -> dict[str, object]:
+    providers = provider_status()
+    web_provider = providers.get("web_search", {})
     return {
         "assistant_state": memory_manager.state.assistant_state,
         "latest_reply": memory_manager.state.last_reply,
         "latest_capability_intent": memory_manager.state.last_capability_intent,
+        "last_used_live_web": memory_manager.state.last_used_live_web,
+        "latest_web_sources": memory_manager.state.latest_web_sources,
+        "web_browsing": {
+            "enabled": web_provider.get("mode") == "real",
+            "provider": web_provider.get("active", "none"),
+            "reason": web_provider.get("reason", "Not initialized"),
+        },
         "capabilities": [
             "ask_general",
             "lookup_information",

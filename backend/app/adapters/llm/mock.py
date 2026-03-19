@@ -13,6 +13,8 @@ class MockLLMClient(LLMClient):
         recent_history: list[str],
         persona: dict[str, Any],
         capability_route: CapabilityRoute,
+        system_prompt_override: str | None = None,
+        user_prompt_override: str | None = None,
     ) -> AssistantReply:
         return AssistantReply(
             text=(

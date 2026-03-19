@@ -211,6 +211,21 @@ class StreamOrchestrator:
         if moderation.allowed:
             generated_reply = await self.dialogue_engine.generate(message, memory_summary, recent_history, capability_route)
 
+        web_context = self.dialogue_engine.last_web_context
+        used_live_web = bool(web_context and web_context.checked_web)
+        web_sources = web_context.source_metadata() if web_context else []
+        self.memory_manager.set_last_web_usage(used_live_web, web_sources)
+        if web_context:
+            await self.emit_event(
+                "web_search_completed",
+                {
+                    "provider": web_context.provider,
+                    "source_count": len(web_context.search_results),
+                    "fetched_page_count": len(web_context.fetched_pages),
+                    "decision_reason": web_context.decision_reason,
+                },
+            )
+
         reply = self.response_policy.apply(moderation, generated_reply)
         self.memory_manager.set_last_reply(reply.text)
 
