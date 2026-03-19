@@ -10,11 +10,17 @@ import { browserAppShell } from "../lib/appShell";
 import { isShutdownCancellation, isShutdownConfirmation, matchShutdownIntent } from "../lib/shutdownIntent";
 import { runShutdownFlow } from "../lib/shutdownController";
 import { SubtitleCaptions } from "../components/captions/SubtitleCaptions";
+import { STARTUP_GREETING_LINE, SHUTDOWN_GOODBYE_LINE } from "../lib/performanceLines";
+import { useGesturePerformance } from "../hooks/useGesturePerformance";
 
 function estimateSpeechDurationMs(text: string): number {
   const chars = text.trim().length;
   if (!chars) return 0;
   return Math.min(7800, Math.max(1300, chars * 52));
+}
+
+function canUseBrowserSpeech() {
+  return typeof window !== "undefined" && "speechSynthesis" in window && typeof SpeechSynthesisUtterance !== "undefined";
 }
 
 export function DashboardPage() {
@@ -45,6 +51,12 @@ export function DashboardPage() {
   const [lastTranscriptAt, setLastTranscriptAt] = useState(0);
   const [lastUserSpeechAt, setLastUserSpeechAt] = useState(0);
   const [lastReplyAt, setLastReplyAt] = useState(0);
+  const [sessionReadyAt, setSessionReadyAt] = useState(0);
+  const [startupGreetingRequested, setStartupGreetingRequested] = useState(false);
+  const [startupGreetingDelivered, setStartupGreetingDelivered] = useState(false);
+  const [shutdownPerformanceDelivered, setShutdownPerformanceDelivered] = useState(false);
+  const [listeningStartedAt, setListeningStartedAt] = useState(0);
+  const [speakingStartedAt, setSpeakingStartedAt] = useState(0);
 
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
@@ -69,6 +81,52 @@ export function DashboardPage() {
           isSpeaking,
           mouthIntensity: isAudioPlaying ? 0.8 : isSpeaking ? 0.58 : 0.02,
         };
+  const latestReplyText = typeof latestReply === "string" ? latestReply : "";
+
+  const gesturePerformance = useGesturePerformance({
+    avatarState,
+    startupRequested: startupGreetingRequested,
+    shutdownRequested: shutdownStatus === "starting" || shutdownStatus === "ended",
+    listeningStartedAtMs: listeningStartedAt,
+    replyStartedAtMs: lastReplyAt,
+    speakingStartedAtMs: speakingStartedAt,
+    latestReplyText,
+  });
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setSessionReadyAt(Date.now());
+      setStartupGreetingRequested(true);
+    }, 850);
+    return () => window.clearTimeout(timerId);
+  }, []);
+
+  useEffect(() => {
+    if (startupGreetingDelivered || !startupGreetingRequested || !sessionReadyAt || shutdownStatus !== "idle") return;
+    setStartupGreetingDelivered(true);
+    setCaptionSpeaker("sarah");
+    setCaptionText(STARTUP_GREETING_LINE);
+    const lineDuration = estimateSpeechDurationMs(STARTUP_GREETING_LINE);
+    const now = Date.now();
+    if (canUseBrowserSpeech()) {
+      const utterance = new SpeechSynthesisUtterance(STARTUP_GREETING_LINE);
+      utterance.rate = 1.01;
+      utterance.pitch = 1.05;
+      utterance.onstart = () => {
+        setIsAudioPlaying(true);
+        setFallbackSpeechUntil(now + lineDuration);
+      };
+      utterance.onend = () => {
+        setIsAudioPlaying(false);
+        setFallbackSpeechUntil(0);
+      };
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(utterance);
+    } else {
+      setFallbackSpeechUntil(now + lineDuration);
+      window.setTimeout(() => setFallbackSpeechUntil(0), lineDuration + 120);
+    }
+  }, [sessionReadyAt, shutdownStatus, startupGreetingDelivered, startupGreetingRequested]);
 
   useEffect(() => {
     void fetchAssistantState()
@@ -153,7 +211,10 @@ export function DashboardPage() {
     const voiceEvent = events.find((event) => event.type.startsWith("voice:"));
     if (!voiceEvent) return;
 
-    if (voiceEvent.type === "voice:recording_started") setVoiceStatus("listening");
+    if (voiceEvent.type === "voice:recording_started") {
+      setVoiceStatus("listening");
+      setListeningStartedAt(Date.now());
+    }
     if (voiceEvent.type === "voice:recording_stopped") setVoiceStatus("recording stopped");
     if (voiceEvent.type === "voice:transcribing") setVoiceStatus("transcribing");
     if (voiceEvent.type === "voice:transcribed") setVoiceStatus("transcribed");
@@ -169,8 +230,35 @@ export function DashboardPage() {
   }
 
   async function runConfirmedShutdown() {
+    if (!shutdownPerformanceDelivered) {
+      setShutdownPerformanceDelivered(true);
+      setCaptionSpeaker("sarah");
+      setCaptionText(SHUTDOWN_GOODBYE_LINE);
+      const lineDuration = estimateSpeechDurationMs(SHUTDOWN_GOODBYE_LINE);
+      const now = Date.now();
+      if (canUseBrowserSpeech()) {
+        const utterance = new SpeechSynthesisUtterance(SHUTDOWN_GOODBYE_LINE);
+        utterance.rate = 0.96;
+        utterance.pitch = 0.92;
+        utterance.onstart = () => {
+          setIsAudioPlaying(true);
+          setFallbackSpeechUntil(now + lineDuration);
+        };
+        utterance.onend = () => {
+          setIsAudioPlaying(false);
+          setFallbackSpeechUntil(0);
+        };
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(utterance);
+      } else {
+        setFallbackSpeechUntil(now + lineDuration);
+        window.setTimeout(() => setFallbackSpeechUntil(0), lineDuration + 120);
+      }
+    }
+
     setShutdownStatus("starting");
     setShutdownPrompt("Closing session...");
+    await new Promise((resolve) => window.setTimeout(resolve, 2200));
 
     const result = await runShutdownFlow({
       stopListening: () => setVoiceStatus("stopping"),
@@ -248,11 +336,18 @@ export function DashboardPage() {
     }
   }
 
+  useEffect(() => {
+    if (isSpeaking) {
+      setSpeakingStartedAt((previous) => (Date.now() - previous > 320 ? Date.now() : previous));
+    }
+  }, [isSpeaking]);
+
   return (
     <main style={pageStyle}>
       <div style={stageStyle}>
         <AvatarPanel
           avatarState={avatarState}
+          gesturePerformance={gesturePerformance}
           overlayVisibility={{
             controlsOpen: isControlsOpen,
             transcriptOpen: isTranscriptOpen,
@@ -284,6 +379,7 @@ export function DashboardPage() {
             shouldStop={shutdownStatus !== "idle"}
             onRecordingStarted={() => {
               setVoiceStatus("listening");
+              setListeningStartedAt(Date.now());
               void emitVoiceEvent("voice:recording_started");
             }}
             onRecordingStopped={() => {

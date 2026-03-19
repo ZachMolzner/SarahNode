@@ -4,20 +4,23 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import type { AvatarState } from "../../types/avatar";
 import type { StageMotion } from "../../lib/stageController";
+import type { GesturePerformanceSnapshot } from "../../lib/gestureController";
 
 const DEFAULT_VRM_PATH = "/assets/Sarah.vrm";
 
 type VRMAvatarProps = {
   avatarState: AvatarState;
   stageMotion: StageMotion;
+  gesturePerformance: GesturePerformanceSnapshot;
 };
 
-export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
+export function VRMAvatar({ avatarState, stageMotion, gesturePerformance }: VRMAvatarProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const vrmRef = useRef<VRM | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const avatarStateRef = useRef(avatarState);
   const stageMotionRef = useRef(stageMotion);
+  const gestureRef = useRef(gesturePerformance);
 
   useEffect(() => {
     avatarStateRef.current = avatarState;
@@ -26,6 +29,10 @@ export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
   useEffect(() => {
     stageMotionRef.current = stageMotion;
   }, [stageMotion]);
+
+  useEffect(() => {
+    gestureRef.current = gesturePerformance;
+  }, [gesturePerformance]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -99,23 +106,26 @@ export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
       if (vrm) {
         const state = avatarStateRef.current;
         const motion = stageMotionRef.current;
+        const performance = gestureRef.current;
         vrm.update(delta);
 
         const idleBob = Math.sin(elapsed * (state.mode === "talking" ? 1.45 : 0.95)) * 0.012;
+        const performanceBob = performance.bobAccent * Math.sin(elapsed * 2.8) * 0.018;
         const moveBob = motion.bob * (state.mode === "walking" ? 1.35 : 0.75);
-        vrm.scene.position.y = -1.05 + idleBob + moveBob;
+        vrm.scene.position.y = -1.05 + idleBob + moveBob + performanceBob;
 
         const engagementLift = motion.engagementLevel * 0.018;
-        vrm.scene.position.z += (-0.02 - engagementLift - vrm.scene.position.z) * 0.06;
+        const postureLead = performance.bodyLean * 0.05 + performance.emphasisPulse * 0.012;
+        vrm.scene.position.z += (-0.02 - engagementLift - postureLead - vrm.scene.position.z) * 0.06;
 
         const targetRot =
           state.mode === "thinking"
             ? Math.PI + 0.08
             : state.mode === "shutting_down"
               ? Math.PI - 0.07
-              : Math.PI - motion.lean * 0.55;
+              : Math.PI - motion.lean * 0.55 + performance.headTilt * 0.08;
         vrm.scene.rotation.y += (targetRot - vrm.scene.rotation.y) * 0.07;
-        vrm.scene.rotation.z += (motion.lean * 0.38 - vrm.scene.rotation.z) * 0.06;
+        vrm.scene.rotation.z += (motion.lean * 0.38 + performance.bodyLean * 0.35 - vrm.scene.rotation.z) * 0.06;
 
         if (vrm.humanoid) {
           const head = vrm.humanoid.getNormalizedBoneNode("head");
@@ -129,17 +139,17 @@ export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
                   : state.mode === "shutting_down"
                     ? -0.12
                     : 0.02;
-            head.rotation.z += (headTarget - head.rotation.z) * 0.08;
-            const headPitchTarget = motion.attentionOffset.y;
-            const headYawTarget = motion.attentionOffset.x;
+            head.rotation.z += (headTarget + performance.headTilt - head.rotation.z) * 0.08;
+            const headPitchTarget = motion.attentionOffset.y + performance.headNod * 0.2 - performance.bowDepth * 0.08;
+            const headYawTarget = motion.attentionOffset.x + performance.headTilt * 0.15;
             head.rotation.x += (headPitchTarget - head.rotation.x) * 0.06;
             head.rotation.y += (headYawTarget - head.rotation.y) * 0.07;
           }
           if (spine) {
             const focusLean = motion.attentionOffset.x * 0.6;
             const spineTarget = state.mode === "walking" ? motion.lean * 0.5 : motion.lean * 0.25 + focusLean;
-            spine.rotation.z += (spineTarget - spine.rotation.z) * 0.08;
-            const postureTarget = motion.engagementLevel * 0.045;
+            spine.rotation.z += (spineTarget + performance.bodyLean * 0.35 - spine.rotation.z) * 0.08;
+            const postureTarget = motion.engagementLevel * 0.045 + performance.postureOpen * 0.05 - performance.bowDepth * 0.22;
             spine.rotation.x += (postureTarget - spine.rotation.x) * 0.04;
           }
         }
@@ -153,10 +163,10 @@ export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
           const mouth = Math.min(0.85, mouthBase * (state.mouthIntensity ?? 0.56));
           vrm.expressionManager.setValue("aa", mouth);
 
-          const happy = state.mood === "cheerful" || state.mood === "warm" ? 0.36 : 0.1;
-          const relaxed = state.mood === "goodbye" ? 0.22 : 0.08;
-          vrm.expressionManager.setValue("happy", happy);
-          vrm.expressionManager.setValue("relaxed", relaxed);
+          const happy = (state.mood === "cheerful" || state.mood === "warm" ? 0.36 : 0.1) + performance.emphasisPulse * 0.12;
+          const relaxed = (state.mood === "goodbye" ? 0.22 : 0.08) + performance.expressionSoftness;
+          vrm.expressionManager.setValue("happy", Math.min(0.9, happy));
+          vrm.expressionManager.setValue("relaxed", Math.min(0.9, relaxed));
         }
       }
 
