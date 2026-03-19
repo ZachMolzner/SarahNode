@@ -1,0 +1,116 @@
+{
+  "profiles": {
+    "zach": {
+      "id": "zach",
+      "type": "person",
+      "display_name": "Zach",
+      "preferred_address": "Zach",
+      "alternate_addresses": [],
+      "relation": "self",
+      "tone_preference": "direct",
+      "response_style": "concise",
+      "voice_profile_id": null
+    },
+    "aleena": {
+      "id": "aleena",
+      "type": "person",
+      "display_name": "Aleena",
+      "preferred_address": "Aleena",
+      "alternate_addresses": [
+        "Mama"
+      ],
+      "relation": "spouse",
+      "tone_preference": "warm",
+      "response_style": "balanced",
+      "voice_profile_id": null
+    }
+  },
+  "shared_profiles": {
+    "household": {
+      "id": "household",
+      "type": "shared",
+      "members": [
+        "zach",
+        "aleena"
+      ]
+    }
+  },
+  "unknown_profile": {
+    "id": "unknown",
+    "type": "fallback",
+    "display_name": "Guest",
+    "preferred_address": "there"
+  },
+  "explicit_identity_facts": [
+    {
+      "id": "fact-primary-user",
+      "scope": "zach",
+      "category": "identity",
+      "source": "explicit",
+      "key": "primary_user",
+      "value": "Zach is the primary user",
+      "confidence": 1.0,
+      "immutable_by_inference": true,
+      "created_at": "2026-03-19T23:38:19.388513+00:00",
+      "updated_at": "2026-03-19T23:38:19.388513+00:00"
+    },
+    {
+      "id": "fact-spouse",
+      "scope": "household",
+      "category": "identity",
+      "source": "explicit",
+      "key": "family_relation",
+      "value": "Aleena is Zach's wife",
+      "confidence": 1.0,
+      "immutable_by_inference": true,
+      "created_at": "2026-03-19T23:38:19.388513+00:00",
+      "updated_at": "2026-03-19T23:38:19.388513+00:00"
+    },
+    {
+      "id": "fact-zach-address",
+      "scope": "zach",
+      "category": "identity",
+      "source": "explicit",
+      "key": "preferred_address",
+      "value": "Address Zach as Zach",
+      "confidence": 1.0,
+      "immutable_by_inference": true,
+      "created_at": "2026-03-19T23:38:19.388513+00:00",
+      "updated_at": "2026-03-19T23:38:19.388513+00:00"
+    },
+    {
+      "id": "fact-aleena-address",
+      "scope": "aleena",
+      "category": "identity",
+      "source": "explicit",
+      "key": "preferred_address",
+      "value": "Address Aleena as Aleena",
+      "confidence": 1.0,
+      "immutable_by_inference": true,
+      "created_at": "2026-03-19T23:38:19.388513+00:00",
+      "updated_at": "2026-03-19T23:38:19.388513+00:00"
+    },
+    {
+      "id": "fact-aleena-mama",
+      "scope": "aleena",
+      "category": "identity",
+      "source": "explicit",
+      "key": "alternate_address",
+      "value": "Aleena may occasionally be addressed as Mama",
+      "confidence": 1.0,
+      "immutable_by_inference": true,
+      "created_at": "2026-03-19T23:38:19.388513+00:00",
+      "updated_at": "2026-03-19T23:38:19.388513+00:00"
+    }
+  ],
+  "memory_items": [],
+  "speaker": {
+    "high_confidence_threshold": 0.86,
+    "unknown_fallback": "unknown"
+  },
+  "nickname_policy": {
+    "aleena_mama_enabled": true,
+    "aleena_mama_usage_ratio": 0.28
+  },
+  "version": 1
+}

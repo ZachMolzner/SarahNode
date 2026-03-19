@@ -14,6 +14,7 @@ class LLMClient(ABC):
         recent_history: list[str],
         persona: dict[str, Any],
         capability_route: CapabilityRoute,
+        addressing_instruction: str | None = None,
         system_prompt_override: str | None = None,
         user_prompt_override: str | None = None,
     ) -> AssistantReply:

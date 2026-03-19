@@ -27,6 +27,7 @@ class OpenAIClient(LLMClient):
         recent_history: list[str],
         persona: dict[str, Any],
         capability_route: CapabilityRoute,
+        addressing_instruction: str | None = None,
         system_prompt_override: str | None = None,
         user_prompt_override: str | None = None,
     ) -> AssistantReply:
@@ -52,6 +53,7 @@ class OpenAIClient(LLMClient):
                                 f"Conversation style: {persona_style}\n"
                                 f"Capability route: {capability_route.intent} (confidence={capability_route.confidence:.2f})\n"
                                 f"Response style hint: {capability_route.style_hint}\n"
+                                f"Addressing policy: {addressing_instruction or 'Use safe neutral addressing unless clear identity is known.'}\n"
                                 "If the user asks for live lookup/search and tools are not available, say that clearly and offer a concrete fallback plan."
                             ),
                         }

@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     assistant_cooldown_seconds: float = 1.0
     assistant_max_queue_size: int = 200
     assistant_memory_window: int = 25
+    identity_store_path: str = "data/identity_memory.json"
 
     llm_provider: str = "auto"
     tts_provider: str = "auto"

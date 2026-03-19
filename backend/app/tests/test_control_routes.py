@@ -39,6 +39,7 @@ def test_assistant_state_route_shape() -> None:
     assert "memory_summary" in payload
     assert "web_browsing" in payload
     assert "last_used_live_web" in payload
+    assert "identity_resolution" in payload
 
 
 def test_voice_event_route_accepts_voice_prefix() -> None:
@@ -57,3 +58,39 @@ def test_transcribe_route_returns_error_when_stt_unavailable() -> None:
         )
 
     assert response.status_code in (400, 500, 503)
+
+
+def test_identity_state_route_returns_defaults() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/assistant/identity")
+
+    assert response.status_code == 200
+    payload = response.json()
+    profile_ids = {profile["id"] for profile in payload["profiles"]}
+    assert {"zach", "aleena"}.issubset(profile_ids)
+    assert payload["nickname_policy"]["aleena_mama_enabled"] is True
+
+
+def test_memory_route_crud_cycle() -> None:
+    with TestClient(app) as client:
+        created = client.post(
+            "/api/assistant/memory",
+            json={
+                "scope": "household",
+                "category": "routine",
+                "source": "explicit",
+                "key": "quiet_hours",
+                "value": "After 9 PM keep responses softer.",
+                "confidence": 1.0,
+                "sensitive": False,
+            },
+        )
+        assert created.status_code == 200
+        item = created.json()["item"]
+
+        fetched = client.get("/api/assistant/memory")
+        assert fetched.status_code == 200
+        assert any(entry["id"] == item["id"] for entry in fetched.json()["items"])
+
+        deleted = client.delete(f"/api/assistant/memory/{item['id']}")
+        assert deleted.status_code == 200

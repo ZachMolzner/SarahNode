@@ -62,6 +62,7 @@ class DialogueEngine:
         memory_summary: str,
         recent_history: list[str],
         capability_route: CapabilityRoute,
+        addressing_instruction: str | None = None,
     ) -> AssistantReply:
         self.last_web_context = None
         decision = self.web_browsing_policy.decide(message.content, capability_route)
@@ -99,6 +100,7 @@ class DialogueEngine:
                 memory_summary,
                 recent_history,
                 capability_route,
+                addressing_instruction=addressing_instruction,
                 system_prompt_override=(
                     "You are Sarah. You perform web-grounded answers when web evidence is provided. "
                     "Be explicit that you checked the web, stay concise, and be honest about uncertainty."
@@ -111,6 +113,7 @@ class DialogueEngine:
             memory_summary,
             recent_history,
             capability_route,
+            addressing_instruction=addressing_instruction,
         )
 
     async def _generate_with_fallback(
@@ -119,6 +122,7 @@ class DialogueEngine:
         memory_summary: str,
         recent_history: list[str],
         capability_route: CapabilityRoute,
+        addressing_instruction: str | None = None,
         system_prompt_override: str | None = None,
         user_prompt_override: str | None = None,
     ) -> AssistantReply:
@@ -129,6 +133,7 @@ class DialogueEngine:
                 recent_history=recent_history,
                 persona=self.persona,
                 capability_route=capability_route,
+                addressing_instruction=addressing_instruction,
                 system_prompt_override=system_prompt_override,
                 user_prompt_override=user_prompt_override,
             )
@@ -142,4 +147,5 @@ class DialogueEngine:
                 capability_route=capability_route,
                 system_prompt_override=system_prompt_override,
                 user_prompt_override=user_prompt_override,
+                addressing_instruction=addressing_instruction,
             )
