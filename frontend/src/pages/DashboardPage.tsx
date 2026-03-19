@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
@@ -18,6 +18,7 @@ import { pickNonRepeatingLine } from "../lib/voiceLines";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { WebAnswerTextbox, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
 import { useSettingsStore } from "../hooks/useSettingsStore";
+import { computeWebGroundedSignature, normalizeWebGroundedPayload, shouldKeepWebPanelPinned } from "../lib/webGroundedAnswer";
 
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
@@ -54,7 +55,13 @@ export function DashboardPage() {
   const [listeningStartedAt, setListeningStartedAt] = useState(0);
   const [speakingStartedAt, setSpeakingStartedAt] = useState(0);
   const [webAnswer, setWebAnswer] = useState<WebAnswerViewModel | null>(null);
+  const [isWebAnswerVisible, setIsWebAnswerVisible] = useState(false);
+  const [isWebAnswerInteracting, setIsWebAnswerInteracting] = useState(false);
+  const [hasExpandedSources, setHasExpandedSources] = useState(false);
   const [lastWebGroundedAt, setLastWebGroundedAt] = useState(0);
+  const latestGroundedEventRef = useRef<string>("");
+  const lastGroundedSignatureRef = useRef<string>("");
+  const groundedDismissTimerRef = useRef<number | null>(null);
   const voiceOrchestratorRef = useRef(
     createVoiceOrchestrator({
       onCaption: (text) => {
@@ -66,7 +73,7 @@ export function DashboardPage() {
   );
 
   const appShell = useMemo(() => createAppShell(), []);
-  const { settings, settingsOpen, setSettingsOpen, updateSettings, windowBridge } = useSettingsStore();
+  const { settings, settingsReady, settingsOpen, setSettingsOpen, updateSettings, windowBridge } = useSettingsStore();
   const displayMode = {
     ...appShell.displayMode,
     activeMode: settings.overlayMode ? "overlay" : "immersive",
@@ -84,7 +91,7 @@ export function DashboardPage() {
       ? { ...baseAvatarState, mode: "shutting_down", mood: "goodbye", isSpeaking: false, mouthIntensity: 0.05 }
       : {
           ...baseAvatarState,
-          mode: webAnswer ? "presenting" : isSpeaking ? "talking" : baseAvatarState.mode,
+          mode: isWebAnswerVisible ? "presenting" : isSpeaking ? "talking" : baseAvatarState.mode,
           mood:
             baseAvatarState.mode === "listening"
               ? "listening"
@@ -193,34 +200,95 @@ export function DashboardPage() {
     }, 450);
   }, [events, settings.voiceOutputEnabled]);
 
+  const scheduleWebAnswerDismiss = useCallback(
+    (delayMs: number) => {
+      if (groundedDismissTimerRef.current) {
+        window.clearTimeout(groundedDismissTimerRef.current);
+      }
+
+      groundedDismissTimerRef.current = window.setTimeout(() => {
+        const pinned = shouldKeepWebPanelPinned(isWebAnswerInteracting, hasExpandedSources);
+        if (pinned) {
+          scheduleWebAnswerDismiss(3800);
+          return;
+        }
+        setIsWebAnswerVisible(false);
+      }, delayMs);
+    },
+    [hasExpandedSources, isWebAnswerInteracting]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (groundedDismissTimerRef.current) {
+        window.clearTimeout(groundedDismissTimerRef.current);
+      }
+    };
+  }, []);
+
   useEffect(() => {
     const groundedEvent = events.find((event) => event.type === "web_grounded_answer");
     if (!groundedEvent) return;
 
-    const title = typeof groundedEvent.payload?.["title"] === "string" ? groundedEvent.payload["title"] : "Web-grounded summary";
-    const bullets = Array.isArray(groundedEvent.payload?.["bullets"])
-      ? groundedEvent.payload["bullets"].filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-      : [];
-    const sourceTitles = Array.isArray(groundedEvent.payload?.["sources"])
-      ? groundedEvent.payload["sources"].filter((item): item is string => typeof item === "string" && item.trim().length > 0)
-      : [];
+    const eventKey = `${groundedEvent.timestamp}-${JSON.stringify(groundedEvent.payload ?? {}).length}`;
+    if (latestGroundedEventRef.current === eventKey) return;
+    latestGroundedEventRef.current = eventKey;
+
+    const normalized = normalizeWebGroundedPayload({
+      title: typeof groundedEvent.payload?.["title"] === "string" ? groundedEvent.payload["title"] : undefined,
+      bullets: Array.isArray(groundedEvent.payload?.["bullets"])
+        ? groundedEvent.payload["bullets"].filter((item): item is string => typeof item === "string")
+        : undefined,
+      sources: Array.isArray(groundedEvent.payload?.["sources"])
+        ? groundedEvent.payload["sources"]
+            .map((source) => {
+              if (typeof source === "string") return source;
+              if (!source || typeof source !== "object") return null;
+              const title = (source as { title?: unknown }).title;
+              const url = (source as { url?: unknown }).url;
+              return {
+                title: typeof title === "string" ? title : "",
+                url: typeof url === "string" ? url : undefined,
+              };
+            })
+            .filter((source): source is { title: string; url?: string } | string => Boolean(source))
+        : undefined,
+    });
+
+    const signature = computeWebGroundedSignature(normalized);
+    const identicalPayload = signature === lastGroundedSignatureRef.current;
+    lastGroundedSignatureRef.current = signature;
 
     setWebAnswer({
-      title,
-      bullets: bullets.length
-        ? bullets.slice(0, 5)
-        : ["I checked live web sources and summarized the strongest evidence.", "Ask me to expand any point if you want details."],
-      sourceTitles,
+      title: normalized.title,
+      bullets: normalized.bullets,
+      sources: normalized.sources,
+      mode: overlayEnabled ? "overlay" : "immersive",
     });
     setLastWebGroundedAt(Date.now());
+    setIsWebAnswerVisible(true);
 
-    if (settings.voiceOutputEnabled) {
-      const spoken = bullets.slice(0, 3).join(". ");
+    if (!identicalPayload && settings.voiceOutputEnabled) {
+      const spoken = normalized.bullets.slice(0, 3).join(". ");
       if (spoken) {
         void voiceOrchestratorRef.current.speakText(`I checked the live web. ${spoken}`, { context: "reply", mood: "focused" });
       }
     }
-  }, [events, settings.voiceOutputEnabled]);
+
+    scheduleWebAnswerDismiss(identicalPayload ? 2600 : 7000);
+  }, [events, overlayEnabled, scheduleWebAnswerDismiss, settings.voiceOutputEnabled]);
+
+  useEffect(() => {
+    if (!isWebAnswerVisible) return;
+    if (shouldKeepWebPanelPinned(isWebAnswerInteracting, hasExpandedSources)) {
+      if (groundedDismissTimerRef.current) {
+        window.clearTimeout(groundedDismissTimerRef.current);
+      }
+      return;
+    }
+
+    scheduleWebAnswerDismiss(5000);
+  }, [hasExpandedSources, isWebAnswerInteracting, isWebAnswerVisible, scheduleWebAnswerDismiss]);
 
   useEffect(() => {
     const voiceEvent = events.find((event) => event.type.startsWith("voice:"));
@@ -366,7 +434,16 @@ export function DashboardPage() {
     }
   }, [isSpeaking]);
 
+  useEffect(() => {
+    setWebAnswer((current) => (current ? { ...current, mode: overlayEnabled ? "overlay" : "immersive" } : current));
+  }, [overlayEnabled]);
+
   const showOverlayControls = !overlayEnabled || overlayControlsVisible;
+  const bootstrappingDesktopSettings = windowBridge.isNativeDesktop && !settingsReady;
+
+  if (bootstrappingDesktopSettings) {
+    return <main style={pageStyle} />;
+  }
 
   return (
     <main style={overlayEnabled ? overlayPageStyle : pageStyle}>
@@ -522,7 +599,13 @@ export function DashboardPage() {
           }}
         />
 
-        <WebAnswerTextbox answer={webAnswer} defaultCollapsedSources={settings.showSourceFooterCollapsed} />
+        <WebAnswerTextbox
+          answer={webAnswer}
+          visible={isWebAnswerVisible}
+          defaultCollapsedSources={settings.showSourceFooterCollapsed}
+          onInteractionChange={setIsWebAnswerInteracting}
+          onSourceExpansionChange={setHasExpandedSources}
+        />
 
         {shutdownStatus === "ended" ? (
           <div style={shutdownOverlayStyle}>

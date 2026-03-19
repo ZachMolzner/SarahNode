@@ -37,9 +37,9 @@ Desktop branding identity is standardized to:
 - Overlay grounded locomotion mode: in overlay display mode Sarah uses a desktop-ground model (bottom-edge walking path, horizontal-first travel, edge-zone settling) instead of free-stage floating.
 - Edge-aware resting behavior: Sarah can subtly lean/perch near left/right boundaries and relax into low-motion posture approximations when idle.
 - Mode-aware stage model: immersive mode keeps cinematic freer presentation while overlay mode uses grounded desktop behavior through one shared movement stack.
-- Desktop companion shell behavior: tray-first lifecycle (close hides to tray), always-on-top toggle, overlay/immersive toggles, and summon hotkey (`Ctrl+Shift+Space`) for fast restore.
+- Desktop companion shell behavior: tray-first lifecycle (close hides to tray when enabled), always-on-top toggle, overlay/immersive toggles, close-to-tray toggle parity, and summon hotkey (`Ctrl+Shift+Space`) for deterministic restore/focus.
 - Persistent local settings model + reusable frontend settings store to keep desktop preferences across launches.
-- Web-grounded answer textbox beside Sarah with a “Checked live web” badge, distilled bullets, and collapsible source titles.
+- Web-grounded answer textbox beside Sarah with stale-event suppression, replacement behavior for newer answers, auto-dismiss + interaction pinning, and collapsible source details (with optional URLs).
 - Presence “presenting” behavior for web-grounded moments: Sarah shifts attention toward the web summary panel and can read key bullets aloud when voice output is enabled.
 - Assistant capability routing readiness: lightweight intent buckets for general Q&A, information lookup, web/browse tasks, coding help, shutdown commands, and greeting/smalltalk.
 - Intent-aware response style steering: coding requests get structured guidance; lookup/browse requests explicitly indicate when live web verification is needed vs local context answers.
@@ -228,12 +228,15 @@ These are intentionally minimal additions on top of the existing close permissio
   - Shutdown flow can issue a **real native window close** through Tauri APIs.
   - Overlay mode includes transparent window + click-through behavior with a bounded Sarah interaction region.
   - Closing the main window hides SarahNode to tray by default (instead of quitting).
-  - Tray menu supports: Show/Hide, Always-on-top toggle, Overlay mode toggle, and Quit.
-  - Global summon shortcut: `Ctrl+Shift+Space`.
+  - Tray menu supports: Show/Hide (label tracks visibility), Always-on-top toggle, Overlay mode toggle, Hide-on-close toggle, and Quit.
+  - Tray checkmark/label state refreshes after startup restore, tray actions, settings panel changes, and hide/restore transitions.
+  - Global summon shortcut: `Ctrl+Shift+Space` (hidden => restore/focus, visible => bring-to-front/focus).
 
 ### Desktop Settings (Persisted)
 
 SarahNode now persists desktop settings locally (frontend local storage + Tauri desktop config file) so preferences survive relaunches:
+
+Desktop startup now waits for native settings hydration before rendering mode-specific UI to avoid overlay/immersive flash mismatches.
 
 - `alwaysOnTop` (default: `true`)
 - `overlayMode` (default: `true`)
@@ -382,3 +385,15 @@ SarahNode supports voice-triggered shutdown intents (for example: "Sarah, close 
 - On confirmed shutdown, Sarah performs a dedicated goodbye sequence: a spoken/captioned goodbye line plus a respectful Japanese-bow-inspired animation, then active listening/audio are halted and close is requested.
 - Browser tabs may block programmatic close calls; when that happens SarahNode falls back to: **"Session closed. You can now close this tab."**
 - The close behavior is isolated behind a shell abstraction. In browser mode it keeps the safe fallback message, and in Tauri mode it requests native window close via Tauri.
+
+
+### Web-grounded textbox behavior
+
+The grounded-answer panel now follows a tighter presentation lifecycle:
+
+- New grounded payloads replace previous panel content (newest wins).
+- Consecutive identical payloads are deduplicated to avoid repeated full voice replay.
+- Panel auto-dismisses when idle, but hover/focus/source expansion pins visibility temporarily.
+- Source footer stays collapsed by default and can be expanded via **View sources**; if URLs are present they are opened as links, otherwise titles are shown gracefully.
+
+Known limitation: full desktop tray/window integration is validated through manual smoke checks (see `docs/manual-smoke-checklist.md`) because CI/browser environments cannot fully emulate native tray + global shortcut behavior.

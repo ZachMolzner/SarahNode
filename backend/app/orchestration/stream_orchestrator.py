@@ -239,7 +239,14 @@ class StreamOrchestrator:
                 {
                     "title": message.content[:120],
                     "bullets": distilled_points[:5],
-                    "sources": [source.get("title", "") for source in web_sources if source.get("title")],
+                    "sources": [
+                        {
+                            "title": source.get("title", ""),
+                            "url": source.get("url") or source.get("link") or source.get("href"),
+                        }
+                        for source in web_sources
+                        if source.get("title")
+                    ],
                     "provider": web_context.provider,
                 },
             )
