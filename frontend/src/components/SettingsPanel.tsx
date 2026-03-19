@@ -4,47 +4,58 @@ import type { UserSettings } from "../types/settings";
 type SettingsPanelProps = {
   open: boolean;
   settings: UserSettings;
+  desktopFeaturesEnabled: boolean;
   onClose: () => void;
   onChange: (patch: Partial<UserSettings>) => void;
   onSummonNow: () => void;
 };
 
-export function SettingsPanel({ open, settings, onClose, onChange, onSummonNow }: SettingsPanelProps) {
+export function SettingsPanel({ open, settings, desktopFeaturesEnabled, onClose, onChange, onSummonNow }: SettingsPanelProps) {
   if (!open) return null;
 
   return (
     <aside style={panelStyle}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <h3 style={{ margin: 0 }}>Desktop Settings</h3>
+        <h3 style={{ margin: 0 }}>{desktopFeaturesEnabled ? "Desktop Settings" : "Client Settings"}</h3>
         <button type="button" style={closeButtonStyle} onClick={onClose}>
           Close
         </button>
       </header>
 
-      <p style={hintStyle}>Overlay mode = desktop companion. Immersive mode = focused interaction mode.</p>
+      <p style={hintStyle}>
+        {desktopFeaturesEnabled
+          ? "Overlay mode = desktop companion. Immersive mode = focused interaction mode."
+          : "Mobile/web clients use companion-safe defaults and hide native desktop controls."}
+      </p>
 
-      <label style={rowStyle}>
-        <span>Overlay companion mode</span>
-        <input
-          type="checkbox"
-          checked={settings.overlayMode}
-          onChange={(event) => onChange({ overlayMode: event.target.checked, preferredMode: event.target.checked ? "overlay" : "immersive" })}
-        />
-      </label>
+      {desktopFeaturesEnabled ? (
+        <>
+          <label style={rowStyle}>
+            <span>Overlay companion mode</span>
+            <input
+              type="checkbox"
+              checked={settings.overlayMode}
+              onChange={(event) =>
+                onChange({ overlayMode: event.target.checked, preferredMode: event.target.checked ? "overlay" : "immersive" })
+              }
+            />
+          </label>
 
-      <label style={rowStyle}>
-        <span>Always on top</span>
-        <input type="checkbox" checked={settings.alwaysOnTop} onChange={(event) => onChange({ alwaysOnTop: event.target.checked })} />
-      </label>
+          <label style={rowStyle}>
+            <span>Always on top</span>
+            <input type="checkbox" checked={settings.alwaysOnTop} onChange={(event) => onChange({ alwaysOnTop: event.target.checked })} />
+          </label>
 
-      <label style={rowStyle}>
-        <span>Hide to tray on close</span>
-        <input
-          type="checkbox"
-          checked={settings.closeToTrayOnClose}
-          onChange={(event) => onChange({ closeToTrayOnClose: event.target.checked })}
-        />
-      </label>
+          <label style={rowStyle}>
+            <span>Hide to tray on close</span>
+            <input
+              type="checkbox"
+              checked={settings.closeToTrayOnClose}
+              onChange={(event) => onChange({ closeToTrayOnClose: event.target.checked })}
+            />
+          </label>
+        </>
+      ) : null}
 
       <label style={rowStyle}>
         <span>Voice output enabled</span>
@@ -64,12 +75,14 @@ export function SettingsPanel({ open, settings, onClose, onChange, onSummonNow }
         />
       </label>
 
-      <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-        <small style={{ opacity: 0.74 }}>Summon hotkey: Ctrl+Shift+Space</small>
-        <button type="button" onClick={onSummonNow} style={summonButtonStyle}>
-          Summon Sarah now
-        </button>
-      </div>
+      {desktopFeaturesEnabled ? (
+        <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+          <small style={{ opacity: 0.74 }}>Summon hotkey: Ctrl+Shift+Space</small>
+          <button type="button" onClick={onSummonNow} style={summonButtonStyle}>
+            Summon Sarah now
+          </button>
+        </div>
+      ) : null}
     </aside>
   );
 }

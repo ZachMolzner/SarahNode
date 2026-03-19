@@ -110,11 +110,41 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Run backend:
+Run backend (default local-only):
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python run_server.py
 ```
+
+### LAN host mode (Windows host + tablet/phone clients)
+
+1. In `backend/.env`, enable LAN bind:
+
+```env
+BACKEND_BIND_ALL_INTERFACES=1
+BACKEND_PORT=8000
+CORS_ALLOWED_ORIGINS=*
+```
+
+2. Start backend from the Windows host:
+
+```bash
+python run_server.py
+```
+
+3. Find the host LAN IP on Windows (example `192.168.1.44`) and keep port `8000` open on local firewall for trusted/private network only.
+
+4. Start frontend so mobile can load it from the same host:
+
+```bash
+cd frontend
+npm run dev -- --host 0.0.0.0 --port 5173
+```
+
+5. On tablet/phone (same Wi-Fi), open:
+   - `http://<WINDOWS_LAN_IP>:5173`
+
+By default the web app auto-targets the same hostname for API/WS (`:8000`), so no extra mobile-specific frontend env values are required unless you want explicit overrides.
 
 ## 2) Frontend
 
@@ -213,6 +243,29 @@ Added permissions:
 - `core:window:allow-set-decorations`
 
 These are intentionally minimal additions on top of the existing close permission.
+
+---
+
+## Platform Experience Model
+
+- **Windows PC (primary host):** full SarahNode experience (Tauri shell + tray + always-on-top + close-to-tray + summon hotkey + native window controls).
+- **Galaxy tablet (LAN companion web client):** responsive touch companion; no native tray/window-management controls; visual effects may be reduced depending on viewport/performance.
+- **Samsung phone (compact LAN companion web client):** responsive compact companion; reduced visual effects by default; desktop-only controls hidden.
+
+### Desktop-only features
+
+The following are intentionally desktop-only and guarded in web/mobile runtime:
+- Tray lifecycle
+- Always-on-top
+- Close-to-tray
+- Global summon hotkey (`Ctrl+Shift+Space`)
+- Native window controls / overlay click-through
+
+### Mobile/tablet behavior notes
+
+- Mobile browsers require a user gesture before reliable audio playback; SarahNode prompts for a tap to unlock audio.
+- Mic capture depends on browser support for `getUserMedia` + `MediaRecorder`; unsupported browsers degrade with an explanatory message instead of crashing.
+- On phone-sized devices, SarahNode uses reduced visual effects for smoother performance.
 
 ---
 

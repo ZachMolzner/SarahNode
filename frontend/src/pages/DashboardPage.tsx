@@ -20,6 +20,7 @@ import { WebAnswerTextbox, type WebAnswerViewModel } from "../components/WebAnsw
 import { useSettingsStore } from "../hooks/useSettingsStore";
 import { computeWebGroundedSignature, normalizeWebGroundedPayload, shouldKeepWebPanelPinned } from "../lib/webGroundedAnswer";
 import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
+import { resolvePlatformProfile } from "../lib/platformProfile";
 
 const EXPRESSION_REACTION_COOLDOWN_MS = {
   interrupted: 2400,
@@ -109,9 +110,11 @@ export function DashboardPage() {
 
   const appShell = useMemo(() => createAppShell(), []);
   const { settings, settingsReady, settingsOpen, setSettingsOpen, updateSettings, windowBridge } = useSettingsStore();
+  const platformProfile = useMemo(() => resolvePlatformProfile(windowBridge.isNativeDesktop), [windowBridge.isNativeDesktop]);
+  const desktopFeaturesEnabled = windowBridge.isNativeDesktop;
   const displayMode = {
     ...appShell.displayMode,
-    activeMode: settings.overlayMode ? "overlay" : "immersive",
+    activeMode: desktopFeaturesEnabled ? (settings.overlayMode ? "overlay" : "immersive") : "immersive",
   };
   const overlayEnabled = isOverlayMode(displayMode);
   const [overlayControlsVisible, setOverlayControlsVisible] = useState(false);
@@ -144,6 +147,7 @@ export function DashboardPage() {
     speakingEndedAtMs: speakingEndedAt,
   });
   const expressionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugExpressions=1");
+  const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
@@ -204,6 +208,21 @@ export function DashboardPage() {
   useEffect(() => {
     return () => voiceOrchestratorRef.current.stopSpeaking();
   }, []);
+
+  useEffect(() => {
+    if (desktopFeaturesEnabled) return;
+    const unlockAudio = async () => {
+      const unlocked = await voiceOrchestratorRef.current.ensureAudioUnlockedFromGesture();
+      setAudioNeedsGesture(!unlocked);
+    };
+
+    const handleUserGesture = () => {
+      void unlockAudio();
+    };
+
+    window.addEventListener("pointerdown", handleUserGesture, { passive: true });
+    return () => window.removeEventListener("pointerdown", handleUserGesture);
+  }, [desktopFeaturesEnabled]);
 
   useEffect(() => {
     let frame = 0;
@@ -509,6 +528,13 @@ export function DashboardPage() {
   }, [overlayEnabled]);
 
   useEffect(() => {
+    if (platformProfile.isMobileWeb) {
+      setOverlayControlsVisible(true);
+      setIsControlsOpen(true);
+    }
+  }, [platformProfile.isMobileWeb]);
+
+  useEffect(() => {
     if (!overlayEnabled) return;
     setIsControlsOpen(false);
     setIsTranscriptOpen(false);
@@ -560,7 +586,7 @@ export function DashboardPage() {
     setWebAnswer((current) => (current ? { ...current, mode: overlayEnabled ? "overlay" : "immersive" } : current));
   }, [overlayEnabled]);
 
-  const showOverlayControls = !overlayEnabled || overlayControlsVisible;
+  const showOverlayControls = !overlayEnabled || overlayControlsVisible || platformProfile.isMobileWeb;
   const bootstrappingDesktopSettings = windowBridge.isNativeDesktop && !settingsReady;
 
   if (bootstrappingDesktopSettings) {
@@ -574,6 +600,7 @@ export function DashboardPage() {
           avatarState={avatarState}
           gesturePerformance={gesturePerformance}
           displayMode={displayMode}
+          reducedEffects={platformProfile.reducedEffects}
           onInteractionRegionReady={(element) => overlayControllerRef.current?.setInteractionRegion(element)}
           overlayVisibility={{
             controlsOpen: isControlsOpen,
@@ -600,7 +627,7 @@ export function DashboardPage() {
           <div style={browserOverlayWarningStyle}>Overlay visuals are active, but native click-through requires Tauri desktop mode.</div>
         ) : null}
 
-        {showOverlayControls ? <div style={topOverlayStyle}>
+        {showOverlayControls ? <div style={{ ...topOverlayStyle, gap: platformProfile.isPhoneLike ? 6 : 8 }}>
           <Pill label={`Connection: ${connectionState}`} muted={connectionState !== "open"} />
           <Pill label={`Voice: ${voiceStatus}`} muted={voiceStatus === "idle"} />
           <button type="button" onClick={() => setIsControlsOpen((open) => !open)} style={miniButtonStyle}>
@@ -612,7 +639,7 @@ export function DashboardPage() {
           <button type="button" onClick={() => setSettingsOpen((open) => !open)} style={miniButtonStyle}>
             {settingsOpen ? "Hide Settings" : "Settings"}
           </button>
-        </div> : overlayEnabled ? <div style={overlayHintStyle}>Ctrl+Shift+O for controls</div> : null}
+        </div> : overlayEnabled && !platformProfile.isMobileWeb ? <div style={overlayHintStyle}>Ctrl+Shift+O for controls</div> : null}
         {expressionDebugEnabled ? (
           <div style={expressionDebugStyle}>
             baseline: {expressionState.debug.baseline} · reaction: {expressionState.reaction} · intensity:{" "}
@@ -655,7 +682,7 @@ export function DashboardPage() {
         </div>
 
         {showOverlayControls && isControlsOpen ? (
-          <aside style={drawerStyle}>
+          <aside style={{ ...drawerStyle, width: platformProfile.isPhoneLike ? "calc(100vw - 16px)" : drawerStyle.width, right: platformProfile.isPhoneLike ? 8 : 10 }}>
             <h2 style={{ marginTop: 0 }}>Assistant Controls</h2>
             <div style={gridInputsStyle}>
               <label style={{ display: "grid", gap: 6 }}>
@@ -682,7 +709,7 @@ export function DashboardPage() {
                 value={content}
                 onChange={(event) => setContent(event.target.value)}
                 rows={4}
-                style={{ ...inputStyle, resize: "vertical" }}
+                style={{ ...inputStyle, resize: "vertical", fontSize: platformProfile.isPhoneLike ? 16 : 14 }}
               />
             </label>
 
@@ -710,7 +737,7 @@ export function DashboardPage() {
         ) : null}
 
         {showOverlayControls && isTranscriptOpen ? (
-          <section style={transcriptOverlayStyle}>
+          <section style={{ ...transcriptOverlayStyle, width: platformProfile.isPhoneLike ? "calc(100vw - 16px)" : transcriptOverlayStyle.width, left: platformProfile.isPhoneLike ? 8 : 10 }}>
             <header style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
               <strong>Event Transcript</strong>
               <span style={{ opacity: 0.8, fontSize: 12 }}>Events: {totalEvents}</span>
@@ -727,6 +754,7 @@ export function DashboardPage() {
         <SettingsPanel
           open={settingsOpen}
           settings={settings}
+          desktopFeaturesEnabled={desktopFeaturesEnabled}
           onClose={() => setSettingsOpen(false)}
           onChange={(patch) => {
             void updateSettings(patch);
@@ -751,6 +779,8 @@ export function DashboardPage() {
             overlayControllerRef.current?.setSecondaryInteractionRegion(element);
           }}
         />
+
+        {audioNeedsGesture ? <div style={audioGestureHintStyle}>Tap anywhere once to enable Sarah audio playback on this browser.</div> : null}
 
         {shutdownStatus === "ended" ? (
           <div style={shutdownOverlayStyle}>
@@ -869,6 +899,7 @@ const miniButtonStyle: React.CSSProperties = {
   color: "#eef1ff",
   borderRadius: 999,
   padding: "6px 12px",
+  minHeight: 36,
   cursor: "pointer",
   backdropFilter: "blur(8px)",
 };
@@ -931,6 +962,7 @@ const inputStyle: React.CSSProperties = {
   padding: "10px 12px",
   background: "rgba(8, 12, 24, 0.88)",
   color: "#f5f5f5",
+  fontSize: 14,
 };
 
 const buttonStyle: React.CSSProperties = {
@@ -950,6 +982,20 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: "pointer",
   background: "rgba(11, 16, 28, 0.66)",
   color: "#f5f5f5",
+};
+
+const audioGestureHintStyle: React.CSSProperties = {
+  position: "absolute",
+  left: 10,
+  right: 10,
+  bottom: 86,
+  zIndex: 16,
+  borderRadius: 10,
+  border: "1px solid rgba(143, 168, 230, 0.5)",
+  background: "rgba(10, 16, 30, 0.76)",
+  color: "#eff4ff",
+  padding: "8px 10px",
+  fontSize: 13,
 };
 
 const shutdownPromptStyle: React.CSSProperties = {
