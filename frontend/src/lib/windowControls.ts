@@ -16,6 +16,7 @@ export type WindowControlBridge = {
   updateDesktopSettings: (settings: DesktopSettings) => Promise<DesktopSettings | null>;
   setAlwaysOnTop: (enabled: boolean) => Promise<void>;
   setOverlayMode: (enabled: boolean) => Promise<void>;
+  setCloseToTrayOnClose: (enabled: boolean) => Promise<void>;
   summonWindow: () => Promise<void>;
   hideWindow: () => Promise<void>;
   onDesktopSettingsUpdated: (listener: DesktopSettingsListener) => Promise<() => void>;
@@ -44,6 +45,9 @@ export function createWindowControlBridge(): WindowControlBridge {
     },
     async setOverlayMode(enabled) {
       await invokeSafe<DesktopSettings>("set_overlay_mode", { enabled });
+    },
+    async setCloseToTrayOnClose(enabled) {
+      await invokeSafe<DesktopSettings>("set_close_to_tray_on_close", { enabled });
     },
     async summonWindow() {
       await invokeSafe("summon_main_window");
