@@ -66,7 +66,7 @@ It uses:
 - Gesture/performance layer is implemented above presence and locomotion (`gestureController` + `useGesturePerformance`) and contributes deterministic expressive offsets, priorities, cooldowns, and recovery easing.
 - Speaking sync improvements: talking motion now follows TTS playback timing when available, with text-duration fallback when no audio payload exists.
 - Voice orchestration module (`voiceOrchestrator`) provides `speakText`, `stopSpeaking`, and status/debug metadata across ElevenLabs and browser fallback paths.
-- Browser-safe stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) for future native monitor-aware movement in Tauri/Electron.
+- Browser + Tauri-aware stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) with monitor-region adapter hooks for future native multi-monitor movement.
 - Auto-play + replay support for generated speech audio.
 
 ---
@@ -97,6 +97,47 @@ npm install
 cp .env.example .env
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
+
+
+## 3) Desktop Shell (Tauri 2)
+
+SarahNode now includes a **Tauri 2 desktop shell** that wraps the existing React + Vite frontend (it does not replace the web stack).
+
+```bash
+cd frontend
+npm install
+npm run tauri:dev
+```
+
+Production desktop build:
+
+```bash
+cd frontend
+npm install
+npm run tauri:build
+```
+
+Tauri integration uses:
+- `beforeDevCommand`: starts the existing Vite dev server
+- `devUrl`: points Tauri to Vite during development
+- `beforeBuildCommand`: runs the existing frontend build
+- `frontendDist`: points Tauri to `frontend/dist` output
+
+> Current backend expectation in this first desktop pass: run FastAPI separately (same as browser mode). Sidecar/backend bundling is intentionally deferred to a future phase for stability.
+
+---
+
+## Runtime Modes
+
+- **Browser mode**
+  - Run frontend with `npm run dev` and backend separately.
+  - Shutdown uses browser-safe close fallback behavior when tab close is blocked.
+
+- **Tauri desktop mode**
+  - Run frontend with `npm run tauri:dev` and backend separately.
+  - Shutdown flow can issue a **real native window close** through Tauri APIs.
+
+Mode detection is centralized in frontend utilities (`tauriEnvironment` + `appShell`) so Tauri-specific code is not scattered across UI components.
 
 ---
 
@@ -195,6 +236,9 @@ Planned extension path:
 3. Add a Tauri/Electron monitor provider that supplies monitor regions and active-window coordinates.
 4. Feed those regions into the same movement + presence controllers without rewriting avatar behavior logic.
 
+Current Tauri note:
+- The adapter can query monitor regions in Tauri mode, but movement currently still uses viewport-safe logic by default while native placement/routing rules are finalized.
+
 
 ## Shutdown Behavior
 
@@ -203,4 +247,4 @@ SarahNode supports voice-triggered shutdown intents (for example: "Sarah, close 
 - Most shutdown phrases require confirmation (e.g., "yes" / "confirm") before ending the session.
 - On confirmed shutdown, Sarah performs a dedicated goodbye sequence: a spoken/captioned goodbye line plus a respectful Japanese-bow-inspired animation, then active listening/audio are halted and close is requested.
 - Browser tabs may block programmatic close calls; when that happens SarahNode falls back to: **"Session closed. You can now close this tab."**
-- The close behavior is isolated behind a shell abstraction so Tauri/Electron window-close APIs can be added later without changing intent parsing logic.
+- The close behavior is isolated behind a shell abstraction. In browser mode it keeps the safe fallback message, and in Tauri mode it requests native window close via Tauri.

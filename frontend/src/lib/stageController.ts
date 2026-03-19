@@ -1,20 +1,10 @@
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { MovementController, type MovementSnapshot, type MovementState } from "./movementController";
 import type { OverlayVisibility, StageZoneName } from "./stageZones";
+import { createScreenEnvironment } from "./screenEnvironment";
 import { usePresenceBehavior, type PresenceSignals } from "../hooks/usePresenceBehavior";
 import type { AttentionTarget } from "./presenceController";
 
-export type DisplayRegion = {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-};
-
-export interface ScreenEnvironment {
-  getRegions: () => DisplayRegion[];
-}
 
 export interface StageBoundsProvider {
   getBounds: () => { width: number; height: number };
@@ -37,41 +27,6 @@ export type StageMotion = {
   engagementLevel: number;
   preferredZone: StageZoneName;
 };
-
-export function createBrowserScreenEnvironment(): ScreenEnvironment {
-  return {
-    getRegions: () => {
-      const fallback: DisplayRegion = {
-        id: "viewport",
-        x: 0,
-        y: 0,
-        width: window.innerWidth,
-        height: window.innerHeight,
-      };
-
-      const segmented = (window as Window & {
-        getWindowSegments?: () => Array<{ left: number; top: number; width: number; height: number }>;
-      }).getWindowSegments;
-
-      if (typeof segmented !== "function") {
-        return [fallback];
-      }
-
-      const segments = segmented();
-      if (!Array.isArray(segments) || segments.length === 0) {
-        return [fallback];
-      }
-
-      return segments.map((segment, index) => ({
-        id: `segment-${index}`,
-        x: segment.left,
-        y: segment.top,
-        width: segment.width,
-        height: segment.height,
-      }));
-    },
-  };
-}
 
 export function useStageController(
   mode: MovementState,
@@ -116,7 +71,8 @@ export function useStageController(
       },
     };
 
-    const screenEnvironment = createBrowserScreenEnvironment();
+    const screenEnvironment = createScreenEnvironment();
+    void screenEnvironment.refreshRegions();
 
     const animate = () => {
       const now = performance.now();
