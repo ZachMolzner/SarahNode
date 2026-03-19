@@ -34,6 +34,11 @@ Desktop branding identity is standardized to:
 - Attention and focus behavior: Sarah blends viewer focus, neutral idle gaze, thinking/inward focus, and subtle caption/overlay-aware focus shifts.
 - Idle micro-behaviors: gentle low-amplitude shifts and posture/gaze adjustments when calm, with suppression during listening/thinking/shutdown.
 - Overlay awareness: menu/transcript/caption/shutdown overlays softly bias zone selection to reduce visual conflict without mechanical snapping.
+- Overlay grounded locomotion mode: in overlay display mode Sarah uses a desktop-ground model (bottom-edge walking path, horizontal-first travel, edge-zone settling) instead of free-stage floating.
+- Edge-aware resting behavior: Sarah can subtly lean/perch near left/right boundaries and relax into low-motion posture approximations when idle.
+- Mode-aware stage model: immersive mode keeps cinematic freer presentation while overlay mode uses grounded desktop behavior through one shared movement stack.
+- Assistant capability routing readiness: lightweight intent buckets for general Q&A, information lookup, web/browse tasks, coding help, shutdown commands, and greeting/smalltalk.
+- Intent-aware response style steering: coding requests get structured guidance; lookup/browse requests explicitly indicate when live web verification is needed vs local context answers.
 - Subtitle-style on-stage captions for user transcripts and Sarah replies (lightweight, auto-fading, and separate from transcript history).
 - Centralized voice orchestration layer that is ElevenLabs-first with graceful browser speech fallback.
 - Startup greeting, assistant replies, and shutdown goodbye now all route through one shared voice orchestration API.
@@ -70,7 +75,8 @@ Desktop branding identity is standardized to:
 - Gesture/performance layer is implemented above presence and locomotion (`gestureController` + `useGesturePerformance`) and contributes deterministic expressive offsets, priorities, cooldowns, and recovery easing.
 - Speaking sync improvements: talking motion now follows TTS playback timing when available, with text-duration fallback when no audio payload exists.
 - Voice orchestration module (`voiceOrchestrator`) provides `speakText`, `stopSpeaking`, and status/debug metadata across ElevenLabs and browser fallback paths.
-- Browser + Tauri-aware stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) with monitor-region adapter hooks for future native multi-monitor movement.
+- Browser + Tauri-aware stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) with active-region seams for future native work-area/taskbar geometry support.
+- Overlay movement controller (`desktopGroundController`) models `groundLineY`, left/right travel boundaries, edge zones, and perch candidate behavior while preserving browser-safe fallback.
 - Auto-play + replay support for generated speech audio.
 
 ---
@@ -222,6 +228,22 @@ Mode detection and native window behavior are centralized in frontend utilities 
 
 ---
 
+
+## Assistant Capability Categories
+
+Sarah routes each incoming message through a lightweight capability classifier before generation:
+
+- `ask_general`: default Q&A and explanations.
+- `lookup_information`: factual lookup/explanation requests (with verification cues when needed).
+- `browse_web`: explicit search/research/browse tasks.
+- `coding_help`: structured debugging and implementation guidance.
+- `shutdown_command`: shutdown intent handling path.
+- `smalltalk_or_greeting`: concise social responses.
+
+Notes on implementation status:
+- Implemented now: intent routing, intent-aware style hints, capability events, and state exposure.
+- Extension-ready seam: live web browsing still depends on whichever runtime/provider path is configured; Sarah states clearly when web/tool lookup is required but unavailable.
+
 ## Voice Testing Quick Start
 
 1. Start backend and frontend.
@@ -282,6 +304,8 @@ The frontend loads it from:
 
 What works now in browser:
 - Sarah can move smoothly across the visible stage area with intentional behavior priorities (shutdown > listening > talking > thinking > overlay-aware reposition > idle relaxed presence).
+- In overlay mode, stage targets are remapped to a desktop-ground plane with a bottom-edge walking line, horizontal travel boundaries, edge-zone settling, and perch-like posture approximation.
+- Immersive mode keeps freer stage placement; overlay mode uses grounded desktop behavior without duplicating the movement stack.
 - Stage zones are computed from normalized stage coordinates and adapt to viewport bounds, preserving browser-safe behavior while remaining ready for native display-region inputs.
 - Presence behaviors include anti-pacing safeguards (zone dwell time, movement cooldowns, target hysteresis, and movement suppression during high-priority states).
 - Stage movement uses normalized stage coordinates and interpolation to avoid jitter, with graceful pseudo-walking body rhythm when no dedicated walk animation exists.
@@ -299,7 +323,7 @@ Planned extension path:
 4. Feed those regions into the same movement + presence controllers without rewriting avatar behavior logic.
 
 Current Tauri note:
-- The adapter can query monitor regions in Tauri mode, but movement currently still uses viewport-safe logic by default while native placement/routing rules are finalized.
+- The adapter can query monitor regions in Tauri mode and overlay movement now uses bottom-edge grounded approximations, but this is still an approximation (not true OS taskbar/work-area detection yet).
 
 
 ## Shutdown Behavior

@@ -96,6 +96,15 @@ def get_assistant_state() -> dict[str, object]:
     return {
         "assistant_state": memory_manager.state.assistant_state,
         "latest_reply": memory_manager.state.last_reply,
+        "latest_capability_intent": memory_manager.state.last_capability_intent,
+        "capabilities": [
+            "ask_general",
+            "lookup_information",
+            "browse_web",
+            "coding_help",
+            "shutdown_command",
+            "smalltalk_or_greeting",
+        ],
         "memory_summary": memory_manager.summarize(),
         "providers": provider_status(),
     }

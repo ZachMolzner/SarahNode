@@ -29,6 +29,7 @@ export function AvatarPanel({
   const stageMotion = useStageController(avatarState.mode, stageRef, {
     overlays: overlayVisibility,
     signals: presenceSignals,
+    displayMode,
   });
 
   useEffect(() => {
@@ -45,6 +46,7 @@ export function AvatarPanel({
   }, [avatarState.mode]);
 
   const showCinematicBackdrop = displayMode.activeMode === "immersive";
+  const isOverlayGrounded = displayMode.activeMode === "overlay";
   const glowIntensity = showCinematicBackdrop ? 1 + gesturePerformance.glowBoost : 0.18;
 
   return (
@@ -62,7 +64,15 @@ export function AvatarPanel({
         />
       ) : null}
 
-      <div ref={interactionRegionRef} style={interactionRegionStyle} aria-label="Sarah interaction region">
+      <div
+        ref={interactionRegionRef}
+        style={{
+          ...interactionRegionStyle,
+          top: isOverlayGrounded ? "72%" : interactionRegionStyle.top,
+          height: isOverlayGrounded ? "min(58vh, 620px)" : interactionRegionStyle.height,
+        }}
+        aria-label="Sarah interaction region"
+      >
         <div
           style={{
             ...avatarAnchorStyle,

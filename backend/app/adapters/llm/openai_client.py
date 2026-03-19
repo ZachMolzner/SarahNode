@@ -6,6 +6,7 @@ from openai import AsyncOpenAI
 from app.adapters.llm.base import LLMClient
 from app.config.settings import settings
 from app.schemas.chat import AssistantReply, ChatMessage
+from app.services.capability_router import CapabilityRoute
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ class OpenAIClient(LLMClient):
         memory_summary: str,
         recent_history: list[str],
         persona: dict[str, Any],
+        capability_route: CapabilityRoute,
     ) -> AssistantReply:
         system_prompt = str(persona.get("system_prompt", settings.persona_system_prompt))
         persona_name = str(persona.get("name", settings.persona_name))
@@ -45,7 +47,10 @@ class OpenAIClient(LLMClient):
                                 "You are a practical local-first personal assistant. "
                                 "Give useful, concrete next steps. Keep responses concise by default unless asked for depth.\n"
                                 f"Assistant persona name: {persona_name}\n"
-                                f"Conversation style: {persona_style}"
+                                f"Conversation style: {persona_style}\n"
+                                f"Capability route: {capability_route.intent} (confidence={capability_route.confidence:.2f})\n"
+                                f"Response style hint: {capability_route.style_hint}\n"
+                                "If the user asks for live lookup/search and tools are not available, say that clearly and offer a concrete fallback plan."
                             ),
                         }
                     ],
