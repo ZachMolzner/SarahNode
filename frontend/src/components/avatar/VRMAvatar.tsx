@@ -169,8 +169,7 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance }: VRMA
           const blink = Math.max(0, Math.sin(elapsed * blinkRate + 0.3) * 1.2 - 0.8);
           vrm.expressionManager.setValue("blink", blink);
 
-          const mouthBase = state.isSpeaking ? (Math.sin(elapsed * (10 + motion.pace * 10)) * 0.5 + 0.5) : 0;
-          const mouth = Math.min(0.85, mouthBase * (state.mouthIntensity ?? 0.56));
+          const mouth = Math.min(0.86, Math.max(0, state.mouthIntensity ?? 0));
           vrm.expressionManager.setValue("aa", mouth);
 
           const happy = (state.mood === "cheerful" || state.mood === "warm" ? 0.36 : 0.1) + performance.emphasisPulse * 0.12;
