@@ -9,11 +9,19 @@ import { VoiceRecorder } from "../components/voice/VoiceRecorder";
 import { browserAppShell } from "../lib/appShell";
 import { isShutdownCancellation, isShutdownConfirmation, matchShutdownIntent } from "../lib/shutdownIntent";
 import { runShutdownFlow } from "../lib/shutdownController";
+import { SubtitleCaptions } from "../components/captions/SubtitleCaptions";
+
+function estimateSpeechDurationMs(text: string): number {
+  const chars = text.trim().length;
+  if (!chars) return 0;
+  return Math.min(7800, Math.max(1300, chars * 52));
+}
 
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const processedTtsKeyRef = useRef<string>("");
+  const processedReplyKeyRef = useRef<string>("");
 
   const [username, setUsername] = useState("local-user");
   const [content, setContent] = useState("Give me a quick plan for today.");
@@ -30,14 +38,33 @@ export function DashboardPage() {
   const [shutdownPendingConfirm, setShutdownPendingConfirm] = useState(false);
   const [shutdownPrompt, setShutdownPrompt] = useState<string | null>(null);
   const [shutdownStatus, setShutdownStatus] = useState<"idle" | "starting" | "ended">("idle");
+  const [captionText, setCaptionText] = useState("");
+  const [captionSpeaker, setCaptionSpeaker] = useState<"sarah" | "user" | null>(null);
+  const [fallbackSpeechUntil, setFallbackSpeechUntil] = useState(0);
 
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
+  const isFallbackSpeaking = Date.now() < fallbackSpeechUntil;
+  const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying || isFallbackSpeaking;
+
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
-      ? { ...baseAvatarState, mode: "shutting_down", mood: "goodbye", isSpeaking: false }
-      : baseAvatarState;
+      ? { ...baseAvatarState, mode: "shutting_down", mood: "goodbye", isSpeaking: false, mouthIntensity: 0.05 }
+      : {
+          ...baseAvatarState,
+          mode: isSpeaking ? "talking" : baseAvatarState.mode,
+          mood:
+            baseAvatarState.mode === "listening"
+              ? "listening"
+              : baseAvatarState.mode === "thinking"
+                ? "focused"
+                : isSpeaking
+                  ? "warm"
+                  : baseAvatarState.mood,
+          isSpeaking,
+          mouthIntensity: isAudioPlaying ? 0.8 : isSpeaking ? 0.58 : 0.02,
+        };
 
   useEffect(() => {
     void fetchAssistantState()
@@ -93,6 +120,29 @@ export function DashboardPage() {
       audio.removeEventListener("error", onError);
     };
   }, [events, shutdownStatus]);
+
+  useEffect(() => {
+    const replyEvent = events.find((event) => event.type === "reply_selected");
+    if (!replyEvent) return;
+    const replyText = replyEvent.payload?.["text"];
+    if (typeof replyText !== "string" || !replyText.trim()) return;
+
+    const replyKey = `${replyEvent.timestamp}-${replyText.length}`;
+    if (processedReplyKeyRef.current === replyKey) return;
+    processedReplyKeyRef.current = replyKey;
+
+    setCaptionSpeaker("sarah");
+    setCaptionText(replyText);
+
+    const ttsAlreadyHandled = processedTtsKeyRef.current.startsWith(replyEvent.timestamp);
+    if (!ttsAlreadyHandled) {
+      const until = Date.now() + estimateSpeechDurationMs(replyText);
+      setFallbackSpeechUntil(until);
+      window.setTimeout(() => {
+        if (Date.now() >= until) setFallbackSpeechUntil(0);
+      }, estimateSpeechDurationMs(replyText) + 80);
+    }
+  }, [events]);
 
   useEffect(() => {
     const voiceEvent = events.find((event) => event.type.startsWith("voice:"));
@@ -197,6 +247,7 @@ export function DashboardPage() {
     <main style={pageStyle}>
       <div style={stageStyle}>
         <AvatarPanel avatarState={avatarState} />
+        <SubtitleCaptions speaker={captionSpeaker} text={captionText} />
 
         <div style={topOverlayStyle}>
           <Pill label={`Connection: ${connectionState}`} muted={connectionState !== "open"} />
@@ -222,6 +273,8 @@ export function DashboardPage() {
             }}
             onTranscribe={transcribeAudio}
             onTranscript={async (text) => {
+              setCaptionSpeaker("user");
+              setCaptionText(text);
               setContent(text);
               await handleSend(text);
             }}
@@ -319,7 +372,7 @@ function Pill({ label, muted = false }: { label: string; muted?: boolean }) {
 
 const pageStyle: React.CSSProperties = {
   minHeight: "100vh",
-  background: "radial-gradient(circle at top, #11172b 0%, #05060c 60%)",
+  background: "#03050c",
   color: "#f5f5f5",
   fontFamily: "Inter, Arial, sans-serif",
 };
@@ -355,12 +408,13 @@ const bottomOverlayStyle: React.CSSProperties = {
 };
 
 const miniButtonStyle: React.CSSProperties = {
-  border: "1px solid #445277",
-  background: "rgba(15, 18, 30, 0.66)",
+  border: "1px solid rgba(130, 155, 217, 0.55)",
+  background: "rgba(9, 13, 26, 0.52)",
   color: "#eef1ff",
   borderRadius: 999,
   padding: "6px 12px",
   cursor: "pointer",
+  backdropFilter: "blur(8px)",
 };
 
 const drawerStyle: React.CSSProperties = {
@@ -372,9 +426,9 @@ const drawerStyle: React.CSSProperties = {
   overflowY: "auto",
   padding: 12,
   borderRadius: 14,
-  background: "rgba(10, 12, 19, 0.92)",
-  border: "1px solid #2f3855",
-  backdropFilter: "blur(10px)",
+  background: "rgba(8, 12, 22, 0.76)",
+  border: "1px solid rgba(96, 120, 190, 0.5)",
+  backdropFilter: "blur(12px)",
   zIndex: 20,
 };
 
@@ -385,8 +439,8 @@ const transcriptOverlayStyle: React.CSSProperties = {
   width: "min(560px, calc(100vw - 20px))",
   borderRadius: 12,
   padding: 10,
-  border: "1px solid #2d3553",
-  background: "rgba(6, 8, 14, 0.86)",
+  border: "1px solid rgba(103, 125, 195, 0.5)",
+  background: "rgba(6, 10, 18, 0.75)",
   zIndex: 20,
 };
 
@@ -416,29 +470,29 @@ const submitRowStyle: React.CSSProperties = {
 };
 
 const inputStyle: React.CSSProperties = {
-  border: "1px solid #3a3a3a",
+  border: "1px solid rgba(99, 116, 164, 0.9)",
   borderRadius: 10,
   padding: "10px 12px",
-  background: "#0f0f0f",
+  background: "rgba(8, 12, 24, 0.88)",
   color: "#f5f5f5",
 };
 
 const buttonStyle: React.CSSProperties = {
-  border: "none",
+  border: "1px solid rgba(206, 223, 255, 0.65)",
   borderRadius: 10,
   padding: "10px 16px",
   cursor: "pointer",
-  background: "#f5f5f5",
-  color: "#111",
+  background: "rgba(222, 232, 255, 0.9)",
+  color: "#0d162f",
   fontWeight: 700,
 };
 
 const secondaryButtonStyle: React.CSSProperties = {
-  border: "1px solid #575757",
+  border: "1px solid rgba(136, 155, 216, 0.75)",
   borderRadius: 10,
   padding: "10px 16px",
   cursor: "pointer",
-  background: "transparent",
+  background: "rgba(11, 16, 28, 0.66)",
   color: "#f5f5f5",
 };
 
@@ -453,8 +507,8 @@ const shutdownPromptStyle: React.CSSProperties = {
 };
 
 const pillStyle: React.CSSProperties = {
-  border: "1px solid #33416a",
-  background: "rgba(8, 11, 18, 0.72)",
+  border: "1px solid rgba(96, 121, 194, 0.62)",
+  background: "rgba(8, 12, 22, 0.62)",
   borderRadius: 999,
   padding: "5px 10px",
   fontSize: 12,

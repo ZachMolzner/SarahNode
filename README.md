@@ -22,6 +22,9 @@ It uses:
   - `STT_PROVIDER=auto|openai`
 - Automatic fallback behavior and clear errors when required credentials are missing.
 - Immersive avatar-first launch mode where Sarah is the dominant fullscreen presence.
+- Cinematic stage presentation with layered gradients, spotlight glow, and subtle depth/vignette treatment to keep Sarah as the focal point.
+- Stage-presence movement system: Sarah can smoothly reposition across the stage, settle during high-priority states, and drift occasionally while idle.
+- Subtitle-style on-stage captions for user transcripts and Sarah replies (lightweight, auto-fading, and separate from transcript history).
 - Minimal overlays for mic/listening, connection status, optional transcript, and tucked-away controls.
 - Voice shutdown intent handling with confirmation and graceful browser-safe fallback.
 - VRM avatar panel with Sarah.vrm loaded from `/assets/Sarah.vrm`.
@@ -46,7 +49,9 @@ It uses:
 - Immersive React stage with Sarah centered by default and controls behind compact overlays/drawers.
 - Push-to-talk microphone capture via `getUserMedia` + `MediaRecorder`.
 - Transcript is auto-submitted through the existing assistant text message path.
-- Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm`.
+- Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm` with smooth mood/state transitions.
+- Speaking sync improvements: talking motion now follows TTS playback timing when available, with text-duration fallback when no audio payload exists.
+- Browser-safe stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) for future native monitor-aware movement in Tauri/Electron.
 - Auto-play + replay support for generated speech audio.
 
 ---
@@ -129,7 +134,27 @@ The frontend loads it from:
 - Stage 1 push-to-talk is implemented; always-listening/VAD is a future extension.
 - Conversation memory is currently in-memory only (no long-term persistence yet).
 - TTS uses base64 audio event payloads for immediate playback; no file storage pipeline yet.
-- Avatar animation is lightweight (idle/listening/thinking/talking), not a full motion rig.
+- Browser builds support movement within the current viewport/stage only; true cross-monitor geometry requires a native wrapper (Tauri/Electron) that can provide monitor bounds and window placement APIs.
+- Multi-display movement architecture is prepared through `ScreenEnvironment` and stage-bounds abstractions, but browser runtime currently uses viewport-safe regions.
+- Avatar animation remains lightweight and stable (no full mocap rig / phoneme viseme pipeline yet).
+
+
+## Stage Presence and Display-Space Notes
+
+What works now in browser:
+- Sarah can move smoothly across the visible stage area with intentional behavior rules (idle drift, settle while listening/talking, reduced motion while thinking, stop on shutdown).
+- Stage movement uses normalized stage coordinates and interpolation to avoid jitter, with graceful pseudo-walking body rhythm when no dedicated walk animation exists.
+- The browser implementation uses current viewport/stage bounds and can optionally read segmented window regions where supported.
+
+What needs a native wrapper for full monitor-aware behavior:
+- Enumerating full multi-monitor geometry reliably (all displays, work areas, DPI-scaled coordinates).
+- True cross-monitor routing and window-aware movement beyond the current browser viewport.
+- OS-level placement constraints and display targeting logic for persistent avatar movement across monitors.
+
+Planned extension path:
+1. Keep movement logic display-agnostic via `ScreenEnvironment` / `StageBoundsProvider`.
+2. Add a Tauri/Electron monitor provider that supplies monitor regions and active-window coordinates.
+3. Feed those regions into the same movement controller without rewriting avatar behavior logic.
 
 
 ## Shutdown Behavior

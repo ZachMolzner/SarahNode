@@ -3,22 +3,29 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import type { AvatarState } from "../../types/avatar";
+import type { StageMotion } from "../../lib/stageController";
 
 const DEFAULT_VRM_PATH = "/assets/Sarah.vrm";
 
 type VRMAvatarProps = {
   avatarState: AvatarState;
+  stageMotion: StageMotion;
 };
 
-export function VRMAvatar({ avatarState }: VRMAvatarProps) {
+export function VRMAvatar({ avatarState, stageMotion }: VRMAvatarProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const vrmRef = useRef<VRM | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const avatarStateRef = useRef(avatarState);
+  const stageMotionRef = useRef(stageMotion);
 
   useEffect(() => {
     avatarStateRef.current = avatarState;
   }, [avatarState]);
+
+  useEffect(() => {
+    stageMotionRef.current = stageMotion;
+  }, [stageMotion]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -26,7 +33,6 @@ export function VRMAvatar({ avatarState }: VRMAvatarProps) {
 
     let mounted = true;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#06080f");
 
     const camera = new THREE.PerspectiveCamera(30, container.clientWidth / container.clientHeight, 0.1, 1000);
     camera.position.set(0, 1.35, 2.4);
@@ -37,11 +43,16 @@ export function VRMAvatar({ avatarState }: VRMAvatarProps) {
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.1);
+    const hemi = new THREE.HemisphereLight(0xc3d4ff, 0x1f263c, 1.25);
     scene.add(hemi);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-    dir.position.set(1, 1.6, 2.2);
-    scene.add(dir);
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.02);
+    keyLight.position.set(1.2, 1.7, 2.4);
+    scene.add(keyLight);
+
+    const rimLight = new THREE.DirectionalLight(0xa3bbff, 0.55);
+    rimLight.position.set(-1.5, 1.2, -1.4);
+    scene.add(rimLight);
 
     const clock = new THREE.Clock();
 
@@ -86,26 +97,57 @@ export function VRMAvatar({ avatarState }: VRMAvatarProps) {
 
       const vrm = vrmRef.current;
       if (vrm) {
+        const state = avatarStateRef.current;
+        const motion = stageMotionRef.current;
         vrm.update(delta);
-        const isShuttingDown = avatarStateRef.current.mode === "shutting_down";
-        const bob = isShuttingDown ? Math.sin(elapsed * 0.4) * 0.004 : Math.sin(elapsed * 1.1) * 0.015;
-        vrm.scene.position.y = -1.05 + bob;
 
-        if (vrm.expressionManager) {
-          const blink = Math.max(0, Math.sin(elapsed * 2.7 + 0.3) * 1.2 - 0.8);
-          vrm.expressionManager.setValue("blink", blink);
-
-          const talking = avatarStateRef.current.isSpeaking ? (Math.sin(elapsed * 16) * 0.5 + 0.5) * 0.6 : 0;
-          vrm.expressionManager.setValue("aa", talking);
-        }
+        const idleBob = Math.sin(elapsed * (state.mode === "talking" ? 1.45 : 0.95)) * 0.012;
+        const moveBob = motion.bob * (state.mode === "walking" ? 1.35 : 0.75);
+        vrm.scene.position.y = -1.05 + idleBob + moveBob;
 
         const targetRot =
-          avatarStateRef.current.mode === "thinking"
-            ? Math.PI + 0.1
-            : avatarStateRef.current.mode === "shutting_down"
-              ? Math.PI - 0.05
-              : Math.PI;
-        vrm.scene.rotation.y += (targetRot - vrm.scene.rotation.y) * 0.05;
+          state.mode === "thinking"
+            ? Math.PI + 0.08
+            : state.mode === "shutting_down"
+              ? Math.PI - 0.07
+              : Math.PI - motion.lean * 0.55;
+        vrm.scene.rotation.y += (targetRot - vrm.scene.rotation.y) * 0.07;
+        vrm.scene.rotation.z += (motion.lean * 0.38 - vrm.scene.rotation.z) * 0.06;
+
+        if (vrm.humanoid) {
+          const head = vrm.humanoid.getNormalizedBoneNode("head");
+          const spine = vrm.humanoid.getNormalizedBoneNode("spine");
+          if (head) {
+            const headTarget =
+              state.mode === "listening"
+                ? 0.11
+                : state.mode === "thinking"
+                  ? -0.07
+                  : state.mode === "shutting_down"
+                    ? -0.12
+                    : 0.02;
+            head.rotation.z += (headTarget - head.rotation.z) * 0.08;
+          }
+          if (spine) {
+            const spineTarget = state.mode === "walking" ? motion.lean * 0.5 : motion.lean * 0.25;
+            spine.rotation.z += (spineTarget - spine.rotation.z) * 0.08;
+          }
+        }
+
+        if (vrm.expressionManager) {
+          const blinkRate = state.mode === "listening" ? 3.8 : 2.8;
+          const blink = Math.max(0, Math.sin(elapsed * blinkRate + 0.3) * 1.2 - 0.8);
+          vrm.expressionManager.setValue("blink", blink);
+
+          const mouthBase = state.isSpeaking ? (Math.sin(elapsed * (10 + motion.pace * 10)) * 0.5 + 0.5) : 0;
+          const mouth = Math.min(0.85, mouthBase * (state.mouthIntensity ?? 0.56));
+          vrm.expressionManager.setValue("aa", mouth);
+
+          const happy = state.mood === "cheerful" || state.mood === "warm" ? 0.36 : 0.1;
+          const relaxed = state.mood === "goodbye" ? 0.22 : 0.08;
+          vrm.expressionManager.setValue("happy", happy);
+          vrm.expressionManager.setValue("relaxed", relaxed);
+        }
       }
 
       renderer.render(scene, camera);
