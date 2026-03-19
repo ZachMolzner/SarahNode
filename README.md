@@ -21,8 +21,11 @@ It uses:
   - `TTS_PROVIDER=auto|mock|elevenlabs`
   - `STT_PROVIDER=auto|openai`
 - Automatic fallback behavior and clear errors when required credentials are missing.
+- Immersive avatar-first launch mode where Sarah is the dominant fullscreen presence.
+- Minimal overlays for mic/listening, connection status, optional transcript, and tucked-away controls.
+- Voice shutdown intent handling with confirmation and graceful browser-safe fallback.
 - VRM avatar panel with Sarah.vrm loaded from `/assets/Sarah.vrm`.
-- Responsive dashboard usable on desktop/tablet/phone.
+- Responsive experience across desktop/tablet/phone.
 
 ---
 
@@ -40,7 +43,7 @@ It uses:
 - LLM, TTS, and STT adapters are selected at startup with robust fallback logging.
 
 ### Frontend (`/frontend`)
-- React dashboard for text + voice input, live events, and assistant status.
+- Immersive React stage with Sarah centered by default and controls behind compact overlays/drawers.
 - Push-to-talk microphone capture via `getUserMedia` + `MediaRecorder`.
 - Transcript is auto-submitted through the existing assistant text message path.
 - Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm`.
@@ -127,3 +130,14 @@ The frontend loads it from:
 - Conversation memory is currently in-memory only (no long-term persistence yet).
 - TTS uses base64 audio event payloads for immediate playback; no file storage pipeline yet.
 - Avatar animation is lightweight (idle/listening/thinking/talking), not a full motion rig.
+
+
+## Shutdown Behavior
+
+SarahNode supports voice-triggered shutdown intents (for example: "Sarah, close program" or "close SarahNode").
+
+- Most shutdown phrases require confirmation (e.g., "yes" / "confirm") before ending the session.
+- On confirmed shutdown, the frontend stops active listening, halts audio playback, transitions Sarah into a goodbye state, and shows a subtle shutdown overlay.
+- Browser tabs may block programmatic close calls; when that happens SarahNode falls back to: **"Session closed. You can now close this tab."**
+- The close behavior is isolated behind a shell abstraction so Tauri/Electron window-close APIs can be added later without changing intent parsing logic.
+

@@ -26,7 +26,7 @@ export function VRMAvatar({ avatarState }: VRMAvatarProps) {
 
     let mounted = true;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color("#0d1119");
+    scene.background = new THREE.Color("#06080f");
 
     const camera = new THREE.PerspectiveCamera(30, container.clientWidth / container.clientHeight, 0.1, 1000);
     camera.position.set(0, 1.35, 2.4);
@@ -87,7 +87,8 @@ export function VRMAvatar({ avatarState }: VRMAvatarProps) {
       const vrm = vrmRef.current;
       if (vrm) {
         vrm.update(delta);
-        const bob = Math.sin(elapsed * 1.1) * 0.015;
+        const isShuttingDown = avatarStateRef.current.mode === "shutting_down";
+        const bob = isShuttingDown ? Math.sin(elapsed * 0.4) * 0.004 : Math.sin(elapsed * 1.1) * 0.015;
         vrm.scene.position.y = -1.05 + bob;
 
         if (vrm.expressionManager) {
@@ -98,7 +99,12 @@ export function VRMAvatar({ avatarState }: VRMAvatarProps) {
           vrm.expressionManager.setValue("aa", talking);
         }
 
-        const targetRot = avatarStateRef.current.mode === "thinking" ? Math.PI + 0.1 : Math.PI;
+        const targetRot =
+          avatarStateRef.current.mode === "thinking"
+            ? Math.PI + 0.1
+            : avatarStateRef.current.mode === "shutting_down"
+              ? Math.PI - 0.05
+              : Math.PI;
         vrm.scene.rotation.y += (targetRot - vrm.scene.rotation.y) * 0.05;
       }
 
@@ -125,19 +131,37 @@ export function VRMAvatar({ avatarState }: VRMAvatarProps) {
     return <div style={fallbackStyle}>Sarah avatar unavailable. UI is still functional.</div>;
   }
 
-  return <div ref={containerRef} style={canvasStyle} aria-label="Sarah VRM Avatar" />;
+  const isShuttingDown = avatarState.mode === "shutting_down";
+
+  return (
+    <div style={canvasFrameStyle}>
+      <div
+        ref={containerRef}
+        style={{
+          ...canvasStyle,
+          filter: isShuttingDown ? "saturate(0.9) brightness(0.8)" : "none",
+          opacity: isShuttingDown ? 0.9 : 1,
+        }}
+        aria-label="Sarah VRM Avatar"
+      />
+    </div>
+  );
 }
 
-const canvasStyle: CSSProperties = {
-  height: 320,
+const canvasFrameStyle: CSSProperties = {
   width: "100%",
-  borderRadius: 12,
-  border: "1px solid #2a2a2a",
+  height: "100%",
+  position: "relative",
+};
+
+const canvasStyle: CSSProperties = {
+  height: "100%",
+  width: "100%",
   overflow: "hidden",
 };
 
 const fallbackStyle: CSSProperties = {
-  height: 320,
+  height: "100%",
   width: "100%",
   borderRadius: 12,
   border: "1px solid #3f2e2e",
