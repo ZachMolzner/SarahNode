@@ -10,6 +10,7 @@ class MemoryState:
     session_notes: list[str] = field(default_factory=list)
     assistant_state: str = "idle"
     last_reply: str = ""
+    last_capability_intent: str = "ask_general"
 
 
 class MemoryManager:
@@ -28,6 +29,8 @@ class MemoryManager:
     def set_last_reply(self, reply: str) -> None:
         self.state.last_reply = reply
 
+    def set_last_capability(self, intent: str) -> None:
+        self.state.last_capability_intent = intent
 
     def recent_history(self, limit: int = 8) -> list[str]:
         recent = list(self.state.rolling_messages)[-limit:]

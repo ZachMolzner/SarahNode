@@ -116,14 +116,17 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance }: VRMA
 
         const engagementLift = motion.engagementLevel * 0.018;
         const postureLead = performance.bodyLean * 0.05 + performance.emphasisPulse * 0.012;
-        vrm.scene.position.z += (-0.02 - engagementLift - postureLead - vrm.scene.position.z) * 0.06;
+        const perchDrop = motion.perchDepth * 0.9;
+        vrm.scene.position.y -= perchDrop;
+        const groundedForward = motion.isGroundedOverlay ? 0.02 + motion.engagementLevel * 0.02 : 0;
+        vrm.scene.position.z += (-0.02 - engagementLift - postureLead + groundedForward - vrm.scene.position.z) * 0.06;
 
         const targetRot =
           state.mode === "thinking"
             ? Math.PI + 0.08
             : state.mode === "shutting_down"
               ? Math.PI - 0.07
-              : Math.PI - motion.lean * 0.55 + performance.headTilt * 0.08;
+              : Math.PI - motion.lean * 0.55 + performance.headTilt * 0.08 - motion.edgeLean * 0.28;
         vrm.scene.rotation.y += (targetRot - vrm.scene.rotation.y) * 0.07;
         vrm.scene.rotation.z += (motion.lean * 0.38 + performance.bodyLean * 0.35 - vrm.scene.rotation.z) * 0.06;
 
@@ -147,9 +150,16 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance }: VRMA
           }
           if (spine) {
             const focusLean = motion.attentionOffset.x * 0.6;
-            const spineTarget = state.mode === "walking" ? motion.lean * 0.5 : motion.lean * 0.25 + focusLean;
+            const spineTarget =
+              state.mode === "walking"
+                ? motion.lean * 0.5
+                : motion.lean * 0.25 + focusLean + motion.edgeLean * 0.45;
             spine.rotation.z += (spineTarget + performance.bodyLean * 0.35 - spine.rotation.z) * 0.08;
-            const postureTarget = motion.engagementLevel * 0.045 + performance.postureOpen * 0.05 - performance.bowDepth * 0.22;
+            const postureTarget =
+              motion.engagementLevel * 0.045 +
+              performance.postureOpen * 0.05 -
+              performance.bowDepth * 0.22 -
+              motion.perchDepth * 0.5;
             spine.rotation.x += (postureTarget - spine.rotation.x) * 0.04;
           }
         }

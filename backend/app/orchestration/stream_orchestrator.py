@@ -196,10 +196,20 @@ class StreamOrchestrator:
         # Dialogue
         memory_summary = self.memory_manager.summarize()
         recent_history = self.memory_manager.recent_history()
+        capability_route = self.dialogue_engine.classify_capability(message)
+        self.memory_manager.set_last_capability(capability_route.intent)
+        await self.emit_event(
+            "capability_routing",
+            {
+                "intent": capability_route.intent,
+                "confidence": capability_route.confidence,
+                "requires_web_lookup": capability_route.requires_web_lookup,
+            },
+        )
         generated_reply = None
 
         if moderation.allowed:
-            generated_reply = await self.dialogue_engine.generate(message, memory_summary, recent_history)
+            generated_reply = await self.dialogue_engine.generate(message, memory_summary, recent_history, capability_route)
 
         reply = self.response_policy.apply(moderation, generated_reply)
         self.memory_manager.set_last_reply(reply.text)

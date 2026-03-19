@@ -4,7 +4,8 @@ import type { OverlayVisibility, StageZoneName } from "./stageZones";
 import { createScreenEnvironment } from "./screenEnvironment";
 import { usePresenceBehavior, type PresenceSignals } from "../hooks/usePresenceBehavior";
 import type { AttentionTarget } from "./presenceController";
-
+import type { DisplayModeState } from "./displayMode";
+import { resolveDesktopGroundedMotion } from "./desktopGroundController";
 
 export interface StageBoundsProvider {
   getBounds: () => { width: number; height: number };
@@ -13,6 +14,7 @@ export interface StageBoundsProvider {
 export type StageBehaviorContext = {
   overlays: OverlayVisibility;
   signals: PresenceSignals;
+  displayMode: DisplayModeState;
 };
 
 export type StageMotion = {
@@ -26,6 +28,11 @@ export type StageMotion = {
   attentionOffset: { x: number; y: number };
   engagementLevel: number;
   preferredZone: StageZoneName;
+  groundLineY: number;
+  edgeLean: number;
+  perchDepth: number;
+  settledAtEdge: boolean;
+  isGroundedOverlay: boolean;
 };
 
 export function useStageController(
@@ -54,6 +61,11 @@ export function useStageController(
     attentionOffset: { x: 0, y: 0 },
     engagementLevel: 0.3,
     preferredZone: "right_relaxed" as StageZoneName,
+    groundLineY: 0.58,
+    edgeLean: 0,
+    perchDepth: 0,
+    settledAtEdge: false,
+    isGroundedOverlay: false,
   });
 
   const lastTimeRef = useRef<number>(performance.now());
@@ -92,9 +104,25 @@ export function useStageController(
         signals: behavior.signals,
       });
 
-      motionController.current.setTarget(presence.targetPosition);
-
       const regions = screenEnvironment.getRegions();
+      const isGroundedOverlay = behavior.displayMode.activeMode === "overlay";
+
+      const groundedMotion =
+        isGroundedOverlay
+          ? resolveDesktopGroundedMotion({
+              baseTarget: presence.targetPosition,
+              currentPosition,
+              movementState,
+              engagementLevel: presence.engagementLevel,
+              overlays: behavior.overlays,
+              nowMs: now,
+              bounds,
+              regions,
+            })
+          : null;
+
+      motionController.current.setTarget(groundedMotion?.target ?? presence.targetPosition);
+
       const regionScale = regions.length > 1 ? 0.95 : 1;
       const willingnessScale = 0.85 + presence.movementWillingness;
       const next = motionController.current.update(deltaSeconds * regionScale * willingnessScale, movementState, now);
@@ -104,6 +132,11 @@ export function useStageController(
         attentionOffset: presence.attentionOffset,
         engagementLevel: presence.engagementLevel,
         preferredZone: presence.preferredZone,
+        groundLineY: groundedMotion?.plane.groundLineY ?? 0.58,
+        edgeLean: groundedMotion?.edgeLean ?? 0,
+        perchDepth: groundedMotion?.perchDepth ?? 0,
+        settledAtEdge: groundedMotion?.settledAtEdge ?? false,
+        isGroundedOverlay,
       });
 
       raf = requestAnimationFrame(animate);
@@ -115,17 +148,24 @@ export function useStageController(
 
   return useMemo(() => {
     const motionMode: MovementState = snapshot.isMoving && mode === "idle" ? "walking" : movementState;
+    const baseY = presenceSnapshot.isGroundedOverlay ? presenceSnapshot.groundLineY : 0.58;
+
     return {
-      transform: `translate(-50%, -50%) translate(${(snapshot.position.x - 0.5) * 100}%, ${(snapshot.position.y - 0.58) * 100}%)`,
+      transform: `translate(-50%, -50%) translate(${(snapshot.position.x - 0.5) * 100}%, ${(snapshot.position.y - baseY) * 100}%)`,
       movementState: motionMode,
       facingDirection: snapshot.facingDirection,
       bob: snapshot.bob,
-      lean: snapshot.lean,
+      lean: snapshot.lean + presenceSnapshot.edgeLean,
       pace: snapshot.pace,
       attentionTarget: presenceSnapshot.attentionTarget,
       attentionOffset: presenceSnapshot.attentionOffset,
       engagementLevel: presenceSnapshot.engagementLevel,
       preferredZone: presenceSnapshot.preferredZone,
+      groundLineY: presenceSnapshot.groundLineY,
+      edgeLean: presenceSnapshot.edgeLean,
+      perchDepth: presenceSnapshot.perchDepth,
+      settledAtEdge: presenceSnapshot.settledAtEdge,
+      isGroundedOverlay: presenceSnapshot.isGroundedOverlay,
     };
   }, [movementState, mode, presenceSnapshot, snapshot]);
 }
