@@ -10,7 +10,18 @@ export type AvatarExpression =
   | "surprised"
   | "apologetic";
 
-export type AvatarReaction = "summoned_perk" | "interaction_start" | "grounded_result" | "source_expanded" | "interrupted" | "error" | "none";
+export type AvatarReaction =
+  | "summoned_perk"
+  | "interaction_start"
+  | "searching"
+  | "listening_ready"
+  | "confident_result"
+  | "uncertain_result"
+  | "grounded_result"
+  | "source_expanded"
+  | "interrupted"
+  | "error"
+  | "none";
 
 export type AvatarMode = "idle" | "walking" | "listening" | "thinking" | "talking" | "presenting" | "shutting_down";
 

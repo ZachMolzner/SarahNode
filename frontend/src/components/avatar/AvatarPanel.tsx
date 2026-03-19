@@ -38,12 +38,17 @@ export function AvatarPanel({
   }, [onInteractionRegionReady]);
 
   const glowColor = useMemo(() => {
+    if (avatarState.reaction === "searching") return "rgba(175, 148, 255, 0.3)";
+    if (avatarState.reaction === "confident_result") return "rgba(109, 211, 255, 0.32)";
+    if (avatarState.reaction === "uncertain_result") return "rgba(255, 176, 144, 0.3)";
+    if (avatarState.reaction === "listening_ready") return "rgba(135, 228, 214, 0.28)";
+    if (avatarState.reaction === "interrupted") return "rgba(255, 188, 127, 0.3)";
     if (avatarState.mode === "shutting_down") return "rgba(151, 126, 190, 0.26)";
     if (avatarState.mode === "talking") return "rgba(125, 190, 255, 0.3)";
     if (avatarState.mode === "listening") return "rgba(124, 221, 201, 0.26)";
     if (avatarState.mode === "thinking") return "rgba(186, 169, 255, 0.24)";
     return "rgba(145, 167, 255, 0.2)";
-  }, [avatarState.mode]);
+  }, [avatarState.mode, avatarState.reaction]);
 
   const showCinematicBackdrop = displayMode.activeMode === "immersive";
   const isOverlayGrounded = displayMode.activeMode === "overlay";

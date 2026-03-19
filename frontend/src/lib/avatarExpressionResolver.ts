@@ -12,6 +12,7 @@ export type ExpressionResolverInput = {
   recentlyActiveMs: number;
   summonedAtMs: number;
   interactionStartedAtMs: number;
+  listeningStartedAtMs: number;
   searchStartedAtMs: number;
   groundedAnswerAtMs: number;
   sourceExpandedAtMs: number;
@@ -26,6 +27,12 @@ export type ExpressionResolverOutput = {
   mood: AvatarMood;
   reaction: AvatarReaction;
   intensity: number;
+  debug: {
+    baseline: AvatarExpression;
+    interruptionGateActive: boolean;
+    speakingSettleActive: boolean;
+    errorRecoveryActive: boolean;
+  };
 };
 
 const REACTION_MS = {
@@ -35,6 +42,10 @@ const REACTION_MS = {
   source_expanded: 900,
   interrupted: 820,
   error: 1600,
+  searching: 1400,
+  listening_ready: 1100,
+  confident_result: 1650,
+  uncertain_result: 1500,
 } as const;
 
 const SEARCH_FOCUS_HOLD_MS = 1200;
@@ -57,20 +68,37 @@ function baselineExpression(input: ExpressionResolverInput): AvatarExpression {
 }
 
 function reactionFromInput(input: ExpressionResolverInput): AvatarReaction {
-  if (isRecent(input.nowMs, input.errorAtMs, REACTION_MS.error) || isRecent(input.nowMs, input.noResultAtMs, REACTION_MS.error)) {
-    return "error";
-  }
-
   if (isRecent(input.nowMs, input.interruptedAtMs, REACTION_MS.interrupted)) {
     return "interrupted";
   }
 
-  if (isRecent(input.nowMs, input.groundedAnswerAtMs, REACTION_MS.grounded_result)) {
-    return "grounded_result";
+  if (input.interruptedAtMs > 0 && input.nowMs - input.interruptedAtMs <= INTERRUPTION_RECOVERY_MS) {
+    return "none";
+  }
+
+  if (isRecent(input.nowMs, input.errorAtMs, REACTION_MS.error)) {
+    return "error";
+  }
+
+  if (isRecent(input.nowMs, input.noResultAtMs, REACTION_MS.uncertain_result)) {
+    return "uncertain_result";
+  }
+
+  if (isRecent(input.nowMs, input.groundedAnswerAtMs, REACTION_MS.confident_result)) {
+    return "confident_result";
   }
 
   if (isRecent(input.nowMs, input.searchStartedAtMs, SEARCH_FOCUS_HOLD_MS)) {
-    return "interaction_start";
+    return "searching";
+  }
+
+  if (
+    isRecent(input.nowMs, input.listeningStartedAtMs, REACTION_MS.listening_ready) &&
+    !input.isThinking &&
+    !input.isSpeaking &&
+    input.mode === "listening"
+  ) {
+    return "listening_ready";
   }
 
   if (isRecent(input.nowMs, input.sourceExpandedAtMs, REACTION_MS.source_expanded)) {
@@ -90,13 +118,21 @@ function reactionFromInput(input: ExpressionResolverInput): AvatarReaction {
 
 export function resolveAvatarExpression(input: ExpressionResolverInput): ExpressionResolverOutput {
   const baseline = baselineExpression(input);
+  const interruptionGateActive = input.interruptedAtMs > 0 && input.nowMs - input.interruptedAtMs <= INTERRUPTION_RECOVERY_MS;
   const reaction = reactionFromInput(input);
 
   let expression = baseline;
   if (reaction === "error") expression = "apologetic";
+  if (reaction === "uncertain_result") expression = "attentive";
   if (reaction === "interrupted") expression = "surprised";
   if (reaction === "summoned_perk") expression = "warm";
   if (reaction === "interaction_start" && baseline !== "presenting" && !input.isSpeaking) expression = "curious";
+  if (reaction === "searching" && !input.isSpeaking && !input.isPresenting) expression = "curious";
+  if (reaction === "listening_ready" && !input.isSpeaking && !input.isPresenting) {
+    const earlyListeningReady = input.nowMs - input.listeningStartedAtMs < 420;
+    expression = earlyListeningReady ? "curious" : "attentive";
+  }
+  if (reaction === "confident_result") expression = "presenting";
   if (reaction === "grounded_result") expression = "presenting";
   if (reaction === "source_expanded") expression = "focused";
 
@@ -118,7 +154,7 @@ export function resolveAvatarExpression(input: ExpressionResolverInput): Express
       input.nowMs - input.noResultAtMs > REACTION_MS.error &&
       input.nowMs - input.noResultAtMs <= ERROR_RECOVERY_MS);
 
-  if ((withinInterruptionRecovery || withinErrorRecovery) && !input.isPresenting) {
+  if (withinInterruptionRecovery || withinErrorRecovery) {
     expression = "attentive";
   }
 
@@ -132,8 +168,14 @@ export function resolveAvatarExpression(input: ExpressionResolverInput): Express
         ? 0.11
         : reaction === "error"
           ? 0.08
-          : reaction === "grounded_result"
+          : reaction === "uncertain_result"
+            ? 0.05
+            : reaction === "confident_result" || reaction === "grounded_result"
             ? 0.06
+            : reaction === "searching"
+              ? 0.035
+              : reaction === "listening_ready"
+                ? 0.02
             : 0.045;
   const modeExpressionBias = input.isOverlayMode && (expression === "surprised" || expression === "apologetic") ? -0.02 : 0;
   const settleReduction = withinSpeakingSettle || withinInterruptionRecovery || withinErrorRecovery ? -0.04 : 0;
@@ -154,5 +196,16 @@ export function resolveAvatarExpression(input: ExpressionResolverInput): Express
                 ? "thinking"
                 : "neutral";
 
-  return { expression, mood, reaction, intensity };
+  return {
+    expression,
+    mood,
+    reaction,
+    intensity,
+    debug: {
+      baseline,
+      interruptionGateActive,
+      speakingSettleActive: withinSpeakingSettle,
+      errorRecoveryActive: withinErrorRecovery,
+    },
+  };
 }
