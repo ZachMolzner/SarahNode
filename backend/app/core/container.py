@@ -18,6 +18,7 @@ from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
 from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
+from app.services.identity_service import IdentityService
 from app.services.page_fetcher import PageFetcher
 from app.services.voice_service import VoiceService
 from app.services.web_search_service import WebSearchService
@@ -194,6 +195,9 @@ def provider_status() -> dict[str, dict[str, str]]:
 
 assistant_intake_service = AssistantIntakeService()
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
+identity_service = IdentityService(
+    storage_path=str(Path(__file__).resolve().parents[1] / settings.identity_store_path)
+)
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
 voice_service = VoiceService(stt_client=build_stt_client())
@@ -222,4 +226,5 @@ stream_orchestrator = StreamOrchestrator(
     moderation_service=moderation_service,
     memory_manager=memory_manager,
     response_policy=response_policy,
+    identity_service=identity_service,
 )

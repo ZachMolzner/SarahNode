@@ -13,6 +13,10 @@ class MemoryState:
     last_capability_intent: str = "ask_general"
     last_used_live_web: bool = False
     latest_web_sources: list[dict[str, str]] = field(default_factory=list)
+    last_speaker_id: str = "unknown"
+    last_speaker_confidence: float = 0.0
+    last_address_name: str = "there"
+    last_address_mode: str = "unknown"
 
 
 class MemoryManager:
@@ -37,6 +41,12 @@ class MemoryManager:
     def set_last_web_usage(self, used_live_web: bool, sources: list[dict[str, str]] | None = None) -> None:
         self.state.last_used_live_web = used_live_web
         self.state.latest_web_sources = sources or []
+
+    def set_last_identity(self, speaker_id: str, confidence: float, address_name: str, address_mode: str) -> None:
+        self.state.last_speaker_id = speaker_id
+        self.state.last_speaker_confidence = confidence
+        self.state.last_address_name = address_name
+        self.state.last_address_mode = address_mode
 
     def recent_history(self, limit: int = 8) -> list[str]:
         recent = list(self.state.rolling_messages)[-limit:]

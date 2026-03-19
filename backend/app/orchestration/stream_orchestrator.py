@@ -15,6 +15,7 @@ from app.safety.response_policy import ResponsePolicy
 from app.schemas.chat import ChatMessage
 from app.schemas.events import SystemEvent
 from app.services.dialogue_engine import DialogueEngine
+from app.services.identity_service import IdentityService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class StreamOrchestrator:
         moderation_service: ModerationService,
         memory_manager: MemoryManager,
         response_policy: ResponsePolicy,
+        identity_service: IdentityService,
     ) -> None:
         self.dialogue_engine = dialogue_engine
         self.tts_client = tts_client
@@ -35,6 +37,7 @@ class StreamOrchestrator:
         self.moderation_service = moderation_service
         self.memory_manager = memory_manager
         self.response_policy = response_policy
+        self.identity_service = identity_service
 
         self.queue: asyncio.PriorityQueue[tuple[int, int, ChatMessage]] | None = None
         self.events: asyncio.Queue[SystemEvent] | None = None
@@ -122,6 +125,7 @@ class StreamOrchestrator:
                 "content": message.content,
                 "priority": message.priority,
                 "source": message.source.value,
+                "conversation_mode": message.conversation_mode,
             },
         )
 
@@ -194,6 +198,29 @@ class StreamOrchestrator:
         await self.emit_event("moderation_decision", moderation.model_dump())
 
         # Dialogue
+        speaker_identity = self.identity_service.resolve_speaker(username=message.username)
+        addressing_context = self.identity_service.addressing_context(
+            speaker=speaker_identity,
+            conversation_mode=message.conversation_mode,
+            turn_index=self._sequence,
+        )
+        self.memory_manager.set_last_identity(
+            speaker_id=speaker_identity.speaker_id,
+            confidence=speaker_identity.confidence,
+            address_name=addressing_context.address_name,
+            address_mode=addressing_context.mode,
+        )
+        await self.emit_event(
+            "identity_resolution",
+            {
+                "speaker_id": speaker_identity.speaker_id,
+                "confidence": speaker_identity.confidence,
+                "high_confidence": speaker_identity.is_high_confidence,
+                "address_name": addressing_context.address_name,
+                "address_mode": addressing_context.mode,
+                "rule": addressing_context.deterministic_rule,
+            },
+        )
         memory_summary = self.memory_manager.summarize()
         recent_history = self.memory_manager.recent_history()
         capability_route = self.dialogue_engine.classify_capability(message)
@@ -209,7 +236,19 @@ class StreamOrchestrator:
         generated_reply = None
 
         if moderation.allowed:
-            generated_reply = await self.dialogue_engine.generate(message, memory_summary, recent_history, capability_route)
+            generated_reply = await self.dialogue_engine.generate(
+                message,
+                memory_summary,
+                recent_history,
+                capability_route,
+                addressing_instruction=(
+                    f"Deterministic identity: speaker={speaker_identity.speaker_id}, "
+                    f"confidence={speaker_identity.confidence:.2f}, mode={addressing_context.mode}. "
+                    f"Address as '{addressing_context.address_name}'. "
+                    "If speaker is unknown, use neutral greetings like 'Hey there' or 'How can I help?'. "
+                    "Do not invent nicknames. Never repeat 'Mama' more than once in a response."
+                ),
+            )
 
         web_context = self.dialogue_engine.last_web_context
         used_live_web = bool(web_context and web_context.checked_web)

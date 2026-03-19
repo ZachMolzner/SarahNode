@@ -15,6 +15,7 @@ class ChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=500)
     source: MessageSource = MessageSource.web_ui
     priority: int = Field(default=1, ge=0, le=10)
+    conversation_mode: str = Field(default="personal", pattern="^(personal|shared)$")
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 

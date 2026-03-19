@@ -36,6 +36,7 @@ export type SendAssistantMessagePayload = {
   username: string;
   content: string;
   priority?: number;
+  conversation_mode?: "personal" | "shared";
 };
 
 export type AssistantStateResponse = {
@@ -52,12 +53,85 @@ export async function sendAssistantMessage(payload: SendAssistantMessagePayload)
   const response = await fetch(`${API_BASE_URL}/api/assistant/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...payload, priority: payload.priority ?? 1 }),
+    body: JSON.stringify({ ...payload, priority: payload.priority ?? 1, conversation_mode: payload.conversation_mode ?? "personal" }),
   });
 
   if (!response.ok) {
     throw new Error(`Failed to queue message: ${response.status}`);
   }
+}
+
+export type IdentityProfile = {
+  id: string;
+  display_name?: string;
+  preferred_address?: string;
+  alternate_addresses?: string[];
+  tone_preference?: string;
+  response_style?: string;
+  voice_profile_id?: string | null;
+  members?: string[];
+};
+
+export type IdentityStateResponse = {
+  profiles: IdentityProfile[];
+  shared_profiles: IdentityProfile[];
+  explicit_identity_facts: Array<{ id: string; scope: string; key: string; value: string; source: string }>;
+  nickname_policy: { aleena_mama_enabled: boolean; aleena_mama_usage_ratio: number };
+  speaker: { high_confidence_threshold: number; unknown_fallback: string };
+};
+
+export type MemoryItem = {
+  id: string;
+  scope: "zach" | "aleena" | "household";
+  category: "identity" | "preference" | "habit" | "routine";
+  source: "explicit" | "inferred";
+  key: string;
+  value: string;
+  confidence: number;
+  sensitive: boolean;
+};
+
+export async function fetchIdentityState(): Promise<IdentityStateResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/identity`);
+  if (!response.ok) throw new Error(`Failed to fetch identity state: ${response.status}`);
+  return (await response.json()) as IdentityStateResponse;
+}
+
+export async function updateNicknamePolicy(enabled: boolean, usageRatio?: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/identity/nickname-policy`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled, usage_ratio: usageRatio }),
+  });
+  if (!response.ok) throw new Error(`Failed to update nickname policy: ${response.status}`);
+}
+
+export async function updateProfile(profileId: string, patch: Partial<IdentityProfile>): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/identity/profiles/${profileId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) throw new Error(`Failed to update profile: ${response.status}`);
+}
+
+export async function fetchMemoryItems(scope?: string): Promise<MemoryItem[]> {
+  const url = new URL(`${API_BASE_URL}/api/assistant/memory`);
+  if (scope) url.searchParams.set("scope", scope);
+  const response = await fetch(url.toString());
+  if (!response.ok) throw new Error(`Failed to fetch memory items: ${response.status}`);
+  const payload = (await response.json()) as { items: MemoryItem[] };
+  return payload.items;
+}
+
+export async function deleteMemoryItem(itemId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/memory/${itemId}`, { method: "DELETE" });
+  if (!response.ok) throw new Error(`Failed to delete memory item: ${response.status}`);
+}
+
+export async function resetVoiceProfile(profileId: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/voice/reset/${profileId}`, { method: "POST" });
+  if (!response.ok) throw new Error(`Failed to reset voice profile: ${response.status}`);
 }
 
 export async function fetchAssistantState(): Promise<AssistantStateResponse> {

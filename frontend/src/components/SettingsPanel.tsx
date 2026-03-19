@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { UserSettings } from "../types/settings";
+import type { IdentityStateResponse, MemoryItem } from "../lib/api";
 
 type SettingsPanelProps = {
   open: boolean;
@@ -8,9 +9,30 @@ type SettingsPanelProps = {
   onClose: () => void;
   onChange: (patch: Partial<UserSettings>) => void;
   onSummonNow: () => void;
+  identityState: IdentityStateResponse | null;
+  memoryItems: MemoryItem[];
+  profileRefreshError: string | null;
+  onRefreshProfiles: () => void;
+  onToggleMamaNickname: (enabled: boolean) => void;
+  onDeleteMemoryItem: (itemId: string) => void;
+  onResetVoiceProfile: (profileId: string) => void;
 };
 
-export function SettingsPanel({ open, settings, desktopFeaturesEnabled, onClose, onChange, onSummonNow }: SettingsPanelProps) {
+export function SettingsPanel({
+  open,
+  settings,
+  desktopFeaturesEnabled,
+  onClose,
+  onChange,
+  onSummonNow,
+  identityState,
+  memoryItems,
+  profileRefreshError,
+  onRefreshProfiles,
+  onToggleMamaNickname,
+  onDeleteMemoryItem,
+  onResetVoiceProfile,
+}: SettingsPanelProps) {
   if (!open) return null;
 
   return (
@@ -83,6 +105,57 @@ export function SettingsPanel({ open, settings, desktopFeaturesEnabled, onClose,
           </button>
         </div>
       ) : null}
+
+      <hr style={{ borderColor: "rgba(164, 180, 250, 0.25)", width: "100%" }} />
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <strong>Identity & Memory</strong>
+          <button type="button" style={closeButtonStyle} onClick={onRefreshProfiles}>
+            Refresh
+          </button>
+        </div>
+        {profileRefreshError ? <small style={{ color: "#ffc1c1" }}>{profileRefreshError}</small> : null}
+        {identityState ? (
+          <>
+            {identityState.profiles.map((profile) => (
+              <div key={profile.id} style={{ padding: 8, border: "1px solid rgba(164, 180, 250, 0.25)", borderRadius: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{profile.display_name ?? profile.id}</div>
+                <small>Address as: {profile.preferred_address ?? "there"}</small>
+                <br />
+                <small>Voice profile: {profile.voice_profile_id ?? "not enrolled"}</small>
+                <div style={{ marginTop: 6 }}>
+                  <button type="button" style={closeButtonStyle} onClick={() => onResetVoiceProfile(profile.id)}>
+                    Reset voice
+                  </button>
+                </div>
+              </div>
+            ))}
+            <label style={rowStyle}>
+              <span>Allow Aleena “Mama” nickname</span>
+              <input
+                type="checkbox"
+                checked={identityState.nickname_policy.aleena_mama_enabled}
+                onChange={(event) => onToggleMamaNickname(event.target.checked)}
+              />
+            </label>
+          </>
+        ) : (
+          <small>Loading identity profiles…</small>
+        )}
+        <div style={{ display: "grid", gap: 6 }}>
+          <strong style={{ fontSize: 13 }}>Memory items ({memoryItems.length})</strong>
+          {memoryItems.slice(0, 5).map((item) => (
+            <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 6, fontSize: 12 }}>
+              <span>
+                [{item.scope}/{item.source}] {item.key}: {item.value}
+              </span>
+              <button type="button" style={closeButtonStyle} onClick={() => onDeleteMemoryItem(item.id)}>
+                Delete
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
     </aside>
   );
 }

@@ -13,6 +13,7 @@ class MockLLMClient(LLMClient):
         recent_history: list[str],
         persona: dict[str, Any],
         capability_route: CapabilityRoute,
+        addressing_instruction: str | None = None,
         system_prompt_override: str | None = None,
         user_prompt_override: str | None = None,
     ) -> AssistantReply:
@@ -22,6 +23,7 @@ class MockLLMClient(LLMClient):
                 f"Memory: {memory_summary[:120]}"
                 f" | Turns: {len(recent_history)}"
                 f" | Intent: {capability_route.intent}"
+                f" | Addressing: {addressing_instruction or 'neutral'}"
             ),
             emotion="neutral",
             should_speak=True,

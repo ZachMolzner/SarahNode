@@ -2,7 +2,19 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
-import { emitVoiceEvent, fetchAssistantState, sendAssistantMessage, transcribeAudio } from "../lib/api";
+import {
+  deleteMemoryItem,
+  emitVoiceEvent,
+  fetchAssistantState,
+  fetchIdentityState,
+  fetchMemoryItems,
+  resetVoiceProfile,
+  sendAssistantMessage,
+  transcribeAudio,
+  updateNicknamePolicy,
+  type IdentityStateResponse,
+  type MemoryItem,
+} from "../lib/api";
 import { AvatarPanel } from "../components/avatar/AvatarPanel";
 import { useAvatarState } from "../hooks/useAvatarState";
 import { VoiceRecorder } from "../components/voice/VoiceRecorder";
@@ -38,9 +50,10 @@ export function DashboardPage() {
   const shutdownLineRef = useRef<string | null>(null);
   const lastSearchReactionAtRef = useRef(0);
 
-  const [username, setUsername] = useState("local-user");
+  const [username, setUsername] = useState("zach");
   const [content, setContent] = useState("Give me a quick plan for today.");
   const [priority, setPriority] = useState(1);
+  const [conversationMode, setConversationMode] = useState<"personal" | "shared">("personal");
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
@@ -80,6 +93,9 @@ export function DashboardPage() {
   const [errorAt, setErrorAt] = useState(0);
   const [noResultAt, setNoResultAt] = useState(0);
   const [speakingEndedAt, setSpeakingEndedAt] = useState(0);
+  const [identityState, setIdentityState] = useState<IdentityStateResponse | null>(null);
+  const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
+  const [profileRefreshError, setProfileRefreshError] = useState<string | null>(null);
   const [expressionClockMs, setExpressionClockMs] = useState(() => Date.now());
   const latestGroundedEventRef = useRef<string>("");
   const lastGroundedSignatureRef = useRef<string>("");
@@ -252,6 +268,10 @@ export function DashboardPage() {
         setTtsStatus("unavailable");
       });
   }, []);
+
+  useEffect(() => {
+    void refreshIdentityData();
+  }, [refreshIdentityData]);
 
   useEffect(() => {
     if (shutdownStatus !== "idle") return;
@@ -486,7 +506,7 @@ export function DashboardPage() {
     setError(null);
 
     try {
-      await sendAssistantMessage({ username, content: messageText, priority });
+      await sendAssistantMessage({ username, content: messageText, priority, conversation_mode: conversationMode });
       setContent("");
     } catch (err) {
       stampReactionWithCooldown("error", setErrorAt);
@@ -499,6 +519,17 @@ export function DashboardPage() {
   async function replayAudio() {
     await voiceOrchestratorRef.current.replayLastAudio();
   }
+
+  const refreshIdentityData = useCallback(async () => {
+    try {
+      setProfileRefreshError(null);
+      const [identity, memory] = await Promise.all([fetchIdentityState(), fetchMemoryItems()]);
+      setIdentityState(identity);
+      setMemoryItems(memory);
+    } catch (err) {
+      setProfileRefreshError(err instanceof Error ? err.message : "Failed to load identity profile data.");
+    }
+  }, []);
 
   useEffect(() => {
     void appShell.configureWindowForDisplayMode();
@@ -701,6 +732,18 @@ export function DashboardPage() {
                   style={inputStyle}
                 />
               </label>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span>Conversation mode</span>
+                <select
+                  value={conversationMode}
+                  onChange={(event) => setConversationMode(event.target.value === "shared" ? "shared" : "personal")}
+                  style={inputStyle}
+                >
+                  <option value="personal">Personal</option>
+                  <option value="shared">Household shared</option>
+                </select>
+              </label>
             </div>
 
             <label style={{ display: "grid", gap: 6, marginTop: 12 }}>
@@ -762,6 +805,27 @@ export function DashboardPage() {
           onSummonNow={() => {
             setSummonedAt(Date.now());
             void windowBridge.summonWindow();
+          }}
+          identityState={identityState}
+          memoryItems={memoryItems}
+          profileRefreshError={profileRefreshError}
+          onRefreshProfiles={() => {
+            void refreshIdentityData();
+          }}
+          onToggleMamaNickname={(enabled) => {
+            void updateNicknamePolicy(enabled).then(refreshIdentityData).catch((err) => {
+              setProfileRefreshError(err instanceof Error ? err.message : "Failed to update nickname policy.");
+            });
+          }}
+          onDeleteMemoryItem={(itemId) => {
+            void deleteMemoryItem(itemId).then(refreshIdentityData).catch((err) => {
+              setProfileRefreshError(err instanceof Error ? err.message : "Failed to delete memory item.");
+            });
+          }}
+          onResetVoiceProfile={(profileId) => {
+            void resetVoiceProfile(profileId).then(refreshIdentityData).catch((err) => {
+              setProfileRefreshError(err instanceof Error ? err.message : "Failed to reset voice profile.");
+            });
           }}
         />
 
