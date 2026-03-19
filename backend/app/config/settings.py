@@ -13,9 +13,11 @@ class Settings(BaseSettings):
 
     llm_provider: str = "auto"
     tts_provider: str = "auto"
+    stt_provider: str = "auto"
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
+    openai_transcription_model: str = "whisper-1"
 
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = ""

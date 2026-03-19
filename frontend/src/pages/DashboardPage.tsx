@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
-import { fetchAssistantState, sendAssistantMessage } from "../lib/api";
+import { emitVoiceEvent, fetchAssistantState, sendAssistantMessage, transcribeAudio } from "../lib/api";
 import { AvatarPanel } from "../components/avatar/AvatarPanel";
 import { useAvatarState } from "../hooks/useAvatarState";
+import { VoiceRecorder } from "../components/voice/VoiceRecorder";
 
 export function DashboardPage() {
   const { events, connectionState } = useEvents();
@@ -20,6 +21,7 @@ export function DashboardPage() {
   const [audioReady, setAudioReady] = useState(false);
   const [llmStatus, setLlmStatus] = useState("loading");
   const [ttsStatus, setTtsStatus] = useState("loading");
+  const [voiceStatus, setVoiceStatus] = useState("idle");
 
   const totalEvents = useMemo(() => events.length, [events]);
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
@@ -79,12 +81,23 @@ export function DashboardPage() {
     };
   }, [events]);
 
-  async function handleSend() {
+  useEffect(() => {
+    const voiceEvent = events.find((event) => event.type.startsWith("voice:"));
+    if (!voiceEvent) return;
+
+    if (voiceEvent.type === "voice:recording_started") setVoiceStatus("listening");
+    if (voiceEvent.type === "voice:recording_stopped") setVoiceStatus("recording stopped");
+    if (voiceEvent.type === "voice:transcribing") setVoiceStatus("transcribing");
+    if (voiceEvent.type === "voice:transcribed") setVoiceStatus("transcribed");
+    if (voiceEvent.type === "voice:error") setVoiceStatus("error");
+  }, [events]);
+
+  async function handleSend(messageText = content) {
     setIsSending(true);
     setError(null);
 
     try {
-      await sendAssistantMessage({ username, content, priority });
+      await sendAssistantMessage({ username, content: messageText, priority });
       setContent("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message to assistant.");
@@ -145,14 +158,31 @@ export function DashboardPage() {
           </label>
 
           <div style={submitRowStyle}>
-            <button onClick={handleSend} disabled={isSending || !content.trim()} style={buttonStyle}>
+            <button onClick={() => void handleSend()} disabled={isSending || !content.trim()} style={buttonStyle}>
               {isSending ? "Sending..." : "Send Message"}
             </button>
             <button onClick={replayAudio} disabled={!audioReady} style={secondaryButtonStyle}>
               Replay Last Audio
             </button>
-            {error ? <span style={{ color: "#ff8c8c" }}>{error}</span> : null}
           </div>
+
+          <div style={{ marginTop: 12 }}>
+            <VoiceRecorder
+              disabled={isSending}
+              onRecordingStarted={() => {
+                setVoiceStatus("listening");
+                void emitVoiceEvent("voice:recording_started");
+              }}
+              onTranscribe={transcribeAudio}
+              onTranscript={async (text) => {
+                setContent(text);
+                await handleSend(text);
+              }}
+            />
+            <p style={{ marginTop: 8, marginBottom: 0, opacity: 0.8, fontSize: 13 }}>Voice pipeline status: {voiceStatus}</p>
+          </div>
+
+          {error ? <span style={{ color: "#ff8c8c" }}>{error}</span> : null}
         </section>
 
         <StatusCards

@@ -21,15 +21,18 @@ export function useAvatarState(events: SystemEvent[]): AvatarState {
     const assistantState = findPayload(events, "assistant_state")["state"];
     const replyEmotion = findPayload(events, "reply_selected")["emotion"];
     const speakingFlag = findPayload(events, "speaking_status")["is_speaking"];
+    const latestVoiceEvent = events.find((event) => event.type.startsWith("voice:"));
 
     const isSpeaking = speakingFlag === true;
 
     const mode =
       isSpeaking
         ? "speaking"
-        : typeof assistantState === "string" && assistantState.toLowerCase() === "thinking"
-          ? "thinking"
-          : "idle";
+        : latestVoiceEvent?.type === "voice:recording_started"
+          ? "listening"
+          : typeof assistantState === "string" && assistantState.toLowerCase() === "thinking"
+            ? "thinking"
+            : "idle";
 
     return {
       mode,

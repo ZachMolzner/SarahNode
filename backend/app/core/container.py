@@ -5,6 +5,7 @@ from pathlib import Path
 from app.adapters.avatar.placeholder import PlaceholderAvatarClient
 from app.adapters.llm.base import LLMClient
 from app.adapters.llm.mock import MockLLMClient
+from app.adapters.stt.base import STTClient
 from app.adapters.tts.base import TTSClient
 from app.adapters.tts.mock import MockTTSClient
 from app.config.settings import settings
@@ -14,6 +15,7 @@ from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
 from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
+from app.services.voice_service import VoiceService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class ProviderSelection:
 
 llm_selection: ProviderSelection | None = None
 tts_selection: ProviderSelection | None = None
+stt_selection: ProviderSelection | None = None
 
 
 def build_llm_client() -> LLMClient:
@@ -101,6 +104,33 @@ def build_tts_client() -> TTSClient:
     return MockTTSClient()
 
 
+def build_stt_client() -> STTClient | None:
+    global stt_selection
+
+    provider = settings.stt_provider.lower()
+
+    if provider in {"auto", "openai"}:
+        try:
+            from app.adapters.stt.openai_transcription import OpenAITranscriptionClient
+
+            client = OpenAITranscriptionClient()
+            stt_selection = ProviderSelection(provider, "openai", "real", "API key available")
+            logger.info("STT provider selected: openai (model=%s)", settings.openai_transcription_model)
+            return client
+        except (ImportError, ValueError) as exc:
+            reason = str(exc)
+            stt_selection = ProviderSelection(provider, "unavailable", "disabled", reason)
+            if provider == "openai":
+                logger.warning("OpenAI transcription requested but unavailable: %s", reason)
+            else:
+                logger.info("Speech-to-text unavailable; transcription endpoint will return configuration errors.")
+            return None
+
+    stt_selection = ProviderSelection(provider, "unavailable", "disabled", "Unknown provider")
+    logger.warning("Unknown stt_provider '%s'. Speech-to-text disabled.", provider)
+    return None
+
+
 def provider_status() -> dict[str, dict[str, str]]:
     return {
         "llm": {
@@ -115,6 +145,12 @@ def provider_status() -> dict[str, dict[str, str]]:
             "mode": (tts_selection.mode if tts_selection else "mock"),
             "reason": (tts_selection.reason if tts_selection else "Not initialized"),
         },
+        "stt": {
+            "requested": (stt_selection.requested if stt_selection else settings.stt_provider),
+            "active": (stt_selection.active if stt_selection else "unavailable"),
+            "mode": (stt_selection.mode if stt_selection else "disabled"),
+            "reason": (stt_selection.reason if stt_selection else "Not initialized"),
+        },
     }
 
 
@@ -122,6 +158,7 @@ assistant_intake_service = AssistantIntakeService()
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
+voice_service = VoiceService(stt_client=build_stt_client())
 
 dialogue_engine = DialogueEngine(
     llm_client=build_llm_client(),

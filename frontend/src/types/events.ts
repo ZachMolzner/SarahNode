@@ -6,6 +6,11 @@ export type EventType =
   | "speaking_status"
   | "tts_output"
   | "avatar_event"
+  | "voice:recording_started"
+  | "voice:recording_stopped"
+  | "voice:transcribing"
+  | "voice:transcribed"
+  | "voice:error"
   | "error";
 
 export type EventPayload = Record<string, unknown>;

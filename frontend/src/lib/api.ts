@@ -68,6 +68,52 @@ export async function fetchAssistantState(): Promise<AssistantStateResponse> {
   return (await response.json()) as AssistantStateResponse;
 }
 
+
+
+export async function emitVoiceEvent(eventType: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/voice/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ event_type: eventType }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to emit voice event: ${response.status}`);
+  }
+}
+
+export type TranscriptionResponse = {
+  text: string;
+  provider: {
+    name?: string;
+    model?: string;
+    mime_type?: string | null;
+  };
+  duration_ms: number;
+};
+
+export async function transcribeAudio(blob: Blob): Promise<TranscriptionResponse> {
+  const formData = new FormData();
+  formData.append("file", blob, `recording.${blob.type.includes("webm") ? "webm" : "wav"}`);
+
+  const response = await fetch(`${API_BASE_URL}/api/assistant/transcribe`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!response.ok) {
+    let detail = `Transcription failed: ${response.status}`;
+    try {
+      const payload = (await response.json()) as { detail?: string };
+      if (payload.detail) detail = payload.detail;
+    } catch {
+      // no-op
+    }
+    throw new Error(detail);
+  }
+
+  return (await response.json()) as TranscriptionResponse;
+}
 export function getWsEventsUrl(): string {
   return `${resolveWsBaseUrl()}/ws/events`;
 }
