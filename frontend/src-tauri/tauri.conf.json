@@ -19,7 +19,11 @@
         "minWidth": 980,
         "minHeight": 640,
         "resizable": true,
-        "maximized": true
+        "maximized": true,
+        "fullscreen": true,
+        "center": true,
+        "decorations": false,
+        "visible": true
       }
     ],
     "security": {

@@ -1,0 +1,7 @@
+# Generated Tauri icon outputs (do not commit binaries)
+*.png
+*.ico
+*.icns
+
+# Keep the source vector in repo
+!icon.svg
