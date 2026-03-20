@@ -18,6 +18,7 @@ export type PresenceInput = {
   presentingAtMs: number;
   searchHeadingRevealAtMs: number;
   searchFindingsRevealAtMs: number;
+  searchSourcesRevealAtMs: number;
   searchSettledAtMs: number;
 };
 
@@ -92,6 +93,14 @@ export const PRESENCE_TUNING = {
       forwardX: 0.0032,
       attentionX: 0.005,
       attentionY: -0.0018,
+    },
+    sources: {
+      activeMs: 520,
+      tiltDeg: 0.62,
+      yOffset: -0.0008,
+      forwardX: 0.0013,
+      attentionX: 0.0022,
+      attentionY: -0.0009,
     },
     settle: {
       holdMs: 460,
@@ -202,14 +211,15 @@ export class PresenceController {
     const cues = PRESENCE_TUNING.presentationCues;
     const headingProgress = cueProgress(input.nowMs, input.searchHeadingRevealAtMs, cues.heading.activeMs);
     const findingsProgress = cueProgress(input.nowMs, input.searchFindingsRevealAtMs, cues.findings.activeMs);
+    const sourcesProgress = cueProgress(input.nowMs, input.searchSourcesRevealAtMs, cues.sources.activeMs);
     const settleFade = settleFadeFactor(input.nowMs, input.searchSettledAtMs, cues.settle.holdMs, cues.settle.fadeMs);
     return {
-      tiltDeg: (cues.heading.tiltDeg * headingProgress + cues.findings.tiltDeg * findingsProgress) * settleFade,
-      yOffset: (cues.heading.yOffset * headingProgress + cues.findings.yOffset * findingsProgress) * settleFade,
-      xOffset: (cues.heading.forwardX * headingProgress + cues.findings.forwardX * findingsProgress) * settleFade,
+      tiltDeg: (cues.heading.tiltDeg * headingProgress + cues.findings.tiltDeg * findingsProgress + cues.sources.tiltDeg * sourcesProgress) * settleFade,
+      yOffset: (cues.heading.yOffset * headingProgress + cues.findings.yOffset * findingsProgress + cues.sources.yOffset * sourcesProgress) * settleFade,
+      xOffset: (cues.heading.forwardX * headingProgress + cues.findings.forwardX * findingsProgress + cues.sources.forwardX * sourcesProgress) * settleFade,
       attentionOffset: {
-        x: (cues.heading.attentionX * headingProgress + cues.findings.attentionX * findingsProgress) * settleFade,
-        y: (cues.heading.attentionY * headingProgress + cues.findings.attentionY * findingsProgress) * settleFade,
+        x: (cues.heading.attentionX * headingProgress + cues.findings.attentionX * findingsProgress + cues.sources.attentionX * sourcesProgress) * settleFade,
+        y: (cues.heading.attentionY * headingProgress + cues.findings.attentionY * findingsProgress + cues.sources.attentionY * sourcesProgress) * settleFade,
       },
     };
   }

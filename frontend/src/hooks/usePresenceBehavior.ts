@@ -10,6 +10,7 @@ export type PresenceSignals = {
   presentingAtMs: number;
   searchHeadingRevealAtMs: number;
   searchFindingsRevealAtMs: number;
+  searchSourcesRevealAtMs: number;
   searchSettledAtMs: number;
 };
 
@@ -40,6 +41,7 @@ export function usePresenceBehavior() {
       presentingAtMs: input.signals.presentingAtMs,
       searchHeadingRevealAtMs: input.signals.searchHeadingRevealAtMs,
       searchFindingsRevealAtMs: input.signals.searchFindingsRevealAtMs,
+      searchSourcesRevealAtMs: input.signals.searchSourcesRevealAtMs,
       searchSettledAtMs: input.signals.searchSettledAtMs,
     });
   }, []);

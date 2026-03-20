@@ -19,6 +19,7 @@ type WebAnswerTextboxProps = {
   onSourceExpansionChange: (expanded: boolean) => void;
   onInteractionRegionReady?: (element: HTMLElement | null) => void;
   onRevealStageChange?: (stage: WebAnswerRevealStage) => void;
+  onSourcesVisibleCue?: () => void;
 };
 
 export function WebAnswerTextbox({
@@ -29,6 +30,7 @@ export function WebAnswerTextbox({
   onSourceExpansionChange,
   onInteractionRegionReady,
   onRevealStageChange,
+  onSourcesVisibleCue,
 }: WebAnswerTextboxProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsedSources);
   const [hovered, setHovered] = useState(false);
@@ -41,6 +43,7 @@ export function WebAnswerTextbox({
   const touchTimerRef = useRef<number | null>(null);
   const visibilityTimerRef = useRef<number | null>(null);
   const revealTimersRef = useRef<number[]>([]);
+  const lastSourcesCueKeyRef = useRef("");
   const [revealStage, setRevealStage] = useState<WebAnswerRevealStage>(0);
 
   const displayAnswer = answer ?? answerSnapshot;
@@ -142,6 +145,17 @@ export function WebAnswerTextbox({
     [displayAnswer?.mode]
   );
 
+  useEffect(() => {
+    if (!visible || !displayAnswer || !reportLayout?.sources.length || revealStage < 2) {
+      lastSourcesCueKeyRef.current = "";
+      return;
+    }
+    const cueKey = `${reportLayout.heading}-${reportLayout.sources.length}`;
+    if (lastSourcesCueKeyRef.current === cueKey) return;
+    lastSourcesCueKeyRef.current = cueKey;
+    onSourcesVisibleCue?.();
+  }, [displayAnswer, onSourcesVisibleCue, reportLayout, revealStage, visible]);
+
   if (!displayAnswer || !reportLayout || !isMounted) return null;
 
   return (
@@ -187,28 +201,66 @@ export function WebAnswerTextbox({
 
       {reportLayout.sources.length ? (
         <footer style={{ ...footerStyle, ...sectionStyle(revealStage >= 2) }}>
-          <button type="button" style={footerToggleStyle} onClick={() => setCollapsed((value) => !value)}>
-            {collapsed ? "View" : "Hide"} sources ({reportLayout.sources.length})
-          </button>
+          <div style={sourcesHeaderStyle}>
+            <div style={sectionLabelStyle}>Sources used</div>
+            <button
+              type="button"
+              style={footerToggleStyle}
+              onClick={() =>
+                setCollapsed((value) => {
+                  const next = !value;
+                  if (!next) onSourcesVisibleCue?.();
+                  return next;
+                })
+              }
+            >
+              {collapsed ? "Show" : "Hide"} ({reportLayout.sources.length})
+            </button>
+          </div>
           {!collapsed ? (
-            <ul style={sourceListStyle}>
-              {reportLayout.sources.map((source) => (
-                <li key={`${source.title}-${source.url ?? "no-url"}`} style={sourceItemStyle}>
-                  {source.url ? (
-                    <a href={source.url} target="_blank" rel="noreferrer" style={sourceLinkStyle}>
-                      {source.title}
-                    </a>
-                  ) : (
-                    <span>{source.title}</span>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <ol style={sourceListStyle}>
+              {reportLayout.sources.map((source, index) => {
+                const displayLabel = formatSourceLabel(source);
+                return (
+                  <li key={`${source.title}-${source.url ?? "no-url"}-${index}`} style={sourceItemStyle}>
+                    <span style={sourceIndexStyle}>{index + 1}</span>
+                    {source.url ? (
+                      <a href={source.url} target="_blank" rel="noreferrer" style={sourceChipLinkStyle} title={source.title}>
+                        <span style={sourceLabelStyle}>{displayLabel}</span>
+                      </a>
+                    ) : (
+                      <span style={sourceChipStyle} title={source.title}>
+                        <span style={sourceLabelStyle}>{displayLabel}</span>
+                      </span>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
           ) : null}
         </footer>
       ) : null}
     </aside>
   );
+}
+
+function formatSourceLabel(source: WebAnswerSource): string {
+  const rawTitle = source.title.trim();
+  if (rawTitle) return truncateText(rawTitle, SOURCE_LABEL_MAX_CHARS);
+  if (source.url) {
+    try {
+      const host = new URL(source.url).hostname.replace(/^www\./, "");
+      return truncateText(host, SOURCE_LABEL_MAX_CHARS);
+    } catch {
+      return truncateText(source.url, SOURCE_LABEL_MAX_CHARS);
+    }
+  }
+  return "Untitled source";
+}
+
+function truncateText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars - 1).trimEnd()}…`;
 }
 
 const WEB_ANSWER_TRANSITION_MS = {
@@ -220,6 +272,8 @@ const WEB_ANSWER_REVEAL_MS = {
   findings: 125,
   settled: 560,
 } as const;
+
+const SOURCE_LABEL_MAX_CHARS = 62;
 
 const boxStyle: CSSProperties = {
   position: "absolute",
@@ -322,27 +376,67 @@ const footerStyle: CSSProperties = {
   paddingTop: 9,
 };
 
+const sourcesHeaderStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "space-between",
+  gap: 8,
+};
+
 const footerToggleStyle: CSSProperties = {
   borderRadius: 8,
   border: "1px solid rgba(149, 171, 228, 0.34)",
   background: "rgba(31, 44, 79, 0.5)",
   color: "#eaf2ff",
-  padding: "4px 9px",
-  fontSize: 12,
+  padding: "3px 9px",
+  fontSize: 11,
 };
 
 const sourceListStyle: CSSProperties = {
+  listStyle: "none",
   margin: "8px 0 0",
-  paddingLeft: 18,
+  padding: 0,
   display: "grid",
-  gap: 4,
+  gap: 6,
 };
 
 const sourceItemStyle: CSSProperties = {
-  fontSize: 12,
-  opacity: 0.82,
+  fontSize: 11,
+  opacity: 0.9,
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
 };
 
-const sourceLinkStyle: CSSProperties = {
+const sourceIndexStyle: CSSProperties = {
+  width: 15,
+  textAlign: "right",
+  color: "rgba(188, 207, 235, 0.86)",
+  fontVariantNumeric: "tabular-nums",
+};
+
+const sourceChipStyle: CSSProperties = {
+  borderRadius: 999,
+  border: "1px solid rgba(149, 171, 228, 0.26)",
+  background: "rgba(24, 36, 64, 0.55)",
+  color: "#dcecff",
+  maxWidth: "100%",
+  padding: "2px 9px",
+  minHeight: 22,
+  display: "inline-flex",
+  alignItems: "center",
+};
+
+const sourceChipLinkStyle: CSSProperties = {
+  ...sourceChipStyle,
+  textDecoration: "none",
   color: "#cfe7ff",
+};
+
+const sourceLabelStyle: CSSProperties = {
+  display: "block",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+  whiteSpace: "nowrap",
+  maxWidth: "100%",
 };
