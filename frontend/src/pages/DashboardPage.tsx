@@ -30,7 +30,7 @@ import { pickNonRepeatingLine } from "../lib/voiceLines";
 import { SettingsPanel } from "../components/SettingsPanel";
 import { WebAnswerTextbox, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
 import { useSettingsStore } from "../hooks/useSettingsStore";
-import { computeWebGroundedSignature, normalizeWebGroundedPayload, shouldKeepWebPanelPinned } from "../lib/webGroundedAnswer";
+import { computeWebGroundedSignature, normalizeWebGroundedPayload } from "../lib/webGroundedAnswer";
 import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
 import { resolvePlatformProfile } from "../lib/platformProfile";
 
@@ -164,7 +164,7 @@ export function DashboardPage() {
   });
   const expressionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugExpressions=1");
   const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
-  const [adminSurfaceVisible, setAdminSurfaceVisible] = useState(() => !windowBridge.isNativeDesktop);
+  const [adminSurfaceVisible, setAdminSurfaceVisible] = useState(false);
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
@@ -332,15 +332,10 @@ export function DashboardPage() {
       }
 
       groundedDismissTimerRef.current = window.setTimeout(() => {
-        const pinned = shouldKeepWebPanelPinned(isWebAnswerInteracting, hasExpandedSources);
-        if (pinned) {
-          scheduleWebAnswerDismiss(3800);
-          return;
-        }
         setIsWebAnswerVisible(false);
       }, delayMs);
     },
-    [hasExpandedSources, isWebAnswerInteracting]
+    []
   );
 
   useEffect(() => {
@@ -403,20 +398,13 @@ export function DashboardPage() {
       }
     }
 
-    scheduleWebAnswerDismiss(identicalPayload ? 2600 : 7000);
+    scheduleWebAnswerDismiss(identicalPayload ? 2600 : 5600);
   }, [events, overlayEnabled, scheduleWebAnswerDismiss, settings.voiceOutputEnabled, stampReactionWithCooldown]);
 
   useEffect(() => {
     if (!isWebAnswerVisible) return;
-    if (shouldKeepWebPanelPinned(isWebAnswerInteracting, hasExpandedSources)) {
-      if (groundedDismissTimerRef.current) {
-        window.clearTimeout(groundedDismissTimerRef.current);
-      }
-      return;
-    }
-
-    scheduleWebAnswerDismiss(5000);
-  }, [hasExpandedSources, isWebAnswerInteracting, isWebAnswerVisible, scheduleWebAnswerDismiss]);
+    scheduleWebAnswerDismiss(5200);
+  }, [isWebAnswerVisible, scheduleWebAnswerDismiss]);
 
   useEffect(() => {
     if (!isWebAnswerVisible || isSpeaking) return;
@@ -642,7 +630,7 @@ export function DashboardPage() {
   }, [overlayEnabled]);
 
   const showOverlayControls = adminSurfaceVisible && (!overlayEnabled || overlayControlsVisible || platformProfile.isMobileWeb);
-  const shouldShowCaptions = adminSurfaceVisible || isWebAnswerVisible;
+  const shouldShowCaptions = adminSurfaceVisible;
   const bootstrappingDesktopSettings = windowBridge.isNativeDesktop && !settingsReady;
 
   if (bootstrappingDesktopSettings) {
