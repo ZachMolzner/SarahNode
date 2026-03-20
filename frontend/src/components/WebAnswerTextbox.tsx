@@ -29,12 +29,22 @@ export function WebAnswerTextbox({
   const [hovered, setHovered] = useState(false);
   const [focusedWithin, setFocusedWithin] = useState(false);
   const [touchInteracting, setTouchInteracting] = useState(false);
+  const [isMounted, setIsMounted] = useState(visible);
+  const [isVisible, setIsVisible] = useState(visible);
+  const [answerSnapshot, setAnswerSnapshot] = useState<WebAnswerViewModel | null>(answer);
   const rootRef = useRef<HTMLElement | null>(null);
   const touchTimerRef = useRef<number | null>(null);
+  const visibilityTimerRef = useRef<number | null>(null);
+
+  const displayAnswer = answer ?? answerSnapshot;
+
+  useEffect(() => {
+    if (answer) setAnswerSnapshot(answer);
+  }, [answer]);
 
   useEffect(() => {
     setCollapsed(defaultCollapsedSources);
-  }, [answer?.title, answer?.bullets.join("|"), defaultCollapsedSources]);
+  }, [displayAnswer?.title, displayAnswer?.bullets.join("|"), defaultCollapsedSources]);
 
   useEffect(() => {
     onSourceExpansionChange(!collapsed);
@@ -49,8 +59,30 @@ export function WebAnswerTextbox({
       if (touchTimerRef.current) {
         window.clearTimeout(touchTimerRef.current);
       }
+      if (visibilityTimerRef.current) {
+        window.clearTimeout(visibilityTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (visibilityTimerRef.current) {
+      window.clearTimeout(visibilityTimerRef.current);
+      visibilityTimerRef.current = null;
+    }
+    if (visible) {
+      setIsMounted(true);
+      visibilityTimerRef.current = window.setTimeout(() => setIsVisible(true), 16);
+      return;
+    }
+    setIsVisible(false);
+    visibilityTimerRef.current = window.setTimeout(() => {
+      setIsMounted(false);
+      setHovered(false);
+      setFocusedWithin(false);
+      setTouchInteracting(false);
+    }, WEB_ANSWER_TRANSITION_MS.exitDuration);
+  }, [visible]);
 
   function pulseTouchInteraction() {
     setTouchInteracting(true);
@@ -65,14 +97,22 @@ export function WebAnswerTextbox({
     return () => onInteractionRegionReady?.(null);
   }, [onInteractionRegionReady]);
 
-  const modeAwareStyle = useMemo(() => (answer?.mode === "overlay" ? overlayBoxStyle : immersiveBoxStyle), [answer?.mode]);
+  const modeAwareStyle = useMemo(
+    () => (displayAnswer?.mode === "overlay" ? overlayBoxStyle : immersiveBoxStyle),
+    [displayAnswer?.mode]
+  );
 
-  if (!answer || !visible) return null;
+  if (!displayAnswer || !isMounted) return null;
 
   return (
     <aside
       ref={rootRef}
-      style={{ ...boxStyle, ...modeAwareStyle }}
+      style={{
+        ...boxStyle,
+        ...modeAwareStyle,
+        opacity: isVisible ? 1 : 0,
+        transform: `translateY(${isVisible ? "0px" : "8px"})`,
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocusedWithin(true)}
@@ -87,20 +127,20 @@ export function WebAnswerTextbox({
       onTouchStart={() => pulseTouchInteraction()}
     >
       <div style={badgeStyle}>Checked live web</div>
-      <h3 style={titleStyle}>{answer.title}</h3>
+      <h3 style={titleStyle}>{displayAnswer.title}</h3>
       <ul style={listStyle}>
-        {answer.bullets.slice(0, 5).map((point, index) => (
+        {displayAnswer.bullets.slice(0, 5).map((point, index) => (
           <li key={`${point}-${index}`}>{point}</li>
         ))}
       </ul>
-      {answer.sources.length ? (
+      {displayAnswer.sources.length ? (
         <footer style={footerStyle}>
           <button type="button" style={footerToggleStyle} onClick={() => setCollapsed((value) => !value)}>
-            {collapsed ? "View" : "Hide"} sources ({answer.sources.length})
+            {collapsed ? "View" : "Hide"} sources ({displayAnswer.sources.length})
           </button>
           {!collapsed ? (
             <ul style={sourceListStyle}>
-              {answer.sources.map((source) => (
+              {displayAnswer.sources.map((source) => (
                 <li key={`${source.title}-${source.url ?? "no-url"}`} style={sourceItemStyle}>
                   {source.url ? (
                     <a href={source.url} target="_blank" rel="noreferrer" style={sourceLinkStyle}>
@@ -118,6 +158,10 @@ export function WebAnswerTextbox({
     </aside>
   );
 }
+
+const WEB_ANSWER_TRANSITION_MS = {
+  exitDuration: 220,
+} as const;
 
 const boxStyle: CSSProperties = {
   position: "absolute",
