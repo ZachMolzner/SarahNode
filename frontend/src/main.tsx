@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { DashboardPage } from "./pages/DashboardPage";
+import { OverlayCompanionPage } from "./pages/OverlayCompanionPage";
 import { resolveDisplayMode } from "./lib/displayMode";
 
 const displayMode = resolveDisplayMode();
@@ -17,6 +17,6 @@ if (typeof document !== "undefined") {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <DashboardPage />
+    <OverlayCompanionPage />
   </React.StrictMode>
 );

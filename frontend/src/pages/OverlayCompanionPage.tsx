@@ -40,7 +40,12 @@ const EXPRESSION_REACTION_COOLDOWN_MS = {
   groundedResult: 3600,
 } as const;
 
-export function DashboardPage() {
+export function OverlayCompanionPage() {
+  const adminEntryRequestedOnLaunch = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    const search = new URLSearchParams(window.location.search);
+    return search.get("admin") === "1" || search.get("settings") === "1" || search.get("debug") === "1";
+  }, []);
   const { events, connectionState } = useEvents();
   const processedTtsKeyRef = useRef<string>("");
   const processedReplyKeyRef = useRef<string>("");
@@ -164,7 +169,7 @@ export function DashboardPage() {
   });
   const expressionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugExpressions=1");
   const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
-  const [adminSurfaceVisible, setAdminSurfaceVisible] = useState(false);
+  const [adminSurfaceVisible, setAdminSurfaceVisible] = useState(() => adminEntryRequestedOnLaunch);
   const [isAvatarDragging, setIsAvatarDragging] = useState(false);
   const motionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugMotion=1");
 
@@ -273,8 +278,9 @@ export function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (!adminSurfaceVisible) return;
     void refreshIdentityData();
-  }, [refreshIdentityData]);
+  }, [adminSurfaceVisible, refreshIdentityData]);
 
   useEffect(() => {
     if (shutdownStatus !== "idle") return;
@@ -570,6 +576,13 @@ export function DashboardPage() {
   }, [overlayEnabled]);
 
   useEffect(() => {
+    if (adminSurfaceVisible) return;
+    setSettingsOpen(false);
+    setIsControlsOpen(false);
+    setIsTranscriptOpen(false);
+  }, [adminSurfaceVisible, setSettingsOpen]);
+
+  useEffect(() => {
     if (!overlayEnabled || !overlayControlsVisible) return;
     setIsControlsOpen(true);
   }, [overlayControlsVisible, overlayEnabled]);
@@ -587,10 +600,6 @@ export function DashboardPage() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [windowBridge.isNativeDesktop]);
-
-  useEffect(() => {
-    if (settingsOpen) setAdminSurfaceVisible(true);
-  }, [settingsOpen]);
 
   useEffect(() => {
     if (!windowBridge.isNativeDesktop) return;
@@ -843,40 +852,42 @@ export function DashboardPage() {
           </section>
         ) : null}
 
-        <SettingsPanel
-          open={settingsOpen}
-          settings={settings}
-          desktopFeaturesEnabled={desktopFeaturesEnabled}
-          onClose={() => setSettingsOpen(false)}
-          onChange={(patch) => {
-            void updateSettings(patch);
-          }}
-          onSummonNow={() => {
-            setSummonedAt(Date.now());
-            void windowBridge.summonWindow();
-          }}
-          identityState={identityState}
-          memoryItems={memoryItems}
-          profileRefreshError={profileRefreshError}
-          onRefreshProfiles={() => {
-            void refreshIdentityData();
-          }}
-          onToggleMamaNickname={(enabled) => {
-            void updateNicknamePolicy(enabled).then(refreshIdentityData).catch((err) => {
-              setProfileRefreshError(err instanceof Error ? err.message : "Failed to update nickname policy.");
-            });
-          }}
-          onDeleteMemoryItem={(itemId) => {
-            void deleteMemoryItem(itemId).then(refreshIdentityData).catch((err) => {
-              setProfileRefreshError(err instanceof Error ? err.message : "Failed to delete memory item.");
-            });
-          }}
-          onResetVoiceProfile={(profileId) => {
-            void resetVoiceProfile(profileId).then(refreshIdentityData).catch((err) => {
-              setProfileRefreshError(err instanceof Error ? err.message : "Failed to reset voice profile.");
-            });
-          }}
-        />
+        {adminSurfaceVisible ? (
+          <SettingsPanel
+            open={settingsOpen}
+            settings={settings}
+            desktopFeaturesEnabled={desktopFeaturesEnabled}
+            onClose={() => setSettingsOpen(false)}
+            onChange={(patch) => {
+              void updateSettings(patch);
+            }}
+            onSummonNow={() => {
+              setSummonedAt(Date.now());
+              void windowBridge.summonWindow();
+            }}
+            identityState={identityState}
+            memoryItems={memoryItems}
+            profileRefreshError={profileRefreshError}
+            onRefreshProfiles={() => {
+              void refreshIdentityData();
+            }}
+            onToggleMamaNickname={(enabled) => {
+              void updateNicknamePolicy(enabled).then(refreshIdentityData).catch((err) => {
+                setProfileRefreshError(err instanceof Error ? err.message : "Failed to update nickname policy.");
+              });
+            }}
+            onDeleteMemoryItem={(itemId) => {
+              void deleteMemoryItem(itemId).then(refreshIdentityData).catch((err) => {
+                setProfileRefreshError(err instanceof Error ? err.message : "Failed to delete memory item.");
+              });
+            }}
+            onResetVoiceProfile={(profileId) => {
+              void resetVoiceProfile(profileId).then(refreshIdentityData).catch((err) => {
+                setProfileRefreshError(err instanceof Error ? err.message : "Failed to reset voice profile.");
+              });
+            }}
+          />
+        ) : null}
 
         <WebAnswerTextbox
           answer={webAnswer}

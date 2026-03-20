@@ -10,7 +10,7 @@ export type DisplayModeState = {
   nativeOverlayEnabled: boolean;
 };
 
-const DEFAULT_DISPLAY_MODE: DisplayMode = "immersive";
+const DEFAULT_DISPLAY_MODE: DisplayMode = "overlay";
 
 function parseDisplayMode(value: unknown): DisplayMode {
   if (typeof value !== "string") return DEFAULT_DISPLAY_MODE;
