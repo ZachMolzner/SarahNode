@@ -1,5 +1,6 @@
 import type { MovementState, StagePoint } from "./movementController";
 import { resolveStageZones, type OverlayVisibility, type StageBounds, type StageZoneName } from "./stageZones";
+import { IdleBehaviorManager } from "./idleBehaviorManager";
 
 export type AttentionTarget = "viewer_center" | "captions_area" | "overlay_area" | "transcript_source" | "web_answer_box" | "idle_neutral" | "inward_focus";
 
@@ -23,6 +24,10 @@ export type PresenceOutput = {
   attentionOffset: StagePoint;
   engagementLevel: number;
   movementWillingness: number;
+  activityState: "active" | "idle";
+  idleBehavior: "none" | "wander" | "corner_rest";
+  poseTiltDeg: number;
+  poseYOffset: number;
 };
 
 export const PRESENCE_TUNING = {
@@ -59,6 +64,7 @@ export class PresenceController {
   private engagement = 0.3;
   private lastTarget: StagePoint = { x: 0.56, y: 0.58 };
   private focusOffset: StagePoint = { x: 0, y: 0 };
+  private idleBehaviorManager = new IdleBehaviorManager();
 
   update(input: PresenceInput): PresenceOutput {
     const zones = resolveStageZones(input.bounds, input.overlays);
@@ -80,11 +86,18 @@ export class PresenceController {
     const rate = engagementTarget >= this.engagement ? PRESENCE_TUNING.engagementRisePerSecond : PRESENCE_TUNING.engagementDecayPerSecond;
     this.engagement = smooth(this.engagement, engagementTarget, rate, input.deltaSeconds);
 
-    const baseTarget = zones[this.zone];
-    const microOffset = this.idleMicroOffset(input);
+    const idleBehavior = this.idleBehaviorManager.update({
+      mode: input.mode,
+      nowMs: input.nowMs,
+      bounds: input.bounds,
+      currentPosition: input.currentPosition,
+    });
+
+    const baseTarget = idleBehavior.targetPosition ?? zones[this.zone];
+    const microOffset = this.idleMicroOffset(input, idleBehavior.idleBehavior);
     const proposedTarget: StagePoint = {
-      x: clamp(baseTarget.x + microOffset.x, 0.2, 0.82),
-      y: clamp(baseTarget.y + microOffset.y, 0.3, 0.76),
+      x: clamp(baseTarget.x + microOffset.x, 0.08, 0.92),
+      y: clamp(baseTarget.y + microOffset.y + idleBehavior.poseYOffset, 0.28, 0.82),
     };
 
     const currentDelta = distance(proposedTarget, this.lastTarget);
@@ -102,7 +115,11 @@ export class PresenceController {
       attentionTarget: attention.target,
       attentionOffset: { ...this.focusOffset },
       engagementLevel: this.engagement,
-      movementWillingness: this.movementWillingness(input.mode, input),
+      movementWillingness: idleBehavior.movementWillingness ?? this.movementWillingness(input.mode, input),
+      activityState: idleBehavior.activityState,
+      idleBehavior: idleBehavior.idleBehavior,
+      poseTiltDeg: idleBehavior.poseTiltDeg,
+      poseYOffset: idleBehavior.poseYOffset,
     };
   }
 
@@ -193,8 +210,9 @@ export class PresenceController {
     return { target: "idle_neutral", offset: { x: 0.003 * Math.sin(input.nowMs * 0.0006), y: 0.002 } };
   }
 
-  private idleMicroOffset(input: PresenceInput): StagePoint {
+  private idleMicroOffset(input: PresenceInput, idleBehavior: "none" | "wander" | "corner_rest"): StagePoint {
     if (input.mode !== "idle") return { x: 0, y: 0 };
+    if (idleBehavior === "corner_rest") return { x: 0, y: 0 };
     if (this.engagement > 0.55) return { x: 0, y: 0 };
     if (input.overlays.shutdownVisible) return { x: 0, y: 0 };
 
