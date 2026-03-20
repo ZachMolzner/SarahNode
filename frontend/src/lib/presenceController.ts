@@ -90,6 +90,7 @@ export class PresenceController {
       mode: input.mode,
       nowMs: input.nowMs,
       bounds: input.bounds,
+      overlays: input.overlays,
       currentPosition: input.currentPosition,
     });
 
