@@ -62,6 +62,7 @@ export function AvatarPanel({
     if (avatarState.mode === "idle") return 0.78;
     if (avatarState.mode === "listening" || avatarState.mode === "thinking") return 0.83;
     if (avatarState.mode === "talking" || avatarState.mode === "presenting") return 0.88;
+    if (avatarState.mode === "presenting_search_results") return 0.9;
     if (avatarState.mode === "shutting_down") return 0.8;
     return 0.83;
   }, [avatarState.mode]);

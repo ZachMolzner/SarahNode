@@ -23,7 +23,15 @@ export type AvatarReaction =
   | "error"
   | "none";
 
-export type AvatarMode = "idle" | "walking" | "listening" | "thinking" | "talking" | "presenting" | "shutting_down";
+export type AvatarMode =
+  | "idle"
+  | "walking"
+  | "listening"
+  | "thinking"
+  | "talking"
+  | "presenting"
+  | "presenting_search_results"
+  | "shutting_down";
 
 export type AvatarState = {
   mode: AvatarMode;

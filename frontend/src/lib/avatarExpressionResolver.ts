@@ -60,7 +60,7 @@ function isRecent(nowMs: number, atMs: number, windowMs: number) {
 
 function baselineExpression(input: ExpressionResolverInput): AvatarExpression {
   if (input.isSpeaking || input.mode === "talking") return "warm";
-  if (input.isPresenting || input.mode === "presenting") return "presenting";
+  if (input.isPresenting || input.mode === "presenting" || input.mode === "presenting_search_results") return "presenting";
   if (input.isThinking || input.mode === "thinking") return "focused";
   if (input.isListening || input.mode === "listening") return "attentive";
   if (input.recentlyActiveMs < 12000 || input.isInteracting) return "attentive";
