@@ -33,7 +33,7 @@ export function usePresenceBehavior() {
       searchFindingsRevealAtMs: input.signals.searchFindingsRevealAtMs,
       searchSourcesRevealAtMs: input.signals.searchSourcesRevealAtMs,
       searchSettledAtMs: input.signals.searchSettledAtMs,
-      semanticMode: input.signals.semanticMode,
+      semanticPresenceMode: input.signals.semanticPresenceMode,
     });
   }, []);
 }

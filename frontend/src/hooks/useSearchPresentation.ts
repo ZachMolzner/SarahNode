@@ -64,7 +64,7 @@ export function useSearchPresentation(isSearchPresentationActive: boolean) {
     if (webAnswerRevealStage >= 1 && searchHeadingRevealAt <= 0) setSearchHeadingRevealAt(now);
     if (webAnswerRevealStage >= 2 && searchFindingsRevealAt <= 0) setSearchFindingsRevealAt(now);
     if (webAnswerRevealStage >= 3 && searchRevealSettledAt <= 0) setSearchRevealSettledAt(now);
-  }, [searchFindingsRevealAt, searchHeadingRevealAt, searchRevealSettledAt, searchSourcesRevealAt, webAnswerRevealStage]);
+  }, [searchFindingsRevealAt, searchHeadingRevealAt, searchRevealSettledAt, webAnswerRevealStage]);
 
   useEffect(
     () => () => {

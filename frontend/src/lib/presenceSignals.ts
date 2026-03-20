@@ -9,5 +9,5 @@ export type PresenceSignals = {
   searchFindingsRevealAtMs: number;
   searchSourcesRevealAtMs: number;
   searchSettledAtMs: number;
-  semanticMode: SemanticPresenceMode;
+  semanticPresenceMode: SemanticPresenceMode;
 };

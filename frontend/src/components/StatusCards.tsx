@@ -1,6 +1,6 @@
 import type { ConnectionState, SystemEvent } from "../types/events";
 
-type Props = {
+type StatusCardsProps = {
   events: SystemEvent[];
   connectionState: ConnectionState;
   isAudioPlaying: boolean;
@@ -8,16 +8,16 @@ type Props = {
   ttsStatus: string;
 };
 
-function findLatestEvent(events: SystemEvent[], type: string): SystemEvent | undefined {
-  return events.find((event) => event.type === type);
+function resolveLatestEventByType(events: SystemEvent[], eventType: string): SystemEvent | undefined {
+  return events.find((event) => event.type === eventType);
 }
 
-export function StatusCards({ events, connectionState, isAudioPlaying, llmStatus, ttsStatus }: Props) {
-  const assistantStateEvent = findLatestEvent(events, "assistant_state");
-  const latestSafetyEvent = findLatestEvent(events, "moderation_decision");
-  const latestReplyEvent = findLatestEvent(events, "reply_selected");
-  const latestAvatarEvent = findLatestEvent(events, "avatar_event");
-  const latestSpeakingEvent = findLatestEvent(events, "speaking_status");
+export function StatusCards({ events, connectionState, isAudioPlaying, llmStatus, ttsStatus }: StatusCardsProps) {
+  const assistantStateEvent = resolveLatestEventByType(events, "assistant_state");
+  const latestSafetyEvent = resolveLatestEventByType(events, "moderation_decision");
+  const latestReplyEvent = resolveLatestEventByType(events, "reply_selected");
+  const latestAvatarEvent = resolveLatestEventByType(events, "avatar_event");
+  const latestSpeakingEvent = resolveLatestEventByType(events, "speaking_status");
 
   const assistantState = assistantStateEvent?.payload?.["state"];
   const avatarState = latestAvatarEvent?.payload?.["state"];

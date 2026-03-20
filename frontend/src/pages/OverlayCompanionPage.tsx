@@ -749,7 +749,7 @@ export function OverlayCompanionPage() {
             searchFindingsRevealAtMs: searchFindingsRevealAt,
             searchSourcesRevealAtMs: searchSourcesRevealAt,
             searchSettledAtMs: searchRevealSettledAt,
-            semanticMode: semanticPresenceMode,
+            semanticPresenceMode,
           }}
         />
         {shouldShowCaptions ? (

@@ -21,7 +21,7 @@ export type PresenceInput = {
   searchFindingsRevealAtMs: number;
   searchSourcesRevealAtMs: number;
   searchSettledAtMs: number;
-  semanticMode: SemanticPresenceMode;
+  semanticPresenceMode: SemanticPresenceMode;
 };
 
 export type PresenceOutput = {
@@ -34,7 +34,7 @@ export type PresenceOutput = {
   activityState: "active" | "idle";
   idleBehavior: "none" | "wander" | "corner_rest";
   interactionPresenceState: InteractionPresenceState;
-  semanticMode: SemanticPresenceMode;
+  semanticPresenceMode: SemanticPresenceMode;
   poseTiltDeg: number;
   poseYOffset: number;
 };
@@ -213,7 +213,7 @@ export class PresenceController {
   private idleBehaviorManager = new IdleBehaviorManager();
   private interactionPresenceState: InteractionPresenceState = "idle";
   private interactionPose = { tiltDeg: 0, yOffset: 0, xOffset: 0 };
-  private semanticMode: SemanticPresenceMode = "neutral";
+  private semanticPresenceMode: SemanticPresenceMode = "neutral";
   private semanticPose = { tiltDeg: 0, yOffset: 0, xOffset: 0 };
   private thinkingPulse = {
     active: false,
@@ -317,7 +317,7 @@ export class PresenceController {
       activityState: idleBehavior.activityState,
       idleBehavior: idleBehavior.idleBehavior,
       interactionPresenceState,
-      semanticMode: semanticPresence.mode,
+      semanticPresenceMode: semanticPresence.mode,
       poseTiltDeg: idleBehavior.poseTiltDeg + adjustedInteractionOffset.tiltDeg + semanticPresence.poseOffset.tiltDeg + presentationCueOffset.tiltDeg,
       poseYOffset: idleBehavior.poseYOffset + adjustedInteractionOffset.yOffset + semanticPresence.poseOffset.yOffset + presentationCueOffset.yOffset,
     };
@@ -330,11 +330,11 @@ export class PresenceController {
     movementWillingnessScale: number;
     idleMicroDampen: number;
   } {
-    const mode = input.semanticMode;
+    const mode = input.semanticPresenceMode;
     const transitionMs = PRESENCE_TUNING.semanticPresence.transitionMs;
     const ratePerSecond = 1000 / Math.max(120, transitionMs);
-    if (mode !== this.semanticMode) {
-      this.semanticMode = mode;
+    if (mode !== this.semanticPresenceMode) {
+      this.semanticPresenceMode = mode;
     }
 
     if (mode === "neutral") {
