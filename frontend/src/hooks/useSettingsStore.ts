@@ -106,7 +106,7 @@ export function useSettingsStore() {
       .onDesktopCommand((event) => {
         if (!active) return;
         if (event.command === "summon-hotkey") {
-          setSettingsOpen(true);
+          setSettingsOpen(false);
         }
       })
       .then((unlisten) => {

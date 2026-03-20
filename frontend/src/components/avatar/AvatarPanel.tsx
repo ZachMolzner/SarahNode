@@ -15,6 +15,8 @@ type AvatarPanelProps = {
   displayMode: DisplayModeState;
   reducedEffects?: boolean;
   onInteractionRegionReady?: (element: HTMLElement | null) => void;
+  onDragStateChange?: (dragging: boolean) => void;
+  debugMotionEnabled?: boolean;
 };
 
 export function AvatarPanel({
@@ -25,6 +27,8 @@ export function AvatarPanel({
   displayMode,
   reducedEffects = false,
   onInteractionRegionReady,
+  onDragStateChange,
+  debugMotionEnabled = false,
 }: AvatarPanelProps) {
   const stageRef = useRef<HTMLElement | null>(null);
   const interactionRegionRef = useRef<HTMLDivElement | null>(null);
@@ -32,7 +36,7 @@ export function AvatarPanel({
     overlays: overlayVisibility,
     signals: presenceSignals,
     displayMode,
-  });
+  }, { onDragStateChange });
 
   useEffect(() => {
     onInteractionRegionReady?.(interactionRegionRef.current);
@@ -83,6 +87,8 @@ export function AvatarPanel({
             top: isOverlayGrounded ? "72%" : interactionRegionStyle.top,
             width: isOverlayGrounded ? "min(35vw, 380px)" : interactionRegionStyle.width,
             height: isOverlayGrounded ? "min(52vh, 540px)" : reducedEffects ? "min(52vh, 520px)" : interactionRegionStyle.height,
+            pointerEvents: isOverlayGrounded ? "auto" : "none",
+            cursor: isOverlayGrounded ? (stageMotion.isDragActive ? "grabbing" : "grab") : "default",
           }}
           aria-label="Sarah interaction region"
       >
@@ -114,6 +120,12 @@ export function AvatarPanel({
           <span>
             Sarah • {stageMotion.movementState.replace("_", " ")} • {stageMotion.preferredZone.replace("_", " ")}
           </span>
+        </div>
+      ) : null}
+      {debugMotionEnabled ? (
+        <div style={debugOverlayStyle}>
+          motion: {stageMotion.characterMotionState} • floor: {stageMotion.floorPosition.x.toFixed(2)}, {stageMotion.floorPosition.y.toFixed(2)} • drag:{" "}
+          {stageMotion.isDragActive ? "on" : "off"}
         </div>
       ) : null}
     </section>
@@ -169,4 +181,18 @@ const metaStyle: CSSProperties = {
   opacity: 0.7,
   letterSpacing: 0.3,
   textTransform: "uppercase",
+};
+
+const debugOverlayStyle: CSSProperties = {
+  position: "absolute",
+  left: 12,
+  top: 12,
+  fontSize: 11,
+  color: "rgba(226, 235, 255, 0.9)",
+  background: "rgba(8, 12, 22, 0.55)",
+  border: "1px solid rgba(118, 145, 220, 0.4)",
+  borderRadius: 10,
+  padding: "4px 8px",
+  pointerEvents: "none",
+  zIndex: 22,
 };

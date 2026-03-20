@@ -26,6 +26,7 @@ export class OverlayController {
   private ignoreCursorEvents = false;
   private enableTimer: number | null = null;
   private restoreTimer: number | null = null;
+  private forceInteractive = false;
 
   constructor(mode: DisplayModeState, config?: Partial<OverlayInteractionConfig>) {
     this.mode = mode;
@@ -72,6 +73,17 @@ export class OverlayController {
     await this.setIgnoreCursorEvents(false);
   }
 
+  async setForceInteractive(active: boolean): Promise<void> {
+    this.forceInteractive = active;
+    if (!this.mode.nativeOverlayEnabled) return;
+    if (active) {
+      this.clearTimers();
+      await this.setIgnoreCursorEvents(false);
+      return;
+    }
+    await this.setIgnoreCursorEvents(true);
+  }
+
   private clearTimers() {
     if (this.enableTimer !== null) {
       window.clearTimeout(this.enableTimer);
@@ -116,6 +128,7 @@ export class OverlayController {
 
   private readonly handlePointerMove = (event: PointerEvent) => {
     if (!this.mode.nativeOverlayEnabled) return;
+    if (this.forceInteractive) return;
 
     const inRegion = this.isPointerInsideRegion(event.clientX, event.clientY);
 
@@ -149,6 +162,7 @@ export class OverlayController {
 
   private readonly handlePointerLeave = () => {
     if (!this.mode.nativeOverlayEnabled) return;
+    if (this.forceInteractive) return;
 
     if (this.restoreTimer !== null) {
       window.clearTimeout(this.restoreTimer);
@@ -162,6 +176,7 @@ export class OverlayController {
 
   private readonly handleBlur = () => {
     if (!this.mode.nativeOverlayEnabled) return;
+    if (this.forceInteractive) return;
     void this.setIgnoreCursorEvents(true);
   };
 }
