@@ -124,7 +124,7 @@ export function AvatarPanel({
       ) : null}
       {debugMotionEnabled ? (
         <div style={debugOverlayStyle}>
-          motion: {stageMotion.characterMotionState} • activity: {stageMotion.activityState} • idle: {stageMotion.idleBehavior} • floor: {stageMotion.floorPosition.x.toFixed(2)}, {stageMotion.floorPosition.y.toFixed(2)} • drag:{" "}
+          motion: {stageMotion.characterMotionState} • presence: {stageMotion.interactionPresenceState} • activity: {stageMotion.activityState} • idle: {stageMotion.idleBehavior} • floor: {stageMotion.floorPosition.x.toFixed(2)}, {stageMotion.floorPosition.y.toFixed(2)} • drag:{" "}
           {stageMotion.isDragActive ? "on" : "off"}
         </div>
       ) : null}
