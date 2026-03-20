@@ -39,6 +39,9 @@ export type StageMotion = {
   landingCompression: number;
   recoveryLift: number;
   landingReaction: number;
+  activityState: "active" | "idle";
+  idleBehavior: "none" | "wander" | "corner_rest";
+  poseTiltDeg: number;
 };
 
 export type DragCallbacks = {
@@ -95,6 +98,9 @@ export function useStageController(
     landingCompression: 0,
     recoveryLift: 0,
     landingReaction: 0,
+    activityState: "active" as const,
+    idleBehavior: "none" as const,
+    poseTiltDeg: 0,
   });
 
   const lastTimeRef = useRef<number>(performance.now());
@@ -259,6 +265,9 @@ export function useStageController(
         landingCompression,
         recoveryLift,
         landingReaction,
+        activityState: presence.activityState,
+        idleBehavior: presence.idleBehavior,
+        poseTiltDeg: presence.poseTiltDeg,
       });
 
       raf = requestAnimationFrame(animate);
@@ -350,7 +359,7 @@ export function useStageController(
     const baseY = presenceSnapshot.isGroundedOverlay ? presenceSnapshot.groundLineY : 0.58;
 
     return {
-      transform: `translate(-50%, -50%) translate(${(snapshot.position.x - 0.5) * 100}%, ${(snapshot.position.y - baseY) * 100}%)`,
+      transform: `translate(-50%, -50%) translate(${(snapshot.position.x - 0.5) * 100}%, ${(snapshot.position.y - baseY) * 100}%) rotate(${presenceSnapshot.poseTiltDeg.toFixed(2)}deg)`,
       movementState: motionMode,
       facingDirection: snapshot.facingDirection,
       bob: snapshot.bob,
@@ -371,6 +380,9 @@ export function useStageController(
       landingCompression: presenceSnapshot.landingCompression,
       recoveryLift: presenceSnapshot.recoveryLift,
       landingReaction: presenceSnapshot.landingReaction,
+      activityState: presenceSnapshot.activityState,
+      idleBehavior: presenceSnapshot.idleBehavior,
+      poseTiltDeg: presenceSnapshot.poseTiltDeg,
     };
   }, [movementState, mode, presenceSnapshot, snapshot]);
 }

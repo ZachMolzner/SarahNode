@@ -118,13 +118,13 @@ export function AvatarPanel({
       {displayMode.activeMode === "immersive" ? (
         <div style={metaStyle}>
           <span>
-            Sarah • {stageMotion.movementState.replace("_", " ")} • {stageMotion.preferredZone.replace("_", " ")}
+            Sarah • {stageMotion.movementState.replace("_", " ")} • {stageMotion.idleBehavior.replace("_", " ")} • {stageMotion.preferredZone.replace("_", " ")}
           </span>
         </div>
       ) : null}
       {debugMotionEnabled ? (
         <div style={debugOverlayStyle}>
-          motion: {stageMotion.characterMotionState} • floor: {stageMotion.floorPosition.x.toFixed(2)}, {stageMotion.floorPosition.y.toFixed(2)} • drag:{" "}
+          motion: {stageMotion.characterMotionState} • activity: {stageMotion.activityState} • idle: {stageMotion.idleBehavior} • floor: {stageMotion.floorPosition.x.toFixed(2)}, {stageMotion.floorPosition.y.toFixed(2)} • drag:{" "}
           {stageMotion.isDragActive ? "on" : "off"}
         </div>
       ) : null}
