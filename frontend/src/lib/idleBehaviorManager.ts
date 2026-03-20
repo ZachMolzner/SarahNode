@@ -40,6 +40,16 @@ export const IDLE_BEHAVIOR_TUNING = {
     targetReachThreshold: 0.028,
     moveDurationMs: { min: 5200, max: 8800 },
     pauseMs: { min: 900, max: 2100 },
+    microVariants: {
+      antiRepeatBackToBack: true,
+      variants: {
+        gentle_drift: { weight: 0.34, moveDurationScale: [0.92, 1.08], pauseDurationScale: [0.85, 1.05], tiltDeg: 0.72, yOffset: 0.0012 },
+        look_around_pause: { weight: 0.22, moveDurationScale: [0.86, 1], pauseDurationScale: [1, 1.35], tiltDeg: 1.2, yOffset: 0.0018 },
+        curious_tilt_hold: { weight: 0.2, moveDurationScale: [0.9, 1.05], pauseDurationScale: [0.9, 1.15], holdTiltDeg: [1.7, 2.4] },
+        thoughtful_pause: { weight: 0.14, moveDurationScale: [0.84, 1], pauseDurationScale: [1.35, 1.85], tiltDeg: 0.42, yOffset: -0.0008 },
+        soft_drift_alt: { weight: 0.1, moveDurationScale: [1.02, 1.25], pauseDurationScale: [0.85, 1], tiltDeg: 0.64, yOffset: 0.0008 },
+      },
+    },
   },
   cornerRest: {
     viewportPaddingX: 0.08,
@@ -52,6 +62,18 @@ export const IDLE_BEHAVIOR_TUNING = {
     arrivalOvershootTiltDeg: 1.8,
     swayTiltDeg: 1.6,
     swayYOffset: 0.0035,
+    microVariants: {
+      antiRepeatBackToBack: true,
+      variants: {
+        weight_shift: { weight: 0.34, swayTiltScale: 1.06, swayYOffsetScale: 0.96, extraPhaseSpeed: 1 },
+        deep_lean_settle: { weight: 0.2, settleTiltScale: 1.14, settleYOffsetScale: 1.08, arrivalOvershootScale: 1.55 },
+        glance_breathe: { weight: 0.22, swayTiltScale: 0.94, swayYOffsetScale: 1.1, glanceYOffset: 0.0026 },
+        calm_sway_alt: { weight: 0.24, swayTiltScale: 0.86, swayYOffsetScale: 1.2, extraPhaseSpeed: 0.82 },
+      },
+    },
+    antiRepeatCorners: {
+      recentLimit: 2,
+    },
   },
   behaviorRepeatLimit: 2,
 } as const;
@@ -96,6 +118,12 @@ export class IdleBehaviorManager {
   private wakeFromTiltDeg = 0;
   private wakeFromYOffset = 0;
   private firstWanderMovePending = false;
+  private currentWanderVariant: keyof typeof IDLE_BEHAVIOR_TUNING.wander.microVariants.variants = "gentle_drift";
+  private currentWanderHoldTiltDeg = 2;
+  private lastWanderVariant: keyof typeof IDLE_BEHAVIOR_TUNING.wander.microVariants.variants | null = null;
+  private currentCornerRestVariant: keyof typeof IDLE_BEHAVIOR_TUNING.cornerRest.microVariants.variants = "weight_shift";
+  private lastCornerRestVariant: keyof typeof IDLE_BEHAVIOR_TUNING.cornerRest.microVariants.variants | null = null;
+  private recentCornerIndices: number[] = [];
 
   update(input: { mode: string; nowMs: number; bounds: StageBounds; overlays: OverlayVisibility; currentPosition: StagePoint }): IdleBehaviorSnapshot {
     const nextActivity: ActivityState = input.mode === "idle" ? "idle" : "active";
@@ -162,6 +190,11 @@ export class IdleBehaviorManager {
     this.cornerArrivalAtMs = null;
     this.cornerPhaseOffset = Math.random() * Math.PI;
     this.firstWanderMovePending = this.idleBehavior === "wander";
+    if (this.idleBehavior === "wander") {
+      this.currentWanderVariant = this.pickWanderVariant();
+    } else if (this.idleBehavior === "corner_rest") {
+      this.currentCornerRestVariant = this.pickCornerRestVariant();
+    }
     if (this.firstWanderMovePending) {
       this.behaviorPauseUntilMs =
         nowMs +
@@ -221,19 +254,39 @@ export class IdleBehaviorManager {
       if (nowMs >= this.behaviorPauseUntilMs) {
         this.behaviorTarget = this.pickWanderTarget(currentPosition, overlays);
         this.firstWanderMovePending = false;
+        this.currentWanderVariant = this.pickWanderVariant();
+        const variant = IDLE_BEHAVIOR_TUNING.wander.microVariants.variants[this.currentWanderVariant];
+        this.currentWanderHoldTiltDeg = randomBetween(variant.holdTiltDeg?.[0] ?? 1.7, variant.holdTiltDeg?.[1] ?? 2.4);
+        const moveScale = randomBetween(variant.moveDurationScale[0], variant.moveDurationScale[1]);
+        const pauseScale = randomBetween(variant.pauseDurationScale[0], variant.pauseDurationScale[1]);
         this.behaviorMoveUntilMs =
-          nowMs + randomBetween(IDLE_BEHAVIOR_TUNING.wander.moveDurationMs.min, IDLE_BEHAVIOR_TUNING.wander.moveDurationMs.max);
+          nowMs + randomBetween(IDLE_BEHAVIOR_TUNING.wander.moveDurationMs.min, IDLE_BEHAVIOR_TUNING.wander.moveDurationMs.max) * moveScale;
         this.behaviorPauseUntilMs =
-          this.behaviorMoveUntilMs + randomBetween(IDLE_BEHAVIOR_TUNING.wander.pauseMs.min, IDLE_BEHAVIOR_TUNING.wander.pauseMs.max);
+          this.behaviorMoveUntilMs + randomBetween(IDLE_BEHAVIOR_TUNING.wander.pauseMs.min, IDLE_BEHAVIOR_TUNING.wander.pauseMs.max) * pauseScale;
       }
+    }
+
+    const variant = IDLE_BEHAVIOR_TUNING.wander.microVariants.variants[this.currentWanderVariant];
+    const isPaused = nowMs >= this.behaviorMoveUntilMs && nowMs < this.behaviorPauseUntilMs;
+    const wanderPhase = nowMs * 0.0005 + (this.currentWanderVariant === "soft_drift_alt" ? Math.PI * 0.25 : 0);
+    let poseTiltDeg = (variant.tiltDeg ?? 0.7) * Math.sin(wanderPhase);
+    let poseYOffset = variant.yOffset ?? 0;
+    if (this.currentWanderVariant === "look_around_pause" && isPaused) {
+      poseTiltDeg = 0.65 * Math.sin(nowMs * 0.0014) + 0.9 * Math.sin(nowMs * 0.00075);
+      poseYOffset += 0.001 * Math.cos(nowMs * 0.0011);
+    } else if (this.currentWanderVariant === "curious_tilt_hold" && isPaused) {
+      poseTiltDeg = this.currentWanderHoldTiltDeg * Math.sin(this.cornerPhaseOffset + 0.8);
+    } else if (this.currentWanderVariant === "thoughtful_pause" && isPaused) {
+      poseTiltDeg = 0.28 * Math.sin(nowMs * 0.00036);
+      poseYOffset -= 0.0015;
     }
 
     return {
       activityState: "idle",
       idleBehavior: "wander",
       targetPosition: this.behaviorTarget,
-      poseTiltDeg: 0.8 * Math.sin(nowMs * 0.0005),
-      poseYOffset: 0,
+      poseTiltDeg,
+      poseYOffset,
       movementWillingness: this.firstWanderMovePending ? 0.18 : 0.3,
     };
   }
@@ -265,8 +318,10 @@ export class IdleBehaviorManager {
       this.cornerArrivalAtMs = nowMs;
     }
 
-    const phase = nowMs * 0.0011 + this.cornerPhaseOffset;
-    const settledTilt = this.cornerAnchor.x < 0.5 ? IDLE_BEHAVIOR_TUNING.cornerRest.settleTiltDeg : -IDLE_BEHAVIOR_TUNING.cornerRest.settleTiltDeg;
+    const variant = IDLE_BEHAVIOR_TUNING.cornerRest.microVariants.variants[this.currentCornerRestVariant];
+    const phase = nowMs * 0.0011 * (variant.extraPhaseSpeed ?? 1) + this.cornerPhaseOffset;
+    const settleTiltBase = IDLE_BEHAVIOR_TUNING.cornerRest.settleTiltDeg * (variant.settleTiltScale ?? 1);
+    const settledTilt = this.cornerAnchor.x < 0.5 ? settleTiltBase : -settleTiltBase;
     const arrivalElapsed = this.cornerArrivalAtMs === null ? 0 : nowMs - this.cornerArrivalAtMs;
     const arrivalProgress =
       this.cornerArrivalAtMs === null
@@ -275,6 +330,11 @@ export class IdleBehaviorManager {
     const settleEase = easeOutCubic(arrivalProgress);
     const settleBlend = this.cornerArrivalAtMs === null ? 0 : 1 - settleEase;
     const settleDirection = this.cornerAnchor.x < 0.5 ? 1 : -1;
+    const arrivalOvershootScale = variant.arrivalOvershootScale ?? 1;
+    const swayTiltDeg = IDLE_BEHAVIOR_TUNING.cornerRest.swayTiltDeg * (variant.swayTiltScale ?? 1);
+    const swayYOffset = IDLE_BEHAVIOR_TUNING.cornerRest.swayYOffset * (variant.swayYOffsetScale ?? 1);
+    const settleYOffset = IDLE_BEHAVIOR_TUNING.cornerRest.settleYOffset * (variant.settleYOffsetScale ?? 1);
+    const glanceYOffset = variant.glanceYOffset ? Math.sin(nowMs * 0.00055 + this.cornerPhaseOffset * 0.5) * variant.glanceYOffset : 0;
 
     return {
       activityState: "idle",
@@ -282,12 +342,13 @@ export class IdleBehaviorManager {
       targetPosition: this.cornerAnchor,
       poseTiltDeg:
         settledTilt +
-        settleDirection * IDLE_BEHAVIOR_TUNING.cornerRest.arrivalOvershootTiltDeg * settleBlend +
-        Math.sin(phase) * IDLE_BEHAVIOR_TUNING.cornerRest.swayTiltDeg,
+        settleDirection * IDLE_BEHAVIOR_TUNING.cornerRest.arrivalOvershootTiltDeg * arrivalOvershootScale * settleBlend +
+        Math.sin(phase) * swayTiltDeg,
       poseYOffset:
-        IDLE_BEHAVIOR_TUNING.cornerRest.settleYOffset +
-        IDLE_BEHAVIOR_TUNING.cornerRest.arrivalOvershootYOffset * settleBlend +
-        Math.cos(phase * 0.8) * IDLE_BEHAVIOR_TUNING.cornerRest.swayYOffset,
+        settleYOffset +
+        IDLE_BEHAVIOR_TUNING.cornerRest.arrivalOvershootYOffset * arrivalOvershootScale * settleBlend +
+        Math.cos(phase * 0.8) * swayYOffset +
+        glanceYOffset,
       movementWillingness: 0.12,
     };
   }
@@ -320,23 +381,34 @@ export class IdleBehaviorManager {
   }
 
   private pickCornerAnchor(overlays: OverlayVisibility): StagePoint {
-    const corners: StagePoint[] = [];
-    const pushCorner = (x: number, y: number) => {
-      corners.push(this.applySafeZoneConstraints({ x, y }, overlays));
+    const corners: Array<{ point: StagePoint; index: number }> = [];
+    const pushCorner = (x: number, y: number, index: number) => {
+      corners.push({ point: this.applySafeZoneConstraints({ x, y }, overlays), index });
     };
     if (!IDLE_BEHAVIOR_TUNING.safeZones.excludedCorners.topLeft) {
-      pushCorner(IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.topY);
+      pushCorner(IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.topY, 0);
     }
     if (!IDLE_BEHAVIOR_TUNING.safeZones.excludedCorners.topRight) {
-      pushCorner(1 - IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.topY);
+      pushCorner(1 - IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.topY, 1);
     }
     if (!IDLE_BEHAVIOR_TUNING.safeZones.excludedCorners.bottomLeft) {
-      pushCorner(IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.bottomY);
+      pushCorner(IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.bottomY, 2);
     }
     if (!IDLE_BEHAVIOR_TUNING.safeZones.excludedCorners.bottomRight) {
-      pushCorner(1 - IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.bottomY);
+      pushCorner(1 - IDLE_BEHAVIOR_TUNING.cornerRest.viewportPaddingX, IDLE_BEHAVIOR_TUNING.cornerRest.bottomY, 3);
     }
-    return corners.length > 0 ? corners[Math.floor(Math.random() * corners.length)] : { x: 0.5, y: IDLE_BEHAVIOR_TUNING.cornerRest.bottomY };
+    if (corners.length === 0) {
+      return { x: 0.5, y: IDLE_BEHAVIOR_TUNING.cornerRest.bottomY };
+    }
+    const recentLimit = IDLE_BEHAVIOR_TUNING.cornerRest.antiRepeatCorners.recentLimit;
+    const candidates = corners.filter((corner) => !this.recentCornerIndices.slice(-recentLimit).includes(corner.index));
+    const pool = candidates.length > 0 ? candidates : corners;
+    const choice = pool[Math.floor(Math.random() * pool.length)];
+    this.recentCornerIndices.push(choice.index);
+    if (this.recentCornerIndices.length > recentLimit + 2) {
+      this.recentCornerIndices.shift();
+    }
+    return choice.point;
   }
 
   private applySafeZoneConstraints(point: StagePoint, overlays: OverlayVisibility): StagePoint {
@@ -356,20 +428,52 @@ export class IdleBehaviorManager {
 
   private computeCurrentIdlePose(nowMs: number): { poseTiltDeg: number; poseYOffset: number } {
     if (this.idleBehavior === "corner_rest" && this.cornerAnchor) {
-      const phase = nowMs * 0.0011 + this.cornerPhaseOffset;
-      const settledTilt = this.cornerAnchor.x < 0.5 ? IDLE_BEHAVIOR_TUNING.cornerRest.settleTiltDeg : -IDLE_BEHAVIOR_TUNING.cornerRest.settleTiltDeg;
+      const variant = IDLE_BEHAVIOR_TUNING.cornerRest.microVariants.variants[this.currentCornerRestVariant];
+      const phase = nowMs * 0.0011 * (variant.extraPhaseSpeed ?? 1) + this.cornerPhaseOffset;
+      const settledTiltBase = IDLE_BEHAVIOR_TUNING.cornerRest.settleTiltDeg * (variant.settleTiltScale ?? 1);
+      const settledTilt = this.cornerAnchor.x < 0.5 ? settledTiltBase : -settledTiltBase;
       return {
-        poseTiltDeg: settledTilt + Math.sin(phase) * IDLE_BEHAVIOR_TUNING.cornerRest.swayTiltDeg,
-        poseYOffset: IDLE_BEHAVIOR_TUNING.cornerRest.settleYOffset + Math.cos(phase * 0.8) * IDLE_BEHAVIOR_TUNING.cornerRest.swayYOffset,
+        poseTiltDeg: settledTilt + Math.sin(phase) * IDLE_BEHAVIOR_TUNING.cornerRest.swayTiltDeg * (variant.swayTiltScale ?? 1),
+        poseYOffset: IDLE_BEHAVIOR_TUNING.cornerRest.settleYOffset + Math.cos(phase * 0.8) * IDLE_BEHAVIOR_TUNING.cornerRest.swayYOffset * (variant.swayYOffsetScale ?? 1),
       };
     }
     if (this.idleBehavior === "wander") {
+      const variant = IDLE_BEHAVIOR_TUNING.wander.microVariants.variants[this.currentWanderVariant];
       return {
-        poseTiltDeg: 0.8 * Math.sin(nowMs * 0.0005),
-        poseYOffset: 0,
+        poseTiltDeg: (variant.tiltDeg ?? 0.8) * Math.sin(nowMs * 0.0005),
+        poseYOffset: variant.yOffset ?? 0,
       };
     }
     return { poseTiltDeg: 0, poseYOffset: 0 };
+  }
+
+  private pickWanderVariant(): keyof typeof IDLE_BEHAVIOR_TUNING.wander.microVariants.variants {
+    const choice = this.pickWeightedVariant(IDLE_BEHAVIOR_TUNING.wander.microVariants.variants, this.lastWanderVariant, IDLE_BEHAVIOR_TUNING.wander.microVariants.antiRepeatBackToBack);
+    this.lastWanderVariant = choice;
+    return choice;
+  }
+
+  private pickCornerRestVariant(): keyof typeof IDLE_BEHAVIOR_TUNING.cornerRest.microVariants.variants {
+    const choice = this.pickWeightedVariant(
+      IDLE_BEHAVIOR_TUNING.cornerRest.microVariants.variants,
+      this.lastCornerRestVariant,
+      IDLE_BEHAVIOR_TUNING.cornerRest.microVariants.antiRepeatBackToBack,
+    );
+    this.lastCornerRestVariant = choice;
+    return choice;
+  }
+
+  private pickWeightedVariant<T extends Record<string, { weight: number }>>(variants: T, previous: keyof T | null, avoidPrevious: boolean): keyof T {
+    const entries = Object.entries(variants).map(([key, value]) => ({ key: key as keyof T, weight: value.weight }));
+    const filtered = avoidPrevious && previous ? entries.filter((entry) => entry.key !== previous) : entries;
+    const pool = filtered.length > 0 ? filtered : entries;
+    const totalWeight = pool.reduce((sum, entry) => sum + entry.weight, 0);
+    let roll = Math.random() * totalWeight;
+    for (const entry of pool) {
+      roll -= entry.weight;
+      if (roll <= 0) return entry.key;
+    }
+    return pool[pool.length - 1].key;
   }
 
   getCurrentState() {
