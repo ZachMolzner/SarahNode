@@ -162,6 +162,7 @@ export function OverlayCompanionPage() {
   const [webAnswerRevealStage, setWebAnswerRevealStage] = useState<WebAnswerRevealStage>(0);
   const [searchHeadingRevealAt, setSearchHeadingRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
   const [searchFindingsRevealAt, setSearchFindingsRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
+  const [searchSourcesRevealAt, setSearchSourcesRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
   const [searchRevealSettledAt, setSearchRevealSettledAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
   const searchPresentationTimersRef = useRef<{ textboxEnter: number | null; poseRelease: number | null }>({
     textboxEnter: null,
@@ -196,6 +197,7 @@ export function OverlayCompanionPage() {
     if (webAnswerRevealStage === 0) {
       setSearchHeadingRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
       setSearchFindingsRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
+      setSearchSourcesRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
       setSearchRevealSettledAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
       return;
     }
@@ -203,7 +205,7 @@ export function OverlayCompanionPage() {
     if (webAnswerRevealStage >= 1 && searchHeadingRevealAt <= 0) setSearchHeadingRevealAt(now);
     if (webAnswerRevealStage >= 2 && searchFindingsRevealAt <= 0) setSearchFindingsRevealAt(now);
     if (webAnswerRevealStage >= 3 && searchRevealSettledAt <= 0) setSearchRevealSettledAt(now);
-  }, [searchFindingsRevealAt, searchHeadingRevealAt, searchRevealSettledAt, webAnswerRevealStage]);
+  }, [searchFindingsRevealAt, searchHeadingRevealAt, searchRevealSettledAt, searchSourcesRevealAt, webAnswerRevealStage]);
 
   useEffect(
     () => () => {
@@ -789,6 +791,7 @@ export function OverlayCompanionPage() {
             presentingAtMs: lastWebGroundedAt,
             searchHeadingRevealAtMs: searchHeadingRevealAt,
             searchFindingsRevealAtMs: searchFindingsRevealAt,
+            searchSourcesRevealAtMs: searchSourcesRevealAt,
             searchSettledAtMs: searchRevealSettledAt,
           }}
         />
@@ -987,6 +990,7 @@ export function OverlayCompanionPage() {
           answer={webAnswer}
           visible={isSearchTextboxVisible}
           onRevealStageChange={setWebAnswerRevealStage}
+          onSourcesVisibleCue={() => setSearchSourcesRevealAt(Date.now())}
           defaultCollapsedSources={settings.showSourceFooterCollapsed}
           onInteractionChange={setIsWebAnswerInteracting}
           onSourceExpansionChange={(expanded) => {
