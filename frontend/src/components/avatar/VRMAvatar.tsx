@@ -130,8 +130,16 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
         const postureLead = performance.bodyLean * 0.05 + performance.emphasisPulse * 0.012;
         const perchDrop = motion.perchDepth * 0.9;
         vrm.scene.position.y -= perchDrop;
+        vrm.scene.position.y += motion.recoveryLift * 0.7;
         const groundedForward = motion.isGroundedOverlay ? 0.02 + motion.engagementLevel * 0.02 : 0;
         vrm.scene.position.z += (-0.02 - engagementLift - postureLead + groundedForward - vrm.scene.position.z) * 0.06;
+
+        const landingSquash = motion.landingCompression;
+        const targetScaleY = 1 - landingSquash;
+        const targetScaleXZ = 1 + landingSquash * 0.45;
+        vrm.scene.scale.x += (targetScaleXZ - vrm.scene.scale.x) * 0.2;
+        vrm.scene.scale.z += (targetScaleXZ - vrm.scene.scale.z) * 0.2;
+        vrm.scene.scale.y += (targetScaleY - vrm.scene.scale.y) * 0.2;
 
         const targetRot =
           state.mode === "thinking"
@@ -211,11 +219,12 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
               expressionMix.focused * 0.12 +
               performance.expressionSoftness;
             const surprised = expressionMix.surprised * 0.52 * expressionIntensity;
+            const landingSurprised = motion.landingReaction * 0.18;
             const sad = expressionMix.apologetic * 0.38 * expressionIntensity;
 
             vrm.expressionManager.setValue("happy", Math.min(0.9, happy * expressionIntensity));
             vrm.expressionManager.setValue("relaxed", Math.min(0.9, relaxed * expressionIntensity));
-            vrm.expressionManager.setValue("surprised", Math.min(0.8, surprised));
+            vrm.expressionManager.setValue("surprised", Math.min(0.8, surprised + landingSurprised));
             vrm.expressionManager.setValue("sad", Math.min(0.65, sad));
           }
         }

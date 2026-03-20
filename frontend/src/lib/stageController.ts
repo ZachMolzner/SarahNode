@@ -36,6 +36,9 @@ export type StageMotion = {
   characterMotionState: "grounded" | "dragging" | "airborne" | "falling" | "landing" | "recovering" | "idle";
   floorPosition: { x: number; y: number };
   isDragActive: boolean;
+  landingCompression: number;
+  recoveryLift: number;
+  landingReaction: number;
 };
 
 export type DragCallbacks = {
@@ -48,6 +51,7 @@ const gravityPerSecond = 1.7;
 const landingLift = 0.024;
 const landingMs = 170;
 const recoverMs = 260;
+const strongDropDistance = 0.2;
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -88,6 +92,9 @@ export function useStageController(
     characterMotionState: "grounded" as StageMotion["characterMotionState"],
     floorPosition: { x: 0.77, y: 0.74 },
     isDragActive: false,
+    landingCompression: 0,
+    recoveryLift: 0,
+    landingReaction: 0,
   });
 
   const lastTimeRef = useRef<number>(performance.now());
@@ -101,6 +108,8 @@ export function useStageController(
     velocityY: 0,
     state: "grounded" as StageMotion["characterMotionState"],
     releaseAt: 0,
+    fallStartY: 0.74,
+    landingStrength: 0,
   });
 
   const movementState = mode === "walking" ? "walking" : mode;
@@ -166,13 +175,23 @@ export function useStageController(
 
       const floorY = groundedMotion?.plane.groundLineY ?? 0.74;
       const drag = dragStateRef.current;
+      let stateChangedToAirborne = false;
+      let landingCompression = 0;
+      let recoveryLift = 0;
+      let landingReaction = 0;
       if (behavior.displayMode.activeMode === "overlay") {
         if (!drag.isDragging) {
           if (drag.y < floorY - 0.001) {
+            if (drag.state !== "airborne" && drag.state !== "falling") {
+              stateChangedToAirborne = true;
+            }
             drag.state = drag.velocityY > 0 ? "falling" : "airborne";
             drag.velocityY += gravityPerSecond * deltaSeconds;
             drag.y += drag.velocityY * deltaSeconds;
             if (drag.y >= floorY) {
+              const dropDistance = Math.max(0, floorY - drag.fallStartY);
+              const velocityImpact = Math.min(1, drag.velocityY / 0.75);
+              drag.landingStrength = clamp(dropDistance / strongDropDistance + velocityImpact * 0.25, 0, 1);
               drag.y = floorY;
               drag.velocityY = 0;
               drag.releaseAt = now;
@@ -188,11 +207,26 @@ export function useStageController(
             }
           } else {
             drag.state = mode === "idle" ? "idle" : "grounded";
+            drag.landingStrength *= 0.94;
           }
         }
+        if (stateChangedToAirborne) {
+          drag.fallStartY = drag.y;
+        }
+
+        const elapsedSinceLand = Math.max(0, now - drag.releaseAt);
+        const landingT = clamp(elapsedSinceLand / landingMs, 0, 1);
+        const recoverT = clamp((elapsedSinceLand - landingMs) / recoverMs, 0, 1);
+        landingCompression = drag.state === "landing" ? (1 - landingT) * (0.018 + drag.landingStrength * 0.02) : 0;
+        recoveryLift =
+          drag.state === "recovering" ? Math.sin(recoverT * Math.PI) * (0.006 + drag.landingStrength * 0.008) : 0;
+        landingReaction =
+          (drag.state === "landing" || drag.state === "recovering") && drag.landingStrength > 0.45
+            ? (1 - Math.min(1, elapsedSinceLand / (landingMs + recoverMs * 0.8))) * clamp((drag.landingStrength - 0.45) / 0.55, 0, 1)
+            : 0;
 
         const lift =
-          drag.state === "landing" ? -landingLift : drag.state === "recovering" ? -landingLift * 0.4 : 0;
+          drag.state === "landing" ? -landingLift : drag.state === "recovering" ? -landingLift * 0.4 + recoveryLift : 0;
         const targetX = drag.isDragging ? drag.x : drag.floorX;
         motionController.current.setTarget({
           x: clamp(targetX, floorClamp.minX, floorClamp.maxX),
@@ -222,6 +256,9 @@ export function useStageController(
         characterMotionState: drag.state,
         floorPosition: { x: drag.floorX, y: floorY },
         isDragActive: drag.isDragging,
+        landingCompression,
+        recoveryLift,
+        landingReaction,
       });
 
       raf = requestAnimationFrame(animate);
@@ -288,6 +325,7 @@ export function useStageController(
       drag.floorX = drag.x;
       drag.state = "airborne";
       drag.velocityY = Math.max(0, drag.velocityY);
+      drag.fallStartY = drag.y;
       dragCallbacks?.onDragStateChange?.(false);
       if (typeof window !== "undefined") {
         window.localStorage.setItem(FLOOR_REST_X_KEY, String(drag.floorX));
@@ -330,6 +368,9 @@ export function useStageController(
       characterMotionState: presenceSnapshot.characterMotionState,
       floorPosition: presenceSnapshot.floorPosition,
       isDragActive: presenceSnapshot.isDragActive,
+      landingCompression: presenceSnapshot.landingCompression,
+      recoveryLift: presenceSnapshot.recoveryLift,
+      landingReaction: presenceSnapshot.landingReaction,
     };
   }, [movementState, mode, presenceSnapshot, snapshot]);
 }
