@@ -64,7 +64,7 @@ function clamp01(value: number) {
   return Math.min(1, Math.max(0, value));
 }
 
-function inferTone(mode: AvatarMode, mood: AvatarMood, latestReplyText: string, gesture: GestureName): GestureTone {
+function resolveGestureTone(mode: AvatarMode, mood: AvatarMood, latestReplyText: string, gesture: GestureName): GestureTone {
   if (gesture === "shutdown_goodbye" || mood === "goodbye" || mode === "shutting_down") return "goodbye";
   if (gesture === "startup_greeting") return "cheerful";
   if (mode === "thinking" || mood === "thinking" || mood === "focused") return "focused";
@@ -133,7 +133,7 @@ export class GestureController {
 
     const progress = this.resolveProgress(input.nowMs);
     const isRecovering = this.activeGesture === "none" && this.recoveryUntilMs > input.nowMs;
-    const tone = inferTone(input.mode, input.mood, input.latestReplyText, this.activeGesture);
+    const tone = resolveGestureTone(input.mode, input.mood, input.latestReplyText, this.activeGesture);
 
     return this.composeSnapshot(this.activeGesture, tone, progress, isRecovering);
   }

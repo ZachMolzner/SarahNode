@@ -42,7 +42,7 @@ export type StageMotion = {
   activityState: "active" | "idle";
   idleBehavior: "none" | "wander" | "corner_rest";
   interactionPresenceState: InteractionPresenceState;
-  semanticMode: SemanticPresenceMode;
+  semanticPresenceMode: SemanticPresenceMode;
   poseTiltDeg: number;
 };
 
@@ -103,7 +103,7 @@ export function useStageController(
     activityState: "active" as const,
     idleBehavior: "none" as const,
     interactionPresenceState: "idle" as const,
-    semanticMode: "neutral" as const,
+    semanticPresenceMode: "neutral" as const,
     poseTiltDeg: 0,
   });
 
@@ -272,7 +272,7 @@ export function useStageController(
         activityState: presence.activityState,
         idleBehavior: presence.idleBehavior,
         interactionPresenceState: presence.interactionPresenceState,
-        semanticMode: presence.semanticMode,
+        semanticPresenceMode: presence.semanticPresenceMode,
         poseTiltDeg: presence.poseTiltDeg,
       });
 

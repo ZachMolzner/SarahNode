@@ -1,7 +1,7 @@
 import React from "react";
 import type { SystemEvent } from "../types/events";
 
-type Props = {
+type EventLogProps = {
   events: SystemEvent[];
 };
 
@@ -12,7 +12,7 @@ const cardStyle: React.CSSProperties = {
   background: "#161616",
 };
 
-export function EventLog({ events }: Props) {
+export function EventLog({ events }: EventLogProps) {
   return (
     <section style={cardStyle}>
       <h2 style={{ marginTop: 0 }}>Assistant Event Stream</h2>
