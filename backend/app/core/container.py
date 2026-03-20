@@ -11,7 +11,7 @@ from app.adapters.tts.mock import MockTTSClient
 from app.adapters.web_search.base import WebSearchProvider
 from app.adapters.web_search.brave_search import BraveSearchProvider
 from app.adapters.web_search.serpapi_search import SerpAPISearchProvider
-from app.config.settings import settings
+from app.config.settings import resolve_identity_store_path, settings
 from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
 from app.safety.moderation import ModerationService
@@ -196,7 +196,7 @@ def provider_status() -> dict[str, dict[str, str]]:
 assistant_intake_service = AssistantIntakeService()
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
 identity_service = IdentityService(
-    storage_path=str(Path(__file__).resolve().parents[1] / settings.identity_store_path)
+    storage_path=str(resolve_identity_store_path())
 )
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
