@@ -158,6 +158,36 @@ export const PRESENCE_TUNING = {
       attentionY: 0.001,
     },
   },
+  memoryPresence: {
+    windowsMs: {
+      recentMessages: 20000,
+      recentSearches: 32000,
+      speakingDurations: 90000,
+      rapidExchange: 5200,
+      inactivity: 30000,
+    },
+    historyLimits: {
+      messages: 18,
+      searches: 8,
+      speakingDurations: 8,
+    },
+    thresholds: {
+      repeatedSearches: 2,
+      rapidMessages: 4,
+      longExplanationMs: 6500,
+      deepIdleAfterMs: 55000,
+    },
+    scaling: {
+      repeatedSearchMovementScale: 0.93,
+      repeatedSearchIdleDampen: 0.84,
+      repeatedSearchAttentionBiasX: 0.0016,
+      longExplanationSpeakingCalmScale: 0.9,
+      rapidMessagesListeningScale: 1.08,
+      rapidMessagesAttentionBiasY: 0.0015,
+      inactivityIdleMicroScale: 1.18,
+      inactivityMovementScale: 0.9,
+    },
+  },
 } as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -198,8 +228,22 @@ export class PresenceController {
     thinking: 0.62,
     speaking: 0.9,
   };
+  private memoryLastSeen = {
+    transcriptEventAtMs: 0,
+    userSpokeAtMs: 0,
+    replyAtMs: 0,
+    searchSettledAtMs: 0,
+  };
+  private recentMessageAtMs: number[] = [];
+  private recentSearchAtMs: number[] = [];
+  private recentSpeakingDurationsMs: number[] = [];
+  private lastInteractionAtMs = 0;
+  private speakingSessionStartedAtMs: number | null = null;
+  private wasSpeakingLike = false;
 
   update(input: PresenceInput): PresenceOutput {
+    this.captureInteractionMemory(input);
+
     const zones = resolveStageZones(input.bounds, input.overlays);
     const desiredZone = this.pickDesiredZone(input);
     const canSwitchZone =
@@ -231,12 +275,18 @@ export class PresenceController {
     const interactionPresenceState = this.resolveInteractionPresenceState(input);
     const interactionOffset = this.resolveInteractionPoseOffset(interactionPresenceState, input);
     const semanticPresence = this.resolveSemanticPresenceOverlay(input);
+    const memoryPresence = this.resolveMemoryPresenceOverlay(input, interactionPresenceState);
+    const adjustedInteractionOffset = this.applyMemoryInteractionOffset(interactionOffset, interactionPresenceState, memoryPresence);
     const presentationCueOffset = this.resolvePresentationCueOffset(input);
-    const microOffset = this.idleMicroOffset(input, idleBehavior.idleBehavior, semanticPresence.idleMicroDampen);
+    const microOffset = this.idleMicroOffset(
+      input,
+      idleBehavior.idleBehavior,
+      semanticPresence.idleMicroDampen * memoryPresence.idleMicroDampenScale
+    );
     const proposedTarget: StagePoint = {
-      x: clamp(baseTarget.x + microOffset.x + interactionOffset.xOffset + semanticPresence.poseOffset.xOffset + presentationCueOffset.xOffset, 0.08, 0.92),
+      x: clamp(baseTarget.x + microOffset.x + adjustedInteractionOffset.xOffset + semanticPresence.poseOffset.xOffset + presentationCueOffset.xOffset, 0.08, 0.92),
       y: clamp(
-        baseTarget.y + microOffset.y + idleBehavior.poseYOffset + interactionOffset.yOffset + semanticPresence.poseOffset.yOffset + presentationCueOffset.yOffset,
+        baseTarget.y + microOffset.y + idleBehavior.poseYOffset + adjustedInteractionOffset.yOffset + semanticPresence.poseOffset.yOffset + presentationCueOffset.yOffset,
         0.28,
         0.82
       ),
@@ -248,8 +298,8 @@ export class PresenceController {
     }
 
     const attention = this.resolveAttention(input, {
-      x: presentationCueOffset.attentionOffset.x + semanticPresence.attentionOffset.x,
-      y: presentationCueOffset.attentionOffset.y + semanticPresence.attentionOffset.y,
+      x: presentationCueOffset.attentionOffset.x + semanticPresence.attentionOffset.x + memoryPresence.attentionBias.x,
+      y: presentationCueOffset.attentionOffset.y + semanticPresence.attentionOffset.y + memoryPresence.attentionBias.y,
     });
     this.focusOffset.x = smooth(this.focusOffset.x, attention.offset.x, PRESENCE_TUNING.focusSmoothing * 60, input.deltaSeconds);
     this.focusOffset.y = smooth(this.focusOffset.y, attention.offset.y, PRESENCE_TUNING.focusSmoothing * 60, input.deltaSeconds);
@@ -261,13 +311,15 @@ export class PresenceController {
       attentionOffset: { ...this.focusOffset },
       engagementLevel: this.engagement,
       movementWillingness:
-        (idleBehavior.movementWillingness ?? this.movementWillingness(input.mode, input)) * semanticPresence.movementWillingnessScale,
+        (idleBehavior.movementWillingness ?? this.movementWillingness(input.mode, input)) *
+        semanticPresence.movementWillingnessScale *
+        memoryPresence.movementWillingnessScale,
       activityState: idleBehavior.activityState,
       idleBehavior: idleBehavior.idleBehavior,
       interactionPresenceState,
       semanticMode: semanticPresence.mode,
-      poseTiltDeg: idleBehavior.poseTiltDeg + interactionOffset.tiltDeg + semanticPresence.poseOffset.tiltDeg + presentationCueOffset.tiltDeg,
-      poseYOffset: idleBehavior.poseYOffset + interactionOffset.yOffset + semanticPresence.poseOffset.yOffset + presentationCueOffset.yOffset,
+      poseTiltDeg: idleBehavior.poseTiltDeg + adjustedInteractionOffset.tiltDeg + semanticPresence.poseOffset.tiltDeg + presentationCueOffset.tiltDeg,
+      poseYOffset: idleBehavior.poseYOffset + adjustedInteractionOffset.yOffset + semanticPresence.poseOffset.yOffset + presentationCueOffset.yOffset,
     };
   }
 
@@ -427,6 +479,116 @@ export class PresenceController {
       tilt: this.posePulseSmoothed.thinking,
       forward: this.posePulseSmoothed.thinking,
     };
+  }
+
+  private captureInteractionMemory(input: PresenceInput) {
+    const memoryTuning = PRESENCE_TUNING.memoryPresence;
+    const recentInteractionAt = Math.max(input.transcriptEventAtMs, input.userSpokeAtMs, input.replyAtMs);
+    if (recentInteractionAt > 0) {
+      this.lastInteractionAtMs = Math.max(this.lastInteractionAtMs, recentInteractionAt);
+    }
+
+    if (input.transcriptEventAtMs > this.memoryLastSeen.transcriptEventAtMs) {
+      this.memoryLastSeen.transcriptEventAtMs = input.transcriptEventAtMs;
+      this.pushRecent(this.recentMessageAtMs, input.transcriptEventAtMs, memoryTuning.historyLimits.messages);
+    }
+    if (input.userSpokeAtMs > this.memoryLastSeen.userSpokeAtMs) {
+      this.memoryLastSeen.userSpokeAtMs = input.userSpokeAtMs;
+      this.pushRecent(this.recentMessageAtMs, input.userSpokeAtMs, memoryTuning.historyLimits.messages);
+    }
+    if (input.replyAtMs > this.memoryLastSeen.replyAtMs) {
+      this.memoryLastSeen.replyAtMs = input.replyAtMs;
+      this.pushRecent(this.recentMessageAtMs, input.replyAtMs, memoryTuning.historyLimits.messages);
+    }
+    if (input.searchSettledAtMs > this.memoryLastSeen.searchSettledAtMs) {
+      this.memoryLastSeen.searchSettledAtMs = input.searchSettledAtMs;
+      this.pushRecent(this.recentSearchAtMs, input.searchSettledAtMs, memoryTuning.historyLimits.searches);
+    }
+
+    const speakingLike = input.mode === "talking" || input.mode === "presenting" || input.mode === "presenting_search_results";
+    if (speakingLike && !this.wasSpeakingLike) {
+      this.speakingSessionStartedAtMs = input.nowMs;
+    } else if (!speakingLike && this.wasSpeakingLike && this.speakingSessionStartedAtMs !== null) {
+      const durationMs = Math.max(0, input.nowMs - this.speakingSessionStartedAtMs);
+      this.pushRecent(this.recentSpeakingDurationsMs, durationMs, memoryTuning.historyLimits.speakingDurations);
+      this.speakingSessionStartedAtMs = null;
+    }
+    this.wasSpeakingLike = speakingLike;
+
+    this.trimWindow(this.recentMessageAtMs, input.nowMs - memoryTuning.windowsMs.recentMessages);
+    this.trimWindow(this.recentSearchAtMs, input.nowMs - memoryTuning.windowsMs.recentSearches);
+  }
+
+  private resolveMemoryPresenceOverlay(
+    input: PresenceInput,
+    interactionState: InteractionPresenceState
+  ): { movementWillingnessScale: number; idleMicroDampenScale: number; attentionBias: StagePoint; interactionAmplitudeScale: number } {
+    const tuning = PRESENCE_TUNING.memoryPresence;
+    const rapidMessageCount = this.recentMessageAtMs.filter((ts) => input.nowMs - ts <= tuning.windowsMs.rapidExchange).length;
+    const hasRepeatedSearches = this.recentSearchAtMs.length >= tuning.thresholds.repeatedSearches;
+    const avgSpeakingDurationMs =
+      this.recentSpeakingDurationsMs.length > 0
+        ? this.recentSpeakingDurationsMs.reduce((sum, value) => sum + value, 0) / this.recentSpeakingDurationsMs.length
+        : 0;
+    const longExplanationActive = avgSpeakingDurationMs >= tuning.thresholds.longExplanationMs;
+    const timeSinceLastInteraction = this.lastInteractionAtMs > 0 ? input.nowMs - this.lastInteractionAtMs : Number.POSITIVE_INFINITY;
+    const deepIdleActive = timeSinceLastInteraction >= tuning.thresholds.deepIdleAfterMs;
+
+    let movementWillingnessScale = 1;
+    let idleMicroDampenScale = 1;
+    let interactionAmplitudeScale = 1;
+    const attentionBias: StagePoint = { x: 0, y: 0 };
+
+    if (hasRepeatedSearches) {
+      movementWillingnessScale *= tuning.scaling.repeatedSearchMovementScale;
+      idleMicroDampenScale *= tuning.scaling.repeatedSearchIdleDampen;
+      attentionBias.x += tuning.scaling.repeatedSearchAttentionBiasX;
+    }
+
+    if (interactionState === "speaking" && longExplanationActive) {
+      interactionAmplitudeScale *= tuning.scaling.longExplanationSpeakingCalmScale;
+    }
+
+    if (interactionState === "listening" && rapidMessageCount >= tuning.thresholds.rapidMessages) {
+      interactionAmplitudeScale *= tuning.scaling.rapidMessagesListeningScale;
+      attentionBias.y += tuning.scaling.rapidMessagesAttentionBiasY;
+    }
+
+    if (input.mode === "idle" && deepIdleActive) {
+      idleMicroDampenScale *= tuning.scaling.inactivityIdleMicroScale;
+      movementWillingnessScale *= tuning.scaling.inactivityMovementScale;
+    }
+
+    return { movementWillingnessScale, idleMicroDampenScale, attentionBias, interactionAmplitudeScale };
+  }
+
+  private applyMemoryInteractionOffset(
+    interactionOffset: { tiltDeg: number; yOffset: number; xOffset: number },
+    interactionState: InteractionPresenceState,
+    memoryPresence: { interactionAmplitudeScale: number }
+  ) {
+    if (interactionState === "idle") return interactionOffset;
+    const scale = memoryPresence.interactionAmplitudeScale;
+    return {
+      tiltDeg: interactionOffset.tiltDeg * scale,
+      yOffset: interactionOffset.yOffset * scale,
+      xOffset: interactionOffset.xOffset * scale,
+    };
+  }
+
+  private pushRecent(buffer: number[], value: number, limit: number) {
+    if (!Number.isFinite(value) || value <= 0) return;
+    buffer.push(value);
+    if (buffer.length > limit) {
+      buffer.splice(0, buffer.length - limit);
+    }
+  }
+
+  private trimWindow(buffer: number[], threshold: number) {
+    if (!Number.isFinite(threshold)) return;
+    while (buffer.length > 0 && buffer[0] < threshold) {
+      buffer.shift();
+    }
   }
 
   private pickDesiredZone(input: PresenceInput): StageZoneName {
