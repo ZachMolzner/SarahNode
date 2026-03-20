@@ -1,25 +1,77 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { EVENT_STREAM_LIMITS } from "../config/realtime";
 import { getWsEventsUrl } from "../lib/api";
-import type { ConnectionState, SystemEvent } from "../types/events";
+import {
+  isKnownEventType,
+  type AssistantStatePayload,
+  type ConnectionState,
+  type EventPayload,
+  type KnownEventType,
+  type ReplySelectedPayload,
+  type SpeakingStatusPayload,
+  type SystemEvent,
+} from "../types/events";
 
 type UseEventsResult = {
   events: SystemEvent[];
   connectionState: ConnectionState;
 };
 
-const MAX_EVENTS = 250;
+function toPayloadRecord(rawPayload: unknown): EventPayload {
+  return typeof rawPayload === "object" && rawPayload !== null ? (rawPayload as EventPayload) : {};
+}
 
-function parseEvent(raw: string): SystemEvent | null {
+function coerceKnownPayload(type: KnownEventType, payload: EventPayload): EventPayload {
+  if (type === "assistant_state") {
+    const state = payload["state"];
+    return {
+      ...payload,
+      state: typeof state === "string" ? state : undefined,
+    } satisfies AssistantStatePayload;
+  }
+
+  if (type === "reply_selected") {
+    const text = payload["text"];
+    const emotion = payload["emotion"];
+    return {
+      ...payload,
+      text: typeof text === "string" ? text : undefined,
+      emotion: typeof emotion === "string" ? emotion : undefined,
+    } satisfies ReplySelectedPayload;
+  }
+
+  if (type === "speaking_status") {
+    const speaking = payload["is_speaking"];
+    return {
+      ...payload,
+      is_speaking: speaking === true,
+    } satisfies SpeakingStatusPayload;
+  }
+
+  return payload;
+}
+
+function parseSystemEventMessage(rawMessage: string): SystemEvent | null {
   try {
-    const parsed = JSON.parse(raw) as Partial<SystemEvent>;
+    const parsed = JSON.parse(rawMessage) as Partial<SystemEvent>;
     if (!parsed || typeof parsed.type !== "string" || typeof parsed.timestamp !== "string") {
       return null;
+    }
+
+    const payload = toPayloadRecord(parsed.payload);
+
+    if (isKnownEventType(parsed.type)) {
+      return {
+        type: parsed.type,
+        timestamp: parsed.timestamp,
+        payload: coerceKnownPayload(parsed.type, payload),
+      };
     }
 
     return {
       type: parsed.type,
       timestamp: parsed.timestamp,
-      payload: typeof parsed.payload === "object" && parsed.payload !== null ? parsed.payload : {},
+      payload,
     };
   } catch {
     return null;
@@ -65,14 +117,14 @@ export function useEvents(url = getWsEventsUrl()): UseEventsResult {
           if (socket?.readyState === WebSocket.OPEN) {
             socket.send("ping");
           }
-        }, 20000);
+        }, EVENT_STREAM_LIMITS.heartbeatIntervalMs);
       };
 
       socket.onmessage = (message) => {
         if (!mounted) return;
-        const parsed = parseEvent(message.data);
+        const parsed = parseSystemEventMessage(message.data);
         if (!parsed) return;
-        setEvents((current) => [parsed, ...current].slice(0, MAX_EVENTS));
+        setEvents((current) => [parsed, ...current].slice(0, EVENT_STREAM_LIMITS.maxBufferedEvents));
       };
 
       socket.onerror = () => {
@@ -87,7 +139,10 @@ export function useEvents(url = getWsEventsUrl()): UseEventsResult {
         setConnectionState("closed");
         retriesRef.current += 1;
 
-        const reconnectDelay = Math.min(3000, retriesRef.current * 750);
+        const reconnectDelay = Math.min(
+          EVENT_STREAM_LIMITS.reconnectMaxDelayMs,
+          retriesRef.current * EVENT_STREAM_LIMITS.reconnectStepMs
+        );
         timeoutRef.current = window.setTimeout(connect, reconnectDelay);
       };
     };
