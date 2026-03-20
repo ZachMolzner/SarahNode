@@ -3,6 +3,7 @@ import { resolveStageZones, type OverlayVisibility, type StageBounds, type Stage
 import { IdleBehaviorManager } from "./idleBehaviorManager";
 
 export type AttentionTarget = "viewer_center" | "captions_area" | "overlay_area" | "transcript_source" | "web_answer_box" | "idle_neutral" | "inward_focus";
+export type InteractionPresenceState = "idle" | "listening" | "thinking" | "speaking";
 
 export type PresenceInput = {
   mode: MovementState;
@@ -26,6 +27,7 @@ export type PresenceOutput = {
   movementWillingness: number;
   activityState: "active" | "idle";
   idleBehavior: "none" | "wander" | "corner_rest";
+  interactionPresenceState: InteractionPresenceState;
   poseTiltDeg: number;
   poseYOffset: number;
 };
@@ -42,6 +44,35 @@ export const PRESENCE_TUNING = {
   recentInteractionMs: 18000,
   idleMicroShiftAmplitude: 0.013,
   focusSmoothing: 0.12,
+  interactionPresence: {
+    transitionMs: {
+      listening: 240,
+      thinking: 320,
+      speaking: 190,
+      idle: 340,
+    },
+    amplitudes: {
+      idle: { tiltDeg: 0, yOffset: 0, forwardX: 0 },
+      listening: { tiltDeg: 1.25, yOffset: -0.0028, forwardX: 0.0035 },
+      thinking: { tiltDeg: 1.8, yOffset: -0.0015, forwardX: 0.001 },
+      speaking: { tiltDeg: 2.2, yOffset: -0.0032, forwardX: 0.0042 },
+    },
+    listening: {
+      swayHz: 0.17,
+      swayScale: 0.18,
+    },
+    thinking: {
+      pulseGapMs: { min: 760, max: 1900 },
+      pulseDurationMs: { min: 260, max: 520 },
+      pulseScale: { min: 0.2, max: 0.44 },
+    },
+    speaking: {
+      rhythmHz: 1.2,
+      rhythmScale: 0.36,
+    },
+  },
+  speakingHoldMs: 760,
+  listeningHoldMs: 580,
 } as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -65,6 +96,16 @@ export class PresenceController {
   private lastTarget: StagePoint = { x: 0.56, y: 0.58 };
   private focusOffset: StagePoint = { x: 0, y: 0 };
   private idleBehaviorManager = new IdleBehaviorManager();
+  private interactionPresenceState: InteractionPresenceState = "idle";
+  private interactionPose = { tiltDeg: 0, yOffset: 0, xOffset: 0 };
+  private thinkingPulse = {
+    active: false,
+    startedAtMs: 0,
+    durationMs: 0,
+    amplitude: 0,
+    direction: 1 as -1 | 1,
+    nextAtMs: 0,
+  };
 
   update(input: PresenceInput): PresenceOutput {
     const zones = resolveStageZones(input.bounds, input.overlays);
@@ -95,10 +136,12 @@ export class PresenceController {
     });
 
     const baseTarget = idleBehavior.targetPosition ?? zones[this.zone];
+    const interactionPresenceState = this.resolveInteractionPresenceState(input);
+    const interactionOffset = this.resolveInteractionPoseOffset(interactionPresenceState, input);
     const microOffset = this.idleMicroOffset(input, idleBehavior.idleBehavior);
     const proposedTarget: StagePoint = {
-      x: clamp(baseTarget.x + microOffset.x, 0.08, 0.92),
-      y: clamp(baseTarget.y + microOffset.y + idleBehavior.poseYOffset, 0.28, 0.82),
+      x: clamp(baseTarget.x + microOffset.x + interactionOffset.xOffset, 0.08, 0.92),
+      y: clamp(baseTarget.y + microOffset.y + idleBehavior.poseYOffset + interactionOffset.yOffset, 0.28, 0.82),
     };
 
     const currentDelta = distance(proposedTarget, this.lastTarget);
@@ -119,9 +162,79 @@ export class PresenceController {
       movementWillingness: idleBehavior.movementWillingness ?? this.movementWillingness(input.mode, input),
       activityState: idleBehavior.activityState,
       idleBehavior: idleBehavior.idleBehavior,
-      poseTiltDeg: idleBehavior.poseTiltDeg,
-      poseYOffset: idleBehavior.poseYOffset,
+      interactionPresenceState,
+      poseTiltDeg: idleBehavior.poseTiltDeg + interactionOffset.tiltDeg,
+      poseYOffset: idleBehavior.poseYOffset + interactionOffset.yOffset,
     };
+  }
+
+  private resolveInteractionPresenceState(input: PresenceInput): InteractionPresenceState {
+    if (input.mode === "talking" || input.mode === "presenting") return "speaking";
+    if (input.mode === "listening") return "listening";
+    if (input.mode === "thinking") return "thinking";
+    if (input.nowMs - input.replyAtMs < PRESENCE_TUNING.speakingHoldMs || input.nowMs - input.presentingAtMs < PRESENCE_TUNING.speakingHoldMs) {
+      return "speaking";
+    }
+    if (input.nowMs - input.userSpokeAtMs < PRESENCE_TUNING.listeningHoldMs || input.nowMs - input.transcriptEventAtMs < PRESENCE_TUNING.listeningHoldMs) {
+      return "listening";
+    }
+    return "idle";
+  }
+
+  private resolveInteractionPoseOffset(state: InteractionPresenceState, input: PresenceInput) {
+    if (state !== this.interactionPresenceState) {
+      this.interactionPresenceState = state;
+      if (state !== "thinking") {
+        this.thinkingPulse.active = false;
+      } else if (this.thinkingPulse.nextAtMs === 0) {
+        this.thinkingPulse.nextAtMs = input.nowMs + randomBetween(PRESENCE_TUNING.interactionPresence.thinking.pulseGapMs.min, PRESENCE_TUNING.interactionPresence.thinking.pulseGapMs.max);
+      }
+    }
+    const amp = PRESENCE_TUNING.interactionPresence.amplitudes[state];
+    const pulse = this.interactionPulse(state, input.nowMs);
+    const targetTilt = amp.tiltDeg * pulse;
+    const targetYOffset = amp.yOffset * pulse;
+    const targetXOffset = amp.forwardX * pulse;
+    const transitionMs = PRESENCE_TUNING.interactionPresence.transitionMs[state];
+    const ratePerSecond = 1000 / Math.max(80, transitionMs);
+    this.interactionPose.tiltDeg = smooth(this.interactionPose.tiltDeg, targetTilt, ratePerSecond, input.deltaSeconds);
+    this.interactionPose.yOffset = smooth(this.interactionPose.yOffset, targetYOffset, ratePerSecond, input.deltaSeconds);
+    this.interactionPose.xOffset = smooth(this.interactionPose.xOffset, targetXOffset, ratePerSecond, input.deltaSeconds);
+    return { ...this.interactionPose };
+  }
+
+  private interactionPulse(state: InteractionPresenceState, nowMs: number) {
+    if (state === "idle") return 0;
+    if (state === "listening") {
+      return 0.88 + (Math.sin(nowMs * PRESENCE_TUNING.interactionPresence.listening.swayHz * 0.001 * Math.PI * 2) * 0.5 + 0.5) * PRESENCE_TUNING.interactionPresence.listening.swayScale;
+    }
+    if (state === "speaking") {
+      return 0.88 + (Math.sin(nowMs * PRESENCE_TUNING.interactionPresence.speaking.rhythmHz * 0.001 * Math.PI * 2) * 0.5 + 0.5) * PRESENCE_TUNING.interactionPresence.speaking.rhythmScale;
+    }
+    if (nowMs >= this.thinkingPulse.nextAtMs && !this.thinkingPulse.active) {
+      this.thinkingPulse.active = true;
+      this.thinkingPulse.startedAtMs = nowMs;
+      this.thinkingPulse.durationMs = randomBetween(
+        PRESENCE_TUNING.interactionPresence.thinking.pulseDurationMs.min,
+        PRESENCE_TUNING.interactionPresence.thinking.pulseDurationMs.max
+      );
+      this.thinkingPulse.amplitude = randomBetween(
+        PRESENCE_TUNING.interactionPresence.thinking.pulseScale.min,
+        PRESENCE_TUNING.interactionPresence.thinking.pulseScale.max
+      );
+      this.thinkingPulse.direction = Math.random() > 0.5 ? 1 : -1;
+    }
+    if (!this.thinkingPulse.active) {
+      return 0.52;
+    }
+    const t = clamp((nowMs - this.thinkingPulse.startedAtMs) / this.thinkingPulse.durationMs, 0, 1);
+    if (t >= 1) {
+      this.thinkingPulse.active = false;
+      this.thinkingPulse.nextAtMs =
+        nowMs + randomBetween(PRESENCE_TUNING.interactionPresence.thinking.pulseGapMs.min, PRESENCE_TUNING.interactionPresence.thinking.pulseGapMs.max);
+      return 0.5;
+    }
+    return 0.5 + Math.sin(t * Math.PI) * this.thinkingPulse.amplitude * this.thinkingPulse.direction;
   }
 
   private pickDesiredZone(input: PresenceInput): StageZoneName {
@@ -221,4 +334,8 @@ export class PresenceController {
     const y = Math.cos(input.nowMs * 0.00023) * PRESENCE_TUNING.idleMicroShiftAmplitude * 0.4;
     return { x, y };
   }
+}
+
+function randomBetween(min: number, max: number) {
+  return min + Math.random() * (max - min);
 }
