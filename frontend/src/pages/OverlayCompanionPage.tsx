@@ -223,7 +223,7 @@ export function OverlayCompanionPage() {
                 : baseAvatarState.mode,
           mood: expressionState.mood,
           isSpeaking,
-          mouthIntensity: mouthOpenAmount,
+          mouthIntensity: Math.min(1, mouthOpenAmount * 1.8),
           expression: expressionState.expression,
           reaction: expressionState.reaction,
           expressionIntensity: expressionState.intensity,
@@ -281,20 +281,26 @@ export function OverlayCompanionPage() {
     return () => window.removeEventListener("pointerdown", handleUserGesture);
   }, [desktopFeaturesEnabled]);
 
-  useEffect(() => {
-    let frame = 0;
-    let current = 0;
-    const tick = () => {
-      const target = isAudioPlaying ? Math.min(0.9, playbackAmplitude * 0.92) : 0;
-      const smoothing = isAudioPlaying ? 0.42 : 0.2;
-      current += (target - current) * smoothing;
-      const next = isAudioPlaying ? Math.max(0, current) : current < 0.008 ? 0 : current;
-      setMouthOpenAmount((prev) => (Math.abs(prev - next) > 0.01 || next === 0 ? next : prev));
-      frame = window.requestAnimationFrame(tick);
-    };
+ useEffect(() => {
+  let frame = 0;
+  let current = 0;
+
+  const tick = () => {
+    const target = isAudioPlaying ? Math.min(1, playbackAmplitude * 1.35) : 0;
+    const smoothing = isAudioPlaying ? 0.55 : 0.22;
+
+    current += (target - current) * smoothing;
+
+    const next = isAudioPlaying ? Math.min(1, current * 1.6) : 0;
+
+    setMouthOpenAmount(next);
+
     frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [isAudioPlaying, playbackAmplitude]);
+  };
+
+  frame = window.requestAnimationFrame(tick);
+  return () => window.cancelAnimationFrame(frame);
+}, [isAudioPlaying, playbackAmplitude]);
 
   useEffect(() => {
     void fetchAssistantState()
@@ -309,6 +315,17 @@ export function OverlayCompanionPage() {
         setTtsStatus("unavailable");
       });
   }, []);
+
+  async function refreshIdentityData() {
+  try {
+    setProfileRefreshError(null);
+    const [identity, memory] = await Promise.all([fetchIdentityState(), fetchMemoryItems()]);
+    setIdentityState(identity);
+    setMemoryItems(memory);
+  } catch (err) {
+    setProfileRefreshError(err instanceof Error ? err.message : "Failed to load identity profile data.");
+  }
+}
 
   useEffect(() => {
     if (!adminSurfaceVisible) return;
@@ -558,17 +575,6 @@ export function OverlayCompanionPage() {
     await voiceOrchestratorRef.current.replayLastAudio();
   }
 
-  const refreshIdentityData = useCallback(async () => {
-    try {
-      setProfileRefreshError(null);
-      const [identity, memory] = await Promise.all([fetchIdentityState(), fetchMemoryItems()]);
-      setIdentityState(identity);
-      setMemoryItems(memory);
-    } catch (err) {
-      setProfileRefreshError(err instanceof Error ? err.message : "Failed to load identity profile data.");
-    }
-  }, []);
-
   const {
     handleSettingsChange,
     handleSummonNow,
@@ -765,19 +771,21 @@ export function OverlayCompanionPage() {
           <div style={browserOverlayWarningStyle}>Overlay visuals are active, but native click-through requires Tauri desktop mode.</div>
         ) : null}
 
-        {showOverlayControls ? <div style={{ ...topOverlayStyle, gap: platformProfile.isPhoneLike ? 6 : 8 }}>
-          <Pill label={`Connection: ${connectionState}`} muted={connectionState !== "open"} />
-          <Pill label={`Voice: ${voiceStatus}`} muted={voiceStatus === "idle"} />
-          <button type="button" onClick={() => setIsControlsOpen((open) => !open)} style={miniButtonStyle}>
-            {isControlsOpen ? "Hide Controls" : "Menu"}
-          </button>
-          <button type="button" onClick={() => setIsTranscriptOpen((open) => !open)} style={miniButtonStyle}>
-            {isTranscriptOpen ? "Hide Transcript" : "Transcript"}
-          </button>
-          <button type="button" onClick={() => setSettingsOpen((open) => !open)} style={miniButtonStyle}>
-            {settingsOpen ? "Hide Settings" : "Settings"}
-          </button>
-        </div> : null}
+        {showOverlayControls ? (
+          <div style={{ ...topOverlayStyle, gap: platformProfile.isPhoneLike ? 6 : 8 }}>
+            <Pill label={`Connection: ${connectionState}`} muted={connectionState !== "open"} />
+            <Pill label={`Voice: ${voiceStatus}`} muted={voiceStatus === "idle"} />
+            <button type="button" onClick={() => setIsControlsOpen((open) => !open)} style={miniButtonStyle}>
+              {isControlsOpen ? "Hide Controls" : "Menu"}
+            </button>
+            <button type="button" onClick={() => setIsTranscriptOpen((open) => !open)} style={miniButtonStyle}>
+              {isTranscriptOpen ? "Hide Transcript" : "Transcript"}
+            </button>
+            <button type="button" onClick={() => setSettingsOpen((open) => !open)} style={miniButtonStyle}>
+              {settingsOpen ? "Hide Settings" : "Settings"}
+            </button>
+          </div>
+        ) : null}
         {expressionDebugEnabled ? (
           <div style={expressionDebugStyle}>
             baseline: {expressionState.debug.baseline} · reaction: {expressionState.reaction} · intensity:{" "}

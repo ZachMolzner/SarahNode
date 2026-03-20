@@ -1,300 +1,202 @@
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
-import type { AvatarState } from "../../types/avatar";
-import type { StageMotion } from "../../lib/stageController";
-import type { GesturePerformanceSnapshot } from "../../lib/gestureController";
 
-const DEFAULT_VRM_PATH = "/assets/Sarah.vrm";
+const VRM_PATH = "/assets/Sarah.vrm";
 
-type VRMAvatarProps = {
-  avatarState: AvatarState;
-  stageMotion: StageMotion;
-  gesturePerformance: GesturePerformanceSnapshot;
-  reducedEffects?: boolean;
-};
-
-export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reducedEffects = false }: VRMAvatarProps) {
+export function VRMAvatar() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const vrmRef = useRef<VRM | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const avatarStateRef = useRef(avatarState);
-  const stageMotionRef = useRef(stageMotion);
-  const gestureRef = useRef(gesturePerformance);
-
-  useEffect(() => {
-    avatarStateRef.current = avatarState;
-  }, [avatarState]);
-
-  useEffect(() => {
-    stageMotionRef.current = stageMotion;
-  }, [stageMotion]);
-
-  useEffect(() => {
-    gestureRef.current = gesturePerformance;
-  }, [gesturePerformance]);
+  const baseYRef = useRef(0);
+  const lookTargetRef = useRef<THREE.Object3D | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    let mounted = true;
+    let frameId = 0;
+    let disposed = false;
+
+    const width = container.clientWidth || 400;
+    const height = container.clientHeight || 600;
+
     const scene = new THREE.Scene();
 
-    const camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 0.1, 1000);
-    camera.position.set(0, 1.28, 2.55);
+    const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 1000);
+    camera.position.set(0, 1.2, 2.5);
+    camera.lookAt(0, 1, 0);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: !reducedEffects, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, reducedEffects ? 1.25 : 2));
-    renderer.setSize(container.clientWidth, container.clientHeight);
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setClearColor(0x000000, 0);
+
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xc3d4ff, 0x1f263c, reducedEffects ? 1.05 : 1.25);
-    scene.add(hemi);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, reducedEffects ? 0.86 : 1.02);
-    keyLight.position.set(1.2, 1.7, 2.4);
-    scene.add(keyLight);
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(1, 2, 3);
+    scene.add(light);
 
-    const rimLight = new THREE.DirectionalLight(0xa3bbff, reducedEffects ? 0.36 : 0.55);
-    rimLight.position.set(-1.5, 1.2, -1.4);
-    scene.add(rimLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-    const clock = new THREE.Clock();
-    const expressionMix = {
-      warm: 0,
-      focused: 0,
-      attentive: 0,
-      curious: 0,
-      presenting: 0,
-      surprised: 0,
-      apologetic: 0,
-    };
+    // IMPORTANT: look target must be an Object3D, not a Vector3
+    const lookTarget = new THREE.Object3D();
+    lookTarget.position.set(0, 1.2, 0.5);
+    scene.add(lookTarget);
+    lookTargetRef.current = lookTarget;
 
     const loader = new GLTFLoader();
-    loader.crossOrigin = "anonymous";
     loader.register((parser) => new VRMLoaderPlugin(parser));
 
-    loader.load(
-      DEFAULT_VRM_PATH,
-      (gltf) => {
-        if (!mounted) return;
-        const vrm = gltf.userData.vrm as VRM;
-        VRMUtils.rotateVRM0(vrm);
-        scene.add(vrm.scene);
+    loader.load(VRM_PATH, (gltf) => {
+      if (disposed) return;
 
-        vrm.scene.position.set(0, -1.08, 0);
-        vrm.scene.rotation.y = Math.PI;
+      const vrm = gltf.userData.vrm as VRM;
+      VRMUtils.rotateVRM0(vrm);
+      scene.add(vrm.scene);
 
-        vrmRef.current = vrm;
-        setLoadError(null);
-      },
-      undefined,
-      (error) => {
-        console.error("Failed to load Sarah.vrm", error);
-        if (mounted) setLoadError("Avatar unavailable");
-      }
-    );
+      const box = new THREE.Box3().setFromObject(vrm.scene);
+      const size = new THREE.Vector3();
+      box.getSize(size);
 
-    const onResize = () => {
-      if (!container) return;
-      camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth, container.clientHeight);
-    };
+      const scale = 1.5 / size.y;
+      vrm.scene.scale.setScalar(scale);
 
-    window.addEventListener("resize", onResize);
+      const newBox = new THREE.Box3().setFromObject(vrm.scene);
+      vrm.scene.position.y = -newBox.min.y;
+      baseYRef.current = vrm.scene.position.y;
+
+      vrmRef.current = vrm;
+    });
+
+    const clock = new THREE.Clock();
 
     const animate = () => {
-      if (!mounted) return;
-      const elapsed = clock.getElapsedTime();
-      const delta = clock.getDelta();
+      if (disposed) return;
 
-        const vrm = vrmRef.current;
-        if (vrm) {
-          const state = avatarStateRef.current;
-          const motion = stageMotionRef.current;
-          const performance = gestureRef.current;
-          const expression = state.expression ?? "neutral";
-          const expressionIntensity = Math.min(1, Math.max(0.45, state.expressionIntensity ?? 1));
-          vrm.update(delta);
+      const vrm = vrmRef.current;
+      const lookTargetObj = lookTargetRef.current;
 
-        const idleBob = Math.sin(elapsed * (state.mode === "talking" ? 1.45 : 0.95)) * 0.012;
-        const performanceBob = performance.bobAccent * Math.sin(elapsed * 2.8) * 0.018;
-        const moveBob = motion.bob * (state.mode === "walking" ? 1.35 : 0.75);
-        vrm.scene.position.y = -1.08 + idleBob + moveBob + performanceBob;
+      if (vrm) {
+        vrm.update(clock.getDelta());
 
-        const engagementLift = motion.engagementLevel * 0.018;
-        const postureLead = performance.bodyLean * 0.05 + performance.emphasisPulse * 0.012;
-        const perchDrop = motion.perchDepth * 0.9;
-        vrm.scene.position.y -= perchDrop;
-        vrm.scene.position.y += motion.recoveryLift * 0.7;
-        const groundedForward = motion.isGroundedOverlay ? 0.02 + motion.engagementLevel * 0.02 : 0;
-        vrm.scene.position.z += (-0.02 - engagementLift - postureLead + groundedForward - vrm.scene.position.z) * 0.06;
+        const humanoid = vrm.humanoid;
+        const t = performance.now() * 0.001;
 
-        const landingSquash = motion.landingCompression;
-        const targetScaleY = 1 - landingSquash;
-        const targetScaleXZ = 1 + landingSquash * 0.45;
-        vrm.scene.scale.x += (targetScaleXZ - vrm.scene.scale.x) * 0.2;
-        vrm.scene.scale.z += (targetScaleXZ - vrm.scene.scale.z) * 0.2;
-        vrm.scene.scale.y += (targetScaleY - vrm.scene.scale.y) * 0.2;
+        if (humanoid) {
+          const head = humanoid.getNormalizedBoneNode("head");
+          const neck = humanoid.getNormalizedBoneNode("neck");
+          const chest = humanoid.getNormalizedBoneNode("chest");
 
-        const targetRot =
-          state.mode === "thinking"
-            ? Math.PI + 0.08
-            : state.mode === "shutting_down"
-              ? Math.PI - 0.07
-              : state.mode === "presenting_search_results"
-                ? Math.PI - 0.15 - motion.lean * 0.45 + performance.headTilt * 0.08
-              : Math.PI - motion.lean * 0.55 + performance.headTilt * 0.08 - motion.edgeLean * 0.28;
-        vrm.scene.rotation.y += (targetRot - vrm.scene.rotation.y) * 0.07;
-        vrm.scene.rotation.z += (motion.lean * 0.38 + performance.bodyLean * 0.35 - vrm.scene.rotation.z) * 0.06;
+          const lUpper = humanoid.getNormalizedBoneNode("leftUpperArm");
+          const rUpper = humanoid.getNormalizedBoneNode("rightUpperArm");
+          const lLower = humanoid.getNormalizedBoneNode("leftLowerArm");
+          const rLower = humanoid.getNormalizedBoneNode("rightLowerArm");
 
-          if (vrm.humanoid) {
-            const head = vrm.humanoid.getNormalizedBoneNode("head");
-            const spine = vrm.humanoid.getNormalizedBoneNode("spine");
-            if (head) {
-              const headTarget =
-                state.mode === "listening"
-                  ? 0.11
-                  : state.mode === "thinking"
-                    ? -0.07
-                  : state.mode === "shutting_down"
-                      ? -0.12
-                      : state.mode === "presenting_search_results"
-                        ? 0.11
-                      : expression === "surprised"
-                        ? 0.16
-                        : expression === "apologetic"
-                          ? -0.09
-                          : expression === "presenting"
-                            ? 0.08
-                            : 0.02;
-            head.rotation.z += (headTarget + performance.headTilt - head.rotation.z) * 0.08;
-            const headPitchTarget = motion.attentionOffset.y + performance.headNod * 0.2 - performance.bowDepth * 0.08;
-            const headYawTarget = motion.attentionOffset.x + performance.headTilt * 0.15;
-            head.rotation.x += (headPitchTarget - head.rotation.x) * 0.06;
-            head.rotation.y += (headYawTarget - head.rotation.y) * 0.07;
+          // Relaxed arms
+          if (lUpper) lUpper.rotation.set(0.15, 0, -1.1);
+          if (rUpper) rUpper.rotation.set(0.15, 0, 1.1);
+          if (lLower) lLower.rotation.set(-0.65, 0, 0.08);
+          if (rLower) rLower.rotation.set(-0.65, 0, -0.08);
+
+          // Idle body motion
+          const breathe = Math.sin(t * 1.4) * 0.003;
+          const sway = Math.sin(t * 0.7) * 0.012;
+
+          vrm.scene.position.y = baseYRef.current + breathe;
+          vrm.scene.rotation.z = sway * 0.35;
+
+          if (chest) {
+            chest.rotation.x = Math.sin(t * 1.4) * 0.015;
+            chest.rotation.z = sway * 0.4;
           }
-          if (spine) {
-            const focusLean = motion.attentionOffset.x * 0.6;
-            const spineTarget =
-              state.mode === "walking"
-                ? motion.lean * 0.5
-                : state.mode === "presenting_search_results"
-                  ? motion.lean * 0.2 + focusLean + motion.edgeLean * 0.5 + 0.02
-                : motion.lean * 0.25 + focusLean + motion.edgeLean * 0.45;
-            spine.rotation.z += (spineTarget + performance.bodyLean * 0.35 - spine.rotation.z) * 0.08;
-            const postureTarget =
-              motion.engagementLevel * 0.045 +
-              performance.postureOpen * 0.05 -
-              performance.bowDepth * 0.22 -
-              motion.perchDepth * 0.5;
-            spine.rotation.x += (postureTarget - spine.rotation.x) * 0.04;
+
+          if (neck) {
+            neck.rotation.y = Math.sin(t * 0.45) * 0.04;
+          }
+
+          if (head) {
+            const lookYaw = Math.sin(t * 0.55) * 0.12;
+            const lookPitch = Math.sin(t * 0.8) * 0.03 - 0.02;
+
+            head.rotation.y = lookYaw;
+            head.rotation.x = lookPitch;
+            head.rotation.z = Math.sin(t * 0.6) * 0.015;
           }
         }
 
-          if (vrm.expressionManager) {
-          const blinkRate = state.mode === "listening" ? 3.8 : 2.8;
-          const blink = Math.max(0, Math.sin(elapsed * blinkRate + 0.3) * 1.2 - 0.8);
+        // Eye tracking with Object3D target
+        if (vrm.lookAt && lookTargetObj) {
+          const eyeX = Math.sin(t * 0.5) * 0.3;
+          const eyeY = Math.sin(t * 0.8) * 0.15;
+
+          lookTargetObj.position.set(eyeX, 1.2 + eyeY, 0.5);
+          vrm.lookAt.target = lookTargetObj;
+        }
+
+        // Expressions + talking test mode
+        if (vrm.expressionManager) {
+          const blinkPulse = Math.sin(t * 1.6);
+          const blink = blinkPulse > 0.992 ? Math.min(1, (blinkPulse - 0.992) * 140) : 0;
           vrm.expressionManager.setValue("blink", blink);
 
-          const mouth = Math.min(0.86, Math.max(0, state.mouthIntensity ?? 0));
+          const speechGate = Math.max(0, Math.sin(t * 2.4));
+          const speechPulseA = Math.abs(Math.sin(t * 8.7));
+          const speechPulseB = Math.abs(Math.sin(t * 13.1 + 0.7));
+          const speechPulseC = Math.abs(Math.sin(t * 5.3 + 1.4));
+
+          const mouth =
+            speechGate > 0.18
+              ? Math.min(0.75, (speechPulseA * 0.45 + speechPulseB * 0.22 + speechPulseC * 0.12) * speechGate)
+              : 0;
+
+          const oh = speechGate > 0.28 ? Math.min(0.45, speechPulseB * 0.35 * speechGate) : 0;
+          const ee = speechGate > 0.24 ? Math.min(0.35, speechPulseC * 0.25 * speechGate) : 0;
+
           vrm.expressionManager.setValue("aa", mouth);
+          vrm.expressionManager.setValue("oh", oh);
+          vrm.expressionManager.setValue("ee", ee);
 
-            const blendRate = 0.08;
-            expressionMix.warm += ((expression === "warm" ? 1 : 0) - expressionMix.warm) * blendRate;
-            expressionMix.focused += ((expression === "focused" ? 1 : 0) - expressionMix.focused) * blendRate;
-            expressionMix.attentive += ((expression === "attentive" ? 1 : 0) - expressionMix.attentive) * blendRate;
-            expressionMix.curious += ((expression === "curious" ? 1 : 0) - expressionMix.curious) * blendRate;
-            expressionMix.presenting += ((expression === "presenting" ? 1 : 0) - expressionMix.presenting) * blendRate;
-            expressionMix.surprised += ((expression === "surprised" ? 1 : 0) - expressionMix.surprised) * blendRate;
-            expressionMix.apologetic += ((expression === "apologetic" ? 1 : 0) - expressionMix.apologetic) * blendRate;
-
-            const happy =
-              (state.mood === "cheerful" || state.mood === "warm" ? 0.25 : 0.06) +
-              expressionMix.warm * 0.16 +
-              expressionMix.presenting * 0.1 +
-              expressionMix.curious * 0.06 +
-              performance.emphasisPulse * 0.12;
-            const relaxed =
-              (state.mood === "goodbye" ? 0.2 : 0.04) +
-              expressionMix.attentive * 0.2 +
-              expressionMix.focused * 0.12 +
-              performance.expressionSoftness;
-            const surprised = expressionMix.surprised * 0.52 * expressionIntensity;
-            const landingSurprised = motion.landingReaction * 0.18;
-            const sad = expressionMix.apologetic * 0.38 * expressionIntensity;
-
-            vrm.expressionManager.setValue("happy", Math.min(0.9, happy * expressionIntensity));
-            vrm.expressionManager.setValue("relaxed", Math.min(0.9, relaxed * expressionIntensity));
-            vrm.expressionManager.setValue("surprised", Math.min(0.8, surprised + landingSurprised));
-            vrm.expressionManager.setValue("sad", Math.min(0.65, sad));
-          }
+          vrm.expressionManager.setValue("happy", 0.12);
+          vrm.expressionManager.setValue("relaxed", 0.1);
         }
+      }
 
       renderer.render(scene, camera);
-      requestAnimationFrame(animate);
+      frameId = requestAnimationFrame(animate);
     };
 
     animate();
 
+    const onResize = () => {
+      const w = container.clientWidth || 400;
+      const h = container.clientHeight || 600;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+
+    window.addEventListener("resize", onResize);
+
     return () => {
-      mounted = false;
+      disposed = true;
+      cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onResize);
-      if (vrmRef.current) {
-        VRMUtils.deepDispose(vrmRef.current.scene);
-        scene.remove(vrmRef.current.scene);
-        vrmRef.current = null;
-      }
       renderer.dispose();
       container.innerHTML = "";
+      lookTargetRef.current = null;
+      vrmRef.current = null;
     };
-  }, [reducedEffects]);
+  }, []);
 
-  if (loadError) {
-    return <div style={fallbackStyle}>Sarah avatar unavailable. UI is still functional.</div>;
-  }
-
-  const isShuttingDown = avatarState.mode === "shutting_down";
-
-  return (
-    <div style={canvasFrameStyle}>
-      <div
-        ref={containerRef}
-        style={{
-          ...canvasStyle,
-          filter: isShuttingDown ? "saturate(0.9) brightness(0.8)" : "none",
-          opacity: isShuttingDown ? 0.9 : 1,
-        }}
-        aria-label="Sarah VRM Avatar"
-      />
-    </div>
-  );
+  return <div ref={containerRef} style={style} />;
 }
 
-const canvasFrameStyle: CSSProperties = {
+const style: CSSProperties = {
   width: "100%",
   height: "100%",
-  position: "relative",
-};
-
-const canvasStyle: CSSProperties = {
-  height: "100%",
-  width: "100%",
-  overflow: "hidden",
-};
-
-const fallbackStyle: CSSProperties = {
-  height: "100%",
-  width: "100%",
-  borderRadius: 12,
-  border: "1px solid #3f2e2e",
-  background: "#231515",
-  color: "#ffd5d5",
-  display: "grid",
-  placeItems: "center",
-  padding: 12,
 };
