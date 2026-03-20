@@ -50,29 +50,38 @@ export const PRESENCE_TUNING = {
   focusSmoothing: 0.12,
   interactionPresence: {
     transitionMs: {
-      listening: 240,
-      thinking: 320,
-      speaking: 190,
-      idle: 340,
+      listening: 300,
+      thinking: 360,
+      speaking: 220,
+      idle: 380,
     },
     amplitudes: {
       idle: { tiltDeg: 0, yOffset: 0, forwardX: 0 },
-      listening: { tiltDeg: 1.25, yOffset: -0.0028, forwardX: 0.0035 },
-      thinking: { tiltDeg: 1.8, yOffset: -0.0015, forwardX: 0.001 },
-      speaking: { tiltDeg: 2.2, yOffset: -0.0032, forwardX: 0.0042 },
+      listening: { tiltDeg: 1.1, yOffset: -0.0024, forwardX: 0.0038 },
+      thinking: { tiltDeg: 1.55, yOffset: -0.0012, forwardX: 0.0008 },
+      speaking: { tiltDeg: 2.05, yOffset: -0.0029, forwardX: 0.0044 },
     },
     listening: {
-      swayHz: 0.17,
-      swayScale: 0.18,
+      base: 0.9,
+      swayHz: 0.135,
+      swayScale: 0.11,
+      settleDampen: 0.7,
     },
     thinking: {
-      pulseGapMs: { min: 760, max: 1900 },
-      pulseDurationMs: { min: 260, max: 520 },
-      pulseScale: { min: 0.2, max: 0.44 },
+      base: 0.62,
+      pulseGapMs: { min: 980, max: 2200 },
+      pulseDurationMs: { min: 260, max: 560 },
+      pulseScale: { min: 0.09, max: 0.2 },
+      tiltBiasDeg: 0.38,
+      forwardReflectX: -0.0006,
     },
     speaking: {
-      rhythmHz: 1.2,
-      rhythmScale: 0.36,
+      base: 0.9,
+      rhythmHz: 1.08,
+      rhythmScale: 0.25,
+      secondaryHz: 0.54,
+      secondaryScale: 0.09,
+      antiBusyDampen: 0.74,
     },
   },
   speakingHoldMs: 760,
@@ -139,6 +148,11 @@ export class PresenceController {
     amplitude: 0,
     direction: 1 as -1 | 1,
     nextAtMs: 0,
+  };
+  private posePulseSmoothed = {
+    listening: 0.9,
+    thinking: 0.62,
+    speaking: 0.9,
   };
 
   update(input: PresenceInput): PresenceOutput {
@@ -247,10 +261,14 @@ export class PresenceController {
       }
     }
     const amp = PRESENCE_TUNING.interactionPresence.amplitudes[state];
-    const pulse = this.interactionPulse(state, input.nowMs);
-    const targetTilt = amp.tiltDeg * pulse;
-    const targetYOffset = amp.yOffset * pulse;
-    const targetXOffset = amp.forwardX * pulse;
+    const pulse = this.interactionPulse(state, input.nowMs, input.deltaSeconds);
+    let targetTilt = amp.tiltDeg * pulse.tilt;
+    const targetYOffset = amp.yOffset * pulse.body;
+    let targetXOffset = amp.forwardX * pulse.forward;
+    if (state === "thinking") {
+      targetTilt += PRESENCE_TUNING.interactionPresence.thinking.tiltBiasDeg;
+      targetXOffset += PRESENCE_TUNING.interactionPresence.thinking.forwardReflectX;
+    }
     const transitionMs = PRESENCE_TUNING.interactionPresence.transitionMs[state];
     const ratePerSecond = 1000 / Math.max(80, transitionMs);
     this.interactionPose.tiltDeg = smooth(this.interactionPose.tiltDeg, targetTilt, ratePerSecond, input.deltaSeconds);
@@ -259,14 +277,30 @@ export class PresenceController {
     return { ...this.interactionPose };
   }
 
-  private interactionPulse(state: InteractionPresenceState, nowMs: number) {
-    if (state === "idle") return 0;
+  private interactionPulse(state: InteractionPresenceState, nowMs: number, deltaSeconds: number): { body: number; tilt: number; forward: number } {
+    if (state === "idle") return { body: 0, tilt: 0, forward: 0 };
     if (state === "listening") {
-      return 0.88 + (Math.sin(nowMs * PRESENCE_TUNING.interactionPresence.listening.swayHz * 0.001 * Math.PI * 2) * 0.5 + 0.5) * PRESENCE_TUNING.interactionPresence.listening.swayScale;
+      const listening = PRESENCE_TUNING.interactionPresence.listening;
+      const raw = listening.base + (Math.sin(nowMs * listening.swayHz * 0.001 * Math.PI * 2) * 0.5 + 0.5) * listening.swayScale;
+      this.posePulseSmoothed.listening = smooth(this.posePulseSmoothed.listening, raw, 6.2, deltaSeconds);
+      const settled = this.posePulseSmoothed.listening;
+      return {
+        body: settled,
+        tilt: settled * listening.settleDampen,
+        forward: settled,
+      };
     }
     if (state === "speaking") {
-      return 0.88 + (Math.sin(nowMs * PRESENCE_TUNING.interactionPresence.speaking.rhythmHz * 0.001 * Math.PI * 2) * 0.5 + 0.5) * PRESENCE_TUNING.interactionPresence.speaking.rhythmScale;
+      const speaking = PRESENCE_TUNING.interactionPresence.speaking;
+      const primary = (Math.sin(nowMs * speaking.rhythmHz * 0.001 * Math.PI * 2) * 0.5 + 0.5) * speaking.rhythmScale;
+      const secondary = (Math.sin(nowMs * speaking.secondaryHz * 0.001 * Math.PI * 2 + Math.PI * 0.35) * 0.5 + 0.5) * speaking.secondaryScale;
+      // Layering a slower secondary wave keeps speaking expressive without looking jittery.
+      const raw = speaking.base + (primary + secondary) * speaking.antiBusyDampen;
+      this.posePulseSmoothed.speaking = smooth(this.posePulseSmoothed.speaking, raw, 8.4, deltaSeconds);
+      const rhythmic = this.posePulseSmoothed.speaking;
+      return { body: rhythmic, tilt: rhythmic * 0.94, forward: rhythmic };
     }
+    const thinking = PRESENCE_TUNING.interactionPresence.thinking;
     if (nowMs >= this.thinkingPulse.nextAtMs && !this.thinkingPulse.active) {
       this.thinkingPulse.active = true;
       this.thinkingPulse.startedAtMs = nowMs;
@@ -281,16 +315,24 @@ export class PresenceController {
       this.thinkingPulse.direction = Math.random() > 0.5 ? 1 : -1;
     }
     if (!this.thinkingPulse.active) {
-      return 0.52;
+      this.posePulseSmoothed.thinking = smooth(this.posePulseSmoothed.thinking, thinking.base, 4.6, deltaSeconds);
+      return { body: this.posePulseSmoothed.thinking, tilt: this.posePulseSmoothed.thinking, forward: this.posePulseSmoothed.thinking };
     }
     const t = clamp((nowMs - this.thinkingPulse.startedAtMs) / this.thinkingPulse.durationMs, 0, 1);
     if (t >= 1) {
       this.thinkingPulse.active = false;
       this.thinkingPulse.nextAtMs =
         nowMs + randomBetween(PRESENCE_TUNING.interactionPresence.thinking.pulseGapMs.min, PRESENCE_TUNING.interactionPresence.thinking.pulseGapMs.max);
-      return 0.5;
+      this.posePulseSmoothed.thinking = smooth(this.posePulseSmoothed.thinking, thinking.base, 4.4, deltaSeconds);
+      return { body: this.posePulseSmoothed.thinking, tilt: this.posePulseSmoothed.thinking, forward: this.posePulseSmoothed.thinking };
     }
-    return 0.5 + Math.sin(t * Math.PI) * this.thinkingPulse.amplitude * this.thinkingPulse.direction;
+    const pulse = thinking.base + Math.sin(t * Math.PI) * this.thinkingPulse.amplitude * this.thinkingPulse.direction;
+    this.posePulseSmoothed.thinking = smooth(this.posePulseSmoothed.thinking, pulse, 6, deltaSeconds);
+    return {
+      body: this.posePulseSmoothed.thinking,
+      tilt: this.posePulseSmoothed.thinking,
+      forward: this.posePulseSmoothed.thinking,
+    };
   }
 
   private pickDesiredZone(input: PresenceInput): StageZoneName {
