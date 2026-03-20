@@ -28,7 +28,7 @@ import { useGesturePerformance } from "../hooks/useGesturePerformance";
 import { createVoiceOrchestrator, type TTSPlaybackPayload } from "../lib/voiceOrchestrator";
 import { pickNonRepeatingLine } from "../lib/voiceLines";
 import { SettingsPanel } from "../components/SettingsPanel";
-import { WebAnswerTextbox, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
+import { WebAnswerTextbox, type WebAnswerRevealStage, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
 import { useSettingsStore } from "../hooks/useSettingsStore";
 import { computeWebGroundedSignature, normalizeWebGroundedPayload } from "../lib/webGroundedAnswer";
 import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
@@ -43,6 +43,10 @@ const EXPRESSION_REACTION_COOLDOWN_MS = {
 const SEARCH_PRESENTATION_POLISH_MS = {
   textboxEnterDelay: 110,
   poseExitDelay: 170,
+} as const;
+
+const SEARCH_PRESENTATION_CUE_DEFAULTS = {
+  noneAt: 0,
 } as const;
 
 type PresenceState = "idle" | "listening" | "thinking" | "speaking" | "presenting_search_results";
@@ -155,6 +159,10 @@ export function OverlayCompanionPage() {
   const isSearchPresentationActive = isWebAnswerVisible && isSpeaking;
   const [isSearchPresentationPoseActive, setIsSearchPresentationPoseActive] = useState(isSearchPresentationActive);
   const [isSearchTextboxVisible, setIsSearchTextboxVisible] = useState(isSearchPresentationActive);
+  const [webAnswerRevealStage, setWebAnswerRevealStage] = useState<WebAnswerRevealStage>(0);
+  const [searchHeadingRevealAt, setSearchHeadingRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
+  const [searchFindingsRevealAt, setSearchFindingsRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
+  const [searchRevealSettledAt, setSearchRevealSettledAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
   const searchPresentationTimersRef = useRef<{ textboxEnter: number | null; poseRelease: number | null }>({
     textboxEnter: null,
     poseRelease: null,
@@ -183,6 +191,19 @@ export function OverlayCompanionPage() {
       setIsSearchPresentationPoseActive(false);
     }, SEARCH_PRESENTATION_POLISH_MS.poseExitDelay);
   }, [isSearchPresentationActive]);
+
+  useEffect(() => {
+    if (webAnswerRevealStage === 0) {
+      setSearchHeadingRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
+      setSearchFindingsRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
+      setSearchRevealSettledAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
+      return;
+    }
+    const now = Date.now();
+    if (webAnswerRevealStage >= 1 && searchHeadingRevealAt <= 0) setSearchHeadingRevealAt(now);
+    if (webAnswerRevealStage >= 2 && searchFindingsRevealAt <= 0) setSearchFindingsRevealAt(now);
+    if (webAnswerRevealStage >= 3 && searchRevealSettledAt <= 0) setSearchRevealSettledAt(now);
+  }, [searchFindingsRevealAt, searchHeadingRevealAt, searchRevealSettledAt, webAnswerRevealStage]);
 
   useEffect(
     () => () => {
@@ -766,6 +787,9 @@ export function OverlayCompanionPage() {
             userSpokeAtMs: lastUserSpeechAt,
             replyAtMs: lastReplyAt,
             presentingAtMs: lastWebGroundedAt,
+            searchHeadingRevealAtMs: searchHeadingRevealAt,
+            searchFindingsRevealAtMs: searchFindingsRevealAt,
+            searchSettledAtMs: searchRevealSettledAt,
           }}
         />
         {shouldShowCaptions ? (
@@ -962,6 +986,7 @@ export function OverlayCompanionPage() {
         <WebAnswerTextbox
           answer={webAnswer}
           visible={isSearchTextboxVisible}
+          onRevealStageChange={setWebAnswerRevealStage}
           defaultCollapsedSources={settings.showSourceFooterCollapsed}
           onInteractionChange={setIsWebAnswerInteracting}
           onSourceExpansionChange={(expanded) => {

@@ -9,6 +9,8 @@ export type WebAnswerViewModel = {
   mode: "overlay" | "immersive";
 };
 
+export type WebAnswerRevealStage = 0 | 1 | 2 | 3;
+
 type WebAnswerTextboxProps = {
   answer: WebAnswerViewModel | null;
   defaultCollapsedSources: boolean;
@@ -16,6 +18,7 @@ type WebAnswerTextboxProps = {
   onInteractionChange: (interacting: boolean) => void;
   onSourceExpansionChange: (expanded: boolean) => void;
   onInteractionRegionReady?: (element: HTMLElement | null) => void;
+  onRevealStageChange?: (stage: WebAnswerRevealStage) => void;
 };
 
 export function WebAnswerTextbox({
@@ -25,6 +28,7 @@ export function WebAnswerTextbox({
   onInteractionChange,
   onSourceExpansionChange,
   onInteractionRegionReady,
+  onRevealStageChange,
 }: WebAnswerTextboxProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsedSources);
   const [hovered, setHovered] = useState(false);
@@ -37,7 +41,7 @@ export function WebAnswerTextbox({
   const touchTimerRef = useRef<number | null>(null);
   const visibilityTimerRef = useRef<number | null>(null);
   const revealTimersRef = useRef<number[]>([]);
-  const [revealStage, setRevealStage] = useState<0 | 1 | 2>(0);
+  const [revealStage, setRevealStage] = useState<WebAnswerRevealStage>(0);
 
   const displayAnswer = answer ?? answerSnapshot;
 
@@ -102,6 +106,9 @@ export function WebAnswerTextbox({
     return () => onInteractionRegionReady?.(null);
   }, [onInteractionRegionReady]);
 
+  useEffect(() => {
+    onRevealStageChange?.(revealStage);
+  }, [onRevealStageChange, revealStage]);
 
   useEffect(() => {
     revealTimersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -113,8 +120,9 @@ export function WebAnswerTextbox({
     }
 
     setRevealStage(0);
-    revealTimersRef.current.push(window.setTimeout(() => setRevealStage(1), 45));
-    revealTimersRef.current.push(window.setTimeout(() => setRevealStage(2), 125));
+    revealTimersRef.current.push(window.setTimeout(() => setRevealStage(1), WEB_ANSWER_REVEAL_MS.header));
+    revealTimersRef.current.push(window.setTimeout(() => setRevealStage(2), WEB_ANSWER_REVEAL_MS.findings));
+    revealTimersRef.current.push(window.setTimeout(() => setRevealStage(3), WEB_ANSWER_REVEAL_MS.settled));
   }, [displayAnswer?.title, displayAnswer?.bullets.join("|"), visible]);
 
   const reportLayout = useMemo(
@@ -205,6 +213,12 @@ export function WebAnswerTextbox({
 
 const WEB_ANSWER_TRANSITION_MS = {
   exitDuration: 220,
+} as const;
+
+const WEB_ANSWER_REVEAL_MS = {
+  header: 45,
+  findings: 125,
+  settled: 560,
 } as const;
 
 const boxStyle: CSSProperties = {
