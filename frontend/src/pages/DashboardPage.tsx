@@ -164,6 +164,7 @@ export function DashboardPage() {
   });
   const expressionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugExpressions=1");
   const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
+  const [adminSurfaceVisible, setAdminSurfaceVisible] = useState(() => !windowBridge.isNativeDesktop);
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
@@ -418,6 +419,11 @@ export function DashboardPage() {
   }, [hasExpandedSources, isWebAnswerInteracting, isWebAnswerVisible, scheduleWebAnswerDismiss]);
 
   useEffect(() => {
+    if (!isWebAnswerVisible || isSpeaking) return;
+    scheduleWebAnswerDismiss(2600);
+  }, [isSpeaking, isWebAnswerVisible, scheduleWebAnswerDismiss]);
+
+  useEffect(() => {
     const voiceEvent = events.find((event) => event.type.startsWith("voice:"));
     if (!voiceEvent) return;
 
@@ -577,6 +583,24 @@ export function DashboardPage() {
   }, [overlayControlsVisible, overlayEnabled]);
 
   useEffect(() => {
+    if (!windowBridge.isNativeDesktop) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "a") {
+        event.preventDefault();
+        setAdminSurfaceVisible((visible) => !visible);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [windowBridge.isNativeDesktop]);
+
+  useEffect(() => {
+    if (settingsOpen) setAdminSurfaceVisible(true);
+  }, [settingsOpen]);
+
+  useEffect(() => {
     if (isSpeaking) {
       setSpeakingStartedAt((previous) => (Date.now() - previous > 320 ? Date.now() : previous));
     } else if (speakingStartedAt > 0) {
@@ -617,7 +641,8 @@ export function DashboardPage() {
     setWebAnswer((current) => (current ? { ...current, mode: overlayEnabled ? "overlay" : "immersive" } : current));
   }, [overlayEnabled]);
 
-  const showOverlayControls = !overlayEnabled || overlayControlsVisible || platformProfile.isMobileWeb;
+  const showOverlayControls = adminSurfaceVisible && (!overlayEnabled || overlayControlsVisible || platformProfile.isMobileWeb);
+  const shouldShowCaptions = adminSurfaceVisible || isWebAnswerVisible;
   const bootstrappingDesktopSettings = windowBridge.isNativeDesktop && !settingsReady;
 
   if (bootstrappingDesktopSettings) {
@@ -646,15 +671,16 @@ export function DashboardPage() {
             presentingAtMs: lastWebGroundedAt,
           }}
         />
-        <SubtitleCaptions
-          speaker={captionSpeaker}
-          text={captionText}
-          displayMode={displayMode.activeMode}
-          onVisibilityChange={setIsCaptionVisible}
-        />
+        {shouldShowCaptions ? (
+          <SubtitleCaptions
+            speaker={captionSpeaker}
+            text={captionText}
+            displayMode={displayMode.activeMode}
+            onVisibilityChange={setIsCaptionVisible}
+          />
+        ) : null}
 
-
-        {overlayEnabled && !displayMode.nativeOverlayEnabled ? (
+        {adminSurfaceVisible && overlayEnabled && !displayMode.nativeOverlayEnabled ? (
           <div style={browserOverlayWarningStyle}>Overlay visuals are active, but native click-through requires Tauri desktop mode.</div>
         ) : null}
 
@@ -670,7 +696,7 @@ export function DashboardPage() {
           <button type="button" onClick={() => setSettingsOpen((open) => !open)} style={miniButtonStyle}>
             {settingsOpen ? "Hide Settings" : "Settings"}
           </button>
-        </div> : overlayEnabled && !platformProfile.isMobileWeb ? <div style={overlayHintStyle}>Ctrl+Shift+O for controls</div> : null}
+        </div> : null}
         {expressionDebugEnabled ? (
           <div style={expressionDebugStyle}>
             baseline: {expressionState.debug.baseline} · reaction: {expressionState.reaction} · intensity:{" "}
@@ -685,32 +711,36 @@ export function DashboardPage() {
           </div>
         ) : null}
 
-        <div style={overlayEnabled ? overlayBottomOverlayStyle : bottomOverlayStyle}>
-          <VoiceRecorder
-            disabled={isSending || shutdownStatus !== "idle"}
-            shouldStop={shutdownStatus !== "idle"}
-            onRecordingStarted={() => {
-              setVoiceStatus("listening");
-              setListeningStartedAt(Date.now());
-              setInteractionStartedAt(Date.now());
-              if (isSpeaking) stampReactionWithCooldown("interrupted", setInterruptedAt);
-              void emitVoiceEvent("voice:recording_started");
-            }}
-            onRecordingStopped={() => {
-              void emitVoiceEvent("voice:recording_stopped");
-            }}
-            onTranscribe={transcribeAudio}
-            onTranscript={async (text) => {
-              setCaptionSpeaker("user");
-              setCaptionText(text);
-              setLastTranscriptAt(Date.now());
-              setLastUserSpeechAt(Date.now());
-              setContent(text);
-              await handleSend(text);
-            }}
-          />
-          {shutdownPrompt ? <p style={shutdownPromptStyle}>{shutdownPrompt}</p> : null}
-        </div>
+        {showOverlayControls || shutdownPrompt ? (
+          <div style={overlayEnabled ? overlayBottomOverlayStyle : bottomOverlayStyle}>
+            {showOverlayControls ? (
+              <VoiceRecorder
+                disabled={isSending || shutdownStatus !== "idle"}
+                shouldStop={shutdownStatus !== "idle"}
+                onRecordingStarted={() => {
+                  setVoiceStatus("listening");
+                  setListeningStartedAt(Date.now());
+                  setInteractionStartedAt(Date.now());
+                  if (isSpeaking) stampReactionWithCooldown("interrupted", setInterruptedAt);
+                  void emitVoiceEvent("voice:recording_started");
+                }}
+                onRecordingStopped={() => {
+                  void emitVoiceEvent("voice:recording_stopped");
+                }}
+                onTranscribe={transcribeAudio}
+                onTranscript={async (text) => {
+                  setCaptionSpeaker("user");
+                  setCaptionText(text);
+                  setLastTranscriptAt(Date.now());
+                  setLastUserSpeechAt(Date.now());
+                  setContent(text);
+                  await handleSend(text);
+                }}
+              />
+            ) : null}
+            {shutdownPrompt ? <p style={shutdownPromptStyle}>{shutdownPrompt}</p> : null}
+          </div>
+        ) : null}
 
         {showOverlayControls && isControlsOpen ? (
           <aside style={{ ...drawerStyle, width: platformProfile.isPhoneLike ? "calc(100vw - 16px)" : drawerStyle.width, right: platformProfile.isPhoneLike ? 8 : 10 }}>
@@ -844,7 +874,7 @@ export function DashboardPage() {
           }}
         />
 
-        {audioNeedsGesture ? <div style={audioGestureHintStyle}>Tap anywhere once to enable Sarah audio playback on this browser.</div> : null}
+        {adminSurfaceVisible && audioNeedsGesture ? <div style={audioGestureHintStyle}>Tap anywhere once to enable Sarah audio playback on this browser.</div> : null}
 
         {shutdownStatus === "ended" ? (
           <div style={shutdownOverlayStyle}>

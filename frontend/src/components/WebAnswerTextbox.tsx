@@ -138,9 +138,9 @@ const boxStyle: CSSProperties = {
 };
 
 const overlayBoxStyle: CSSProperties = {
-  right: 20,
-  top: "30%",
-  width: "min(320px, 36vw)",
+  left: "calc(50% + min(17vw, 180px))",
+  top: "34%",
+  width: "min(300px, 30vw)",
 };
 
 const immersiveBoxStyle: CSSProperties = {
