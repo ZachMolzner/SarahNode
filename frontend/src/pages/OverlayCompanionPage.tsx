@@ -28,12 +28,13 @@ import { useGesturePerformance } from "../hooks/useGesturePerformance";
 import { createVoiceOrchestrator, type TTSPlaybackPayload } from "../lib/voiceOrchestrator";
 import { pickNonRepeatingLine } from "../lib/voiceLines";
 import { SettingsPanel } from "../components/SettingsPanel";
-import { WebAnswerTextbox, type WebAnswerRevealStage, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
+import { WebAnswerTextbox, type WebAnswerViewModel } from "../components/WebAnswerTextbox";
 import { useSettingsStore } from "../hooks/useSettingsStore";
 import { computeWebGroundedSignature, normalizeWebGroundedPayload } from "../lib/webGroundedAnswer";
 import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
 import { resolvePlatformProfile } from "../lib/platformProfile";
-import type { SemanticPresenceMode } from "../lib/presenceController";
+import { derivePresenceModes } from "../lib/presenceModes";
+import { useSearchPresentation } from "../hooks/useSearchPresentation";
 
 const EXPRESSION_REACTION_COOLDOWN_MS = {
   interrupted: 2400,
@@ -41,19 +42,8 @@ const EXPRESSION_REACTION_COOLDOWN_MS = {
   groundedResult: 3600,
 } as const;
 
-const SEARCH_PRESENTATION_POLISH_MS = {
-  textboxEnterDelay: 110,
-  poseExitDelay: 170,
-} as const;
-
-const SEARCH_PRESENTATION_CUE_DEFAULTS = {
-  noneAt: 0,
-} as const;
-
 const FOLLOW_UP_READY_WINDOW_MS = 6200;
 const SEARCH_WORKING_WINDOW_MS = 7600;
-
-type PresenceState = "idle" | "listening" | "thinking" | "speaking" | "presenting_search_results";
 
 export function OverlayCompanionPage() {
   const adminEntryRequestedOnLaunch = useMemo(() => {
@@ -161,91 +151,30 @@ export function OverlayCompanionPage() {
   const baseAvatarState = useAvatarState(events);
   const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying;
   const isSearchPresentationActive = isWebAnswerVisible && isSpeaking;
-  const [isSearchPresentationPoseActive, setIsSearchPresentationPoseActive] = useState(isSearchPresentationActive);
-  const [isSearchTextboxVisible, setIsSearchTextboxVisible] = useState(isSearchPresentationActive);
-  const [webAnswerRevealStage, setWebAnswerRevealStage] = useState<WebAnswerRevealStage>(0);
-  const [searchHeadingRevealAt, setSearchHeadingRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-  const [searchFindingsRevealAt, setSearchFindingsRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-  const [searchSourcesRevealAt, setSearchSourcesRevealAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-  const [searchRevealSettledAt, setSearchRevealSettledAt] = useState(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-  const searchPresentationTimersRef = useRef<{ textboxEnter: number | null; poseRelease: number | null }>({
-    textboxEnter: null,
-    poseRelease: null,
+  const {
+    isSearchPresentationPoseActive,
+    isSearchTextboxVisible,
+    webAnswerRevealStage,
+    setWebAnswerRevealStage,
+    searchHeadingRevealAt,
+    searchFindingsRevealAt,
+    searchSourcesRevealAt,
+    setSearchSourcesRevealAt,
+    searchRevealSettledAt,
+  } = useSearchPresentation(isSearchPresentationActive);
+  const { presenceMode, semanticPresenceMode } = derivePresenceModes({
+    shutdownStatus,
+    isSearchPresentationPoseActive,
+    isSpeaking,
+    avatarMode: baseAvatarState.mode,
+    isWebAnswerVisible,
+    nowMs: Date.now(),
+    searchStartedAtMs: searchStartedAt,
+    lastReplyAtMs: lastReplyAt,
+    speakingEndedAtMs: speakingEndedAt,
+    followUpReadyWindowMs: FOLLOW_UP_READY_WINDOW_MS,
+    searchWorkingWindowMs: SEARCH_WORKING_WINDOW_MS,
   });
-
-  useEffect(() => {
-    if (searchPresentationTimersRef.current.textboxEnter) {
-      window.clearTimeout(searchPresentationTimersRef.current.textboxEnter);
-      searchPresentationTimersRef.current.textboxEnter = null;
-    }
-    if (searchPresentationTimersRef.current.poseRelease) {
-      window.clearTimeout(searchPresentationTimersRef.current.poseRelease);
-      searchPresentationTimersRef.current.poseRelease = null;
-    }
-
-    if (isSearchPresentationActive) {
-      setIsSearchPresentationPoseActive(true);
-      searchPresentationTimersRef.current.textboxEnter = window.setTimeout(() => {
-        setIsSearchTextboxVisible(true);
-      }, SEARCH_PRESENTATION_POLISH_MS.textboxEnterDelay);
-      return;
-    }
-
-    setIsSearchTextboxVisible(false);
-    searchPresentationTimersRef.current.poseRelease = window.setTimeout(() => {
-      setIsSearchPresentationPoseActive(false);
-    }, SEARCH_PRESENTATION_POLISH_MS.poseExitDelay);
-  }, [isSearchPresentationActive]);
-
-  useEffect(() => {
-    if (webAnswerRevealStage === 0) {
-      setSearchHeadingRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-      setSearchFindingsRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-      setSearchSourcesRevealAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-      setSearchRevealSettledAt(SEARCH_PRESENTATION_CUE_DEFAULTS.noneAt);
-      return;
-    }
-    const now = Date.now();
-    if (webAnswerRevealStage >= 1 && searchHeadingRevealAt <= 0) setSearchHeadingRevealAt(now);
-    if (webAnswerRevealStage >= 2 && searchFindingsRevealAt <= 0) setSearchFindingsRevealAt(now);
-    if (webAnswerRevealStage >= 3 && searchRevealSettledAt <= 0) setSearchRevealSettledAt(now);
-  }, [searchFindingsRevealAt, searchHeadingRevealAt, searchRevealSettledAt, searchSourcesRevealAt, webAnswerRevealStage]);
-
-  useEffect(
-    () => () => {
-      if (searchPresentationTimersRef.current.textboxEnter) {
-        window.clearTimeout(searchPresentationTimersRef.current.textboxEnter);
-      }
-      if (searchPresentationTimersRef.current.poseRelease) {
-        window.clearTimeout(searchPresentationTimersRef.current.poseRelease);
-      }
-    },
-    []
-  );
-
-  const presenceState: PresenceState =
-    shutdownStatus === "starting" || shutdownStatus === "ended"
-      ? "idle"
-      : isSearchPresentationPoseActive
-        ? "presenting_search_results"
-        : isSpeaking
-          ? "speaking"
-          : baseAvatarState.mode === "listening"
-            ? "listening"
-          : baseAvatarState.mode === "thinking"
-              ? "thinking"
-              : "idle";
-  const semanticNowMs = Date.now();
-  const semanticPresenceMode: SemanticPresenceMode =
-    baseAvatarState.mode === "thinking" && !isWebAnswerVisible && semanticNowMs - searchStartedAt < SEARCH_WORKING_WINDOW_MS
-      ? "searching_browsing"
-      : isWebAnswerVisible && !isSpeaking
-        ? "processing_results"
-        : isSpeaking && !isWebAnswerVisible
-          ? "direct_answering"
-          : presenceState === "idle" && semanticNowMs - Math.max(lastReplyAt, speakingEndedAt) < FOLLOW_UP_READY_WINDOW_MS
-            ? "waiting_follow_up"
-            : "neutral";
   const lastInteractionAt = Math.max(lastUserSpeechAt, lastReplyAt, listeningStartedAt, interactionStartedAt);
   const expressionState = resolveAvatarExpression({
     nowMs: expressionClockMs,
@@ -289,9 +218,9 @@ export function OverlayCompanionPage() {
       : {
           ...baseAvatarState,
           mode:
-            presenceState === "presenting_search_results"
+            presenceMode === "presenting_search_results"
               ? "presenting_search_results"
-              : presenceState === "speaking"
+              : presenceMode === "speaking"
                 ? "talking"
                 : baseAvatarState.mode,
           mood: expressionState.mood,
