@@ -40,6 +40,11 @@ const EXPRESSION_REACTION_COOLDOWN_MS = {
   groundedResult: 3600,
 } as const;
 
+const SEARCH_PRESENTATION_POLISH_MS = {
+  textboxEnterDelay: 110,
+  poseExitDelay: 170,
+} as const;
+
 type PresenceState = "idle" | "listening" | "thinking" | "speaking" | "presenting_search_results";
 
 export function OverlayCompanionPage() {
@@ -148,10 +153,53 @@ export function OverlayCompanionPage() {
   const baseAvatarState = useAvatarState(events);
   const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying;
   const isSearchPresentationActive = isWebAnswerVisible && isSpeaking;
+  const [isSearchPresentationPoseActive, setIsSearchPresentationPoseActive] = useState(isSearchPresentationActive);
+  const [isSearchTextboxVisible, setIsSearchTextboxVisible] = useState(isSearchPresentationActive);
+  const searchPresentationTimersRef = useRef<{ textboxEnter: number | null; poseRelease: number | null }>({
+    textboxEnter: null,
+    poseRelease: null,
+  });
+
+  useEffect(() => {
+    if (searchPresentationTimersRef.current.textboxEnter) {
+      window.clearTimeout(searchPresentationTimersRef.current.textboxEnter);
+      searchPresentationTimersRef.current.textboxEnter = null;
+    }
+    if (searchPresentationTimersRef.current.poseRelease) {
+      window.clearTimeout(searchPresentationTimersRef.current.poseRelease);
+      searchPresentationTimersRef.current.poseRelease = null;
+    }
+
+    if (isSearchPresentationActive) {
+      setIsSearchPresentationPoseActive(true);
+      searchPresentationTimersRef.current.textboxEnter = window.setTimeout(() => {
+        setIsSearchTextboxVisible(true);
+      }, SEARCH_PRESENTATION_POLISH_MS.textboxEnterDelay);
+      return;
+    }
+
+    setIsSearchTextboxVisible(false);
+    searchPresentationTimersRef.current.poseRelease = window.setTimeout(() => {
+      setIsSearchPresentationPoseActive(false);
+    }, SEARCH_PRESENTATION_POLISH_MS.poseExitDelay);
+  }, [isSearchPresentationActive]);
+
+  useEffect(
+    () => () => {
+      if (searchPresentationTimersRef.current.textboxEnter) {
+        window.clearTimeout(searchPresentationTimersRef.current.textboxEnter);
+      }
+      if (searchPresentationTimersRef.current.poseRelease) {
+        window.clearTimeout(searchPresentationTimersRef.current.poseRelease);
+      }
+    },
+    []
+  );
+
   const presenceState: PresenceState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
       ? "idle"
-      : isSearchPresentationActive
+      : isSearchPresentationPoseActive
         ? "presenting_search_results"
         : isSpeaking
           ? "speaking"
@@ -913,7 +961,7 @@ export function OverlayCompanionPage() {
 
         <WebAnswerTextbox
           answer={webAnswer}
-          visible={isSearchPresentationActive}
+          visible={isSearchTextboxVisible}
           defaultCollapsedSources={settings.showSourceFooterCollapsed}
           onInteractionChange={setIsWebAnswerInteracting}
           onSourceExpansionChange={(expanded) => {
