@@ -33,12 +33,31 @@ export type StageMotion = {
   perchDepth: number;
   settledAtEdge: boolean;
   isGroundedOverlay: boolean;
+  characterMotionState: "grounded" | "dragging" | "airborne" | "falling" | "landing" | "recovering" | "idle";
+  floorPosition: { x: number; y: number };
+  isDragActive: boolean;
 };
+
+export type DragCallbacks = {
+  onDragStateChange?: (dragging: boolean) => void;
+};
+
+const FLOOR_REST_X_KEY = "sarahnode.overlay.floor-rest-x.v1";
+const floorClamp = { minX: 0.12, maxX: 0.88 };
+const gravityPerSecond = 1.7;
+const landingLift = 0.024;
+const landingMs = 170;
+const recoverMs = 260;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
 
 export function useStageController(
   mode: MovementState,
   stageRef: RefObject<HTMLElement>,
-  behaviorContext: StageBehaviorContext
+  behaviorContext: StageBehaviorContext,
+  dragCallbacks?: DragCallbacks
 ): StageMotion {
   const motionController = useRef<MovementController>(new MovementController({ x: 0.52, y: 0.58 }));
   const computePresence = usePresenceBehavior();
@@ -66,11 +85,35 @@ export function useStageController(
     perchDepth: 0,
     settledAtEdge: false,
     isGroundedOverlay: false,
+    characterMotionState: "grounded" as StageMotion["characterMotionState"],
+    floorPosition: { x: 0.77, y: 0.74 },
+    isDragActive: false,
   });
 
   const lastTimeRef = useRef<number>(performance.now());
+  const cursorOffsetRef = useRef({ x: 0, y: 0 });
+  const dragStateRef = useRef({
+    pointerId: -1,
+    isDragging: false,
+    floorX: 0.77,
+    x: 0.77,
+    y: 0.74,
+    velocityY: 0,
+    state: "grounded" as StageMotion["characterMotionState"],
+    releaseAt: 0,
+  });
 
   const movementState = mode === "walking" ? "walking" : mode;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = Number(window.localStorage.getItem(FLOOR_REST_X_KEY) ?? "0.77");
+    if (Number.isFinite(stored)) {
+      const clamped = clamp(stored, floorClamp.minX, floorClamp.maxX);
+      dragStateRef.current.floorX = clamped;
+      dragStateRef.current.x = clamped;
+    }
+  }, []);
 
   useEffect(() => {
     let raf = 0;
@@ -121,7 +164,43 @@ export function useStageController(
             })
           : null;
 
-      motionController.current.setTarget(groundedMotion?.target ?? presence.targetPosition);
+      const floorY = groundedMotion?.plane.groundLineY ?? 0.74;
+      const drag = dragStateRef.current;
+      if (behavior.displayMode.activeMode === "overlay") {
+        if (!drag.isDragging) {
+          if (drag.y < floorY - 0.001) {
+            drag.state = drag.velocityY > 0 ? "falling" : "airborne";
+            drag.velocityY += gravityPerSecond * deltaSeconds;
+            drag.y += drag.velocityY * deltaSeconds;
+            if (drag.y >= floorY) {
+              drag.y = floorY;
+              drag.velocityY = 0;
+              drag.releaseAt = now;
+              drag.state = "landing";
+            }
+          } else if (drag.state === "landing") {
+            if (now - drag.releaseAt > landingMs) {
+              drag.state = "recovering";
+            }
+          } else if (drag.state === "recovering") {
+            if (now - drag.releaseAt > landingMs + recoverMs) {
+              drag.state = "idle";
+            }
+          } else {
+            drag.state = mode === "idle" ? "idle" : "grounded";
+          }
+        }
+
+        const lift =
+          drag.state === "landing" ? -landingLift : drag.state === "recovering" ? -landingLift * 0.4 : 0;
+        const targetX = drag.isDragging ? drag.x : drag.floorX;
+        motionController.current.setTarget({
+          x: clamp(targetX, floorClamp.minX, floorClamp.maxX),
+          y: clamp((drag.isDragging ? drag.y : drag.y) + lift, floorY - 0.38, floorY + 0.02),
+        });
+      } else {
+        motionController.current.setTarget(groundedMotion?.target ?? presence.targetPosition);
+      }
 
       const regionScale = regions.length > 1 ? 0.95 : 1;
       const willingnessScale = 0.85 + presence.movementWillingness;
@@ -129,7 +208,10 @@ export function useStageController(
       setSnapshot(next);
       setPresenceSnapshot({
         attentionTarget: presence.attentionTarget,
-        attentionOffset: presence.attentionOffset,
+        attentionOffset: {
+          x: presence.attentionOffset.x + cursorOffsetRef.current.x,
+          y: presence.attentionOffset.y + cursorOffsetRef.current.y,
+        },
         engagementLevel: presence.engagementLevel,
         preferredZone: presence.preferredZone,
         groundLineY: groundedMotion?.plane.groundLineY ?? 0.58,
@@ -137,6 +219,9 @@ export function useStageController(
         perchDepth: groundedMotion?.perchDepth ?? 0,
         settledAtEdge: groundedMotion?.settledAtEdge ?? false,
         isGroundedOverlay,
+        characterMotionState: drag.state,
+        floorPosition: { x: drag.floorX, y: floorY },
+        isDragActive: drag.isDragging,
       });
 
       raf = requestAnimationFrame(animate);
@@ -145,6 +230,82 @@ export function useStageController(
     raf = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(raf);
   }, [computePresence, movementState, stageRef]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const handlePointerMove = (event: PointerEvent) => {
+      const rect = stage.getBoundingClientRect();
+      const nx = clamp((event.clientX - rect.left) / Math.max(1, rect.width), 0, 1) - 0.5;
+      const ny = clamp((event.clientY - rect.top) / Math.max(1, rect.height), 0, 1) - 0.5;
+      const targetX = nx * 0.03;
+      const targetY = ny * 0.02;
+      cursorOffsetRef.current.x += (targetX - cursorOffsetRef.current.x) * 0.18;
+      cursorOffsetRef.current.y += (targetY - cursorOffsetRef.current.y) * 0.18;
+    };
+    const handleLeave = () => {
+      cursorOffsetRef.current.x *= 0.72;
+      cursorOffsetRef.current.y *= 0.72;
+    };
+    stage.addEventListener("pointermove", handlePointerMove);
+    stage.addEventListener("pointerleave", handleLeave);
+    return () => {
+      stage.removeEventListener("pointermove", handlePointerMove);
+      stage.removeEventListener("pointerleave", handleLeave);
+    };
+  }, [stageRef]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || behaviorContext.displayMode.activeMode !== "overlay") return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const drag = dragStateRef.current;
+      const rect = stage.getBoundingClientRect();
+      drag.isDragging = true;
+      drag.pointerId = event.pointerId;
+      drag.state = "dragging";
+      dragCallbacks?.onDragStateChange?.(true);
+      stage.setPointerCapture(event.pointerId);
+      drag.x = clamp((event.clientX - rect.left) / rect.width, floorClamp.minX, floorClamp.maxX);
+      drag.y = clamp((event.clientY - rect.top) / rect.height, 0.32, 0.88);
+      drag.velocityY = 0;
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag.isDragging || drag.pointerId !== event.pointerId) return;
+      const rect = stage.getBoundingClientRect();
+      drag.x = clamp((event.clientX - rect.left) / rect.width, floorClamp.minX, floorClamp.maxX);
+      drag.y = clamp((event.clientY - rect.top) / rect.height, 0.2, 0.88);
+    };
+
+    const release = (event: PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag.isDragging || drag.pointerId !== event.pointerId) return;
+      drag.isDragging = false;
+      drag.pointerId = -1;
+      drag.floorX = drag.x;
+      drag.state = "airborne";
+      drag.velocityY = Math.max(0, drag.velocityY);
+      dragCallbacks?.onDragStateChange?.(false);
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(FLOOR_REST_X_KEY, String(drag.floorX));
+      }
+      stage.releasePointerCapture(event.pointerId);
+    };
+
+    stage.addEventListener("pointerdown", handlePointerDown);
+    stage.addEventListener("pointermove", handlePointerMove);
+    stage.addEventListener("pointerup", release);
+    stage.addEventListener("pointercancel", release);
+    return () => {
+      stage.removeEventListener("pointerdown", handlePointerDown);
+      stage.removeEventListener("pointermove", handlePointerMove);
+      stage.removeEventListener("pointerup", release);
+      stage.removeEventListener("pointercancel", release);
+    };
+  }, [behaviorContext.displayMode.activeMode, dragCallbacks, stageRef]);
 
   return useMemo(() => {
     const motionMode: MovementState = snapshot.isMoving && mode === "idle" ? "walking" : movementState;
@@ -166,6 +327,9 @@ export function useStageController(
       perchDepth: presenceSnapshot.perchDepth,
       settledAtEdge: presenceSnapshot.settledAtEdge,
       isGroundedOverlay: presenceSnapshot.isGroundedOverlay,
+      characterMotionState: presenceSnapshot.characterMotionState,
+      floorPosition: presenceSnapshot.floorPosition,
+      isDragActive: presenceSnapshot.isDragActive,
     };
   }, [movementState, mode, presenceSnapshot, snapshot]);
 }

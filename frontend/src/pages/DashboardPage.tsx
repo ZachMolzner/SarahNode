@@ -165,6 +165,8 @@ export function DashboardPage() {
   const expressionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugExpressions=1");
   const [audioNeedsGesture, setAudioNeedsGesture] = useState(false);
   const [adminSurfaceVisible, setAdminSurfaceVisible] = useState(false);
+  const [isAvatarDragging, setIsAvatarDragging] = useState(false);
+  const motionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugMotion=1");
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
@@ -398,18 +400,18 @@ export function DashboardPage() {
       }
     }
 
-    scheduleWebAnswerDismiss(identicalPayload ? 3000 : 6200);
+    scheduleWebAnswerDismiss(identicalPayload ? 3600 : 7000);
   }, [events, overlayEnabled, scheduleWebAnswerDismiss, settings.voiceOutputEnabled, stampReactionWithCooldown]);
 
   useEffect(() => {
     if (!isWebAnswerVisible) return;
-    scheduleWebAnswerDismiss(5600);
-  }, [isWebAnswerVisible, scheduleWebAnswerDismiss]);
+    scheduleWebAnswerDismiss(isSpeaking ? 7600 : 6200);
+  }, [isSpeaking, isWebAnswerVisible, scheduleWebAnswerDismiss]);
 
   useEffect(() => {
     if (!isWebAnswerVisible || isSpeaking) return;
-    scheduleWebAnswerDismiss(3000);
-  }, [isSpeaking, isWebAnswerVisible, scheduleWebAnswerDismiss]);
+    scheduleWebAnswerDismiss(hasExpandedSources ? 5000 : 3600);
+  }, [hasExpandedSources, isSpeaking, isWebAnswerVisible, scheduleWebAnswerDismiss]);
 
   useEffect(() => {
     const voiceEvent = events.find((event) => event.type.startsWith("voice:"));
@@ -496,7 +498,9 @@ export function DashboardPage() {
     }
 
     setIsSending(true);
-    setInteractionStartedAt(Date.now());
+    const now = Date.now();
+    setInteractionStartedAt(now);
+    setSearchStartedAt(now);
     setError(null);
 
     try {
@@ -589,6 +593,26 @@ export function DashboardPage() {
   }, [settingsOpen]);
 
   useEffect(() => {
+    if (!windowBridge.isNativeDesktop) return;
+    let active = true;
+    let cleanup = () => {};
+    void windowBridge
+      .onDesktopCommand((event) => {
+        if (!active || event.command !== "summon-hotkey") return;
+        const now = Date.now();
+        setSummonedAt(now);
+        setInteractionStartedAt(now);
+      })
+      .then((unlisten) => {
+        cleanup = unlisten;
+      });
+    return () => {
+      active = false;
+      cleanup();
+    };
+  }, [windowBridge]);
+
+  useEffect(() => {
     if (isSpeaking) {
       setSpeakingStartedAt((previous) => (Date.now() - previous > 320 ? Date.now() : previous));
     } else if (speakingStartedAt > 0) {
@@ -626,6 +650,11 @@ export function DashboardPage() {
   }, [isWebAnswerVisible, webAnswer?.title]);
 
   useEffect(() => {
+    if (!overlayControllerRef.current) return;
+    void overlayControllerRef.current.setForceInteractive(isAvatarDragging || isWebAnswerInteracting);
+  }, [isAvatarDragging, isWebAnswerInteracting]);
+
+  useEffect(() => {
     setWebAnswer((current) => (current ? { ...current, mode: overlayEnabled ? "overlay" : "immersive" } : current));
   }, [overlayEnabled]);
 
@@ -646,6 +675,8 @@ export function DashboardPage() {
           displayMode={displayMode}
           reducedEffects={platformProfile.reducedEffects}
           onInteractionRegionReady={(element) => overlayControllerRef.current?.setInteractionRegion(element)}
+          onDragStateChange={setIsAvatarDragging}
+          debugMotionEnabled={motionDebugEnabled}
           overlayVisibility={{
             controlsOpen: isControlsOpen,
             transcriptOpen: isTranscriptOpen,
