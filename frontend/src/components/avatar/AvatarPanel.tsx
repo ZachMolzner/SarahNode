@@ -54,11 +54,11 @@ export function AvatarPanel({
 
   const isOverlayGrounded = displayMode.activeMode === "overlay";
   const dynamicAvatarScale = useMemo(() => {
-    if (avatarState.mode === "idle") return 0.84;
-    if (avatarState.mode === "listening" || avatarState.mode === "thinking") return 0.9;
-    if (avatarState.mode === "talking" || avatarState.mode === "presenting") return 0.97;
-    if (avatarState.mode === "shutting_down") return 0.88;
-    return 0.9;
+    if (avatarState.mode === "idle") return 0.78;
+    if (avatarState.mode === "listening" || avatarState.mode === "thinking") return 0.83;
+    if (avatarState.mode === "talking" || avatarState.mode === "presenting") return 0.88;
+    if (avatarState.mode === "shutting_down") return 0.8;
+    return 0.83;
   }, [avatarState.mode]);
 
   const glowIntensity = Math.min(0.35, 0.18 + gesturePerformance.glowBoost * 0.16);
@@ -78,8 +78,10 @@ export function AvatarPanel({
         ref={interactionRegionRef}
           style={{
             ...interactionRegionStyle,
-            top: isOverlayGrounded ? "74%" : interactionRegionStyle.top,
-            height: isOverlayGrounded ? "min(52vh, 520px)" : reducedEffects ? "min(52vh, 520px)" : interactionRegionStyle.height,
+            left: isOverlayGrounded ? "78%" : interactionRegionStyle.left,
+            top: isOverlayGrounded ? "73%" : interactionRegionStyle.top,
+            width: isOverlayGrounded ? "min(34vw, 360px)" : interactionRegionStyle.width,
+            height: isOverlayGrounded ? "min(50vh, 500px)" : reducedEffects ? "min(52vh, 520px)" : interactionRegionStyle.height,
           }}
           aria-label="Sarah interaction region"
       >
@@ -87,7 +89,7 @@ export function AvatarPanel({
           style={{
             ...avatarMotionStyle,
             transform: `${stageMotion.transform} scale(${dynamicAvatarScale})`,
-            transition: "transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1)",
+            transition: "transform 380ms cubic-bezier(0.22, 0.61, 0.36, 1)",
           }}
         >
           <div
@@ -153,9 +155,9 @@ const avatarAnchorStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
   top: "50%",
-  width: "min(34vw, 340px)",
-  height: "min(50vh, 500px)",
-  maxHeight: "52vh",
+  width: "min(24vw, 270px)",
+  height: "min(46vh, 420px)",
+  maxHeight: "48vh",
 };
 
 const metaStyle: CSSProperties = {

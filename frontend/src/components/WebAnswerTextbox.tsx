@@ -121,8 +121,8 @@ export function WebAnswerTextbox({
 
 const boxStyle: CSSProperties = {
   position: "absolute",
-  borderRadius: 16,
-  padding: "14px 16px",
+  borderRadius: 14,
+  padding: "12px 14px",
   background: "rgba(10, 15, 28, 0.86)",
   border: "1px solid rgba(127, 180, 255, 0.3)",
   color: "#f4f7ff",
@@ -134,13 +134,13 @@ const boxStyle: CSSProperties = {
   pointerEvents: "auto",
   userSelect: "text",
   overflowY: "auto",
-  maxHeight: "min(46vh, 420px)",
+  maxHeight: "min(34vh, 300px)",
 };
 
 const overlayBoxStyle: CSSProperties = {
-  left: "calc(50% + min(17vw, 180px))",
-  top: "34%",
-  width: "min(300px, 30vw)",
+  left: "calc(50% + min(5vw, 56px))",
+  top: "36%",
+  width: "min(240px, 24vw)",
 };
 
 const immersiveBoxStyle: CSSProperties = {
@@ -162,8 +162,8 @@ const badgeStyle: CSSProperties = {
 };
 
 const titleStyle: CSSProperties = {
-  margin: "10px 0 12px",
-  fontSize: 16,
+  margin: "8px 0 10px",
+  fontSize: 14,
   fontWeight: 620,
 };
 
@@ -172,7 +172,7 @@ const listStyle: CSSProperties = {
   paddingLeft: 18,
   display: "grid",
   gap: 8,
-  fontSize: 13,
+  fontSize: 12,
 };
 
 const footerStyle: CSSProperties = {
