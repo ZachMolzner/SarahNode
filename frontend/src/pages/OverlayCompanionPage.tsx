@@ -3,15 +3,12 @@ import { EventLog } from "../components/EventLog";
 import { StatusCards } from "../components/StatusCards";
 import { useEvents } from "../hooks/useEvents";
 import {
-  deleteMemoryItem,
   emitVoiceEvent,
   fetchAssistantState,
   fetchIdentityState,
   fetchMemoryItems,
-  resetVoiceProfile,
   sendAssistantMessage,
   transcribeAudio,
-  updateNicknamePolicy,
   type IdentityStateResponse,
   type MemoryItem,
 } from "../lib/api";
@@ -35,6 +32,7 @@ import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
 import { resolvePlatformProfile } from "../lib/platformProfile";
 import { derivePresenceModes } from "../lib/presenceModes";
 import { useSearchPresentation } from "../hooks/useSearchPresentation";
+import { useSettingsPanelActions } from "../hooks/useSettingsPanelActions";
 
 const EXPRESSION_REACTION_COOLDOWN_MS = {
   interrupted: 2400,
@@ -571,6 +569,20 @@ export function OverlayCompanionPage() {
     }
   }, []);
 
+  const {
+    handleSettingsChange,
+    handleSummonNow,
+    handleToggleMamaNickname,
+    handleDeleteMemoryItem,
+    handleResetVoiceProfile,
+  } = useSettingsPanelActions({
+    refreshIdentityData,
+    setProfileRefreshError,
+    setSummonedAt,
+    updateSettings,
+    windowBridge,
+  });
+
   useEffect(() => {
     void appShell.configureWindowForDisplayMode();
 
@@ -900,34 +912,17 @@ export function OverlayCompanionPage() {
             settings={settings}
             desktopFeaturesEnabled={desktopFeaturesEnabled}
             onClose={() => setSettingsOpen(false)}
-            onChange={(patch) => {
-              void updateSettings(patch);
-            }}
-            onSummonNow={() => {
-              setSummonedAt(Date.now());
-              void windowBridge.summonWindow();
-            }}
+            onChange={handleSettingsChange}
+            onSummonNow={handleSummonNow}
             identityState={identityState}
             memoryItems={memoryItems}
             profileRefreshError={profileRefreshError}
             onRefreshProfiles={() => {
               void refreshIdentityData();
             }}
-            onToggleMamaNickname={(enabled) => {
-              void updateNicknamePolicy(enabled).then(refreshIdentityData).catch((err) => {
-                setProfileRefreshError(err instanceof Error ? err.message : "Failed to update nickname policy.");
-              });
-            }}
-            onDeleteMemoryItem={(itemId) => {
-              void deleteMemoryItem(itemId).then(refreshIdentityData).catch((err) => {
-                setProfileRefreshError(err instanceof Error ? err.message : "Failed to delete memory item.");
-              });
-            }}
-            onResetVoiceProfile={(profileId) => {
-              void resetVoiceProfile(profileId).then(refreshIdentityData).catch((err) => {
-                setProfileRefreshError(err instanceof Error ? err.message : "Failed to reset voice profile.");
-              });
-            }}
+            onToggleMamaNickname={handleToggleMamaNickname}
+            onDeleteMemoryItem={handleDeleteMemoryItem}
+            onResetVoiceProfile={handleResetVoiceProfile}
           />
         ) : null}
 
