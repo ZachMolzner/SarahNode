@@ -1,6 +1,6 @@
 import { useCallback, useRef } from "react";
 import type { MovementState, StagePoint } from "../lib/movementController";
-import { PresenceController, type PresenceOutput } from "../lib/presenceController";
+import { PresenceController, type PresenceOutput, type SemanticPresenceMode } from "../lib/presenceController";
 import type { OverlayVisibility } from "../lib/stageZones";
 
 export type PresenceSignals = {
@@ -12,6 +12,7 @@ export type PresenceSignals = {
   searchFindingsRevealAtMs: number;
   searchSourcesRevealAtMs: number;
   searchSettledAtMs: number;
+  semanticMode: SemanticPresenceMode;
 };
 
 export type PresenceBehaviorInput = {
@@ -43,6 +44,7 @@ export function usePresenceBehavior() {
       searchFindingsRevealAtMs: input.signals.searchFindingsRevealAtMs,
       searchSourcesRevealAtMs: input.signals.searchSourcesRevealAtMs,
       searchSettledAtMs: input.signals.searchSettledAtMs,
+      semanticMode: input.signals.semanticMode,
     });
   }, []);
 }
