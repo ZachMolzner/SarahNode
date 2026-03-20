@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { WebAnswerSource } from "../lib/webGroundedAnswer";
+import { buildWebAnswerReportLayout } from "../lib/webAnswerPresentation";
 
 export type WebAnswerViewModel = {
   title: string;
@@ -35,6 +36,8 @@ export function WebAnswerTextbox({
   const rootRef = useRef<HTMLElement | null>(null);
   const touchTimerRef = useRef<number | null>(null);
   const visibilityTimerRef = useRef<number | null>(null);
+  const revealTimersRef = useRef<number[]>([]);
+  const [revealStage, setRevealStage] = useState<0 | 1 | 2>(0);
 
   const displayAnswer = answer ?? answerSnapshot;
 
@@ -62,6 +65,8 @@ export function WebAnswerTextbox({
       if (visibilityTimerRef.current) {
         window.clearTimeout(visibilityTimerRef.current);
       }
+      revealTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      revealTimersRef.current = [];
     };
   }, []);
 
@@ -97,12 +102,39 @@ export function WebAnswerTextbox({
     return () => onInteractionRegionReady?.(null);
   }, [onInteractionRegionReady]);
 
+
+  useEffect(() => {
+    revealTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+    revealTimersRef.current = [];
+
+    if (!visible || !displayAnswer) {
+      setRevealStage(0);
+      return;
+    }
+
+    setRevealStage(0);
+    revealTimersRef.current.push(window.setTimeout(() => setRevealStage(1), 45));
+    revealTimersRef.current.push(window.setTimeout(() => setRevealStage(2), 125));
+  }, [displayAnswer?.title, displayAnswer?.bullets.join("|"), visible]);
+
+  const reportLayout = useMemo(
+    () =>
+      displayAnswer
+        ? buildWebAnswerReportLayout({
+            title: displayAnswer.title,
+            bullets: displayAnswer.bullets,
+            sources: displayAnswer.sources,
+          })
+        : null,
+    [displayAnswer]
+  );
+
   const modeAwareStyle = useMemo(
     () => (displayAnswer?.mode === "overlay" ? overlayBoxStyle : immersiveBoxStyle),
     [displayAnswer?.mode]
   );
 
-  if (!displayAnswer || !isMounted) return null;
+  if (!displayAnswer || !reportLayout || !isMounted) return null;
 
   return (
     <aside
@@ -126,21 +158,33 @@ export function WebAnswerTextbox({
       onClick={(event) => event.stopPropagation()}
       onTouchStart={() => pulseTouchInteraction()}
     >
-      <div style={badgeStyle}>Checked live web</div>
-      <h3 style={titleStyle}>{displayAnswer.title}</h3>
-      <ul style={listStyle}>
-        {displayAnswer.bullets.slice(0, 5).map((point, index) => (
-          <li key={`${point}-${index}`}>{point}</li>
-        ))}
-      </ul>
-      {displayAnswer.sources.length ? (
-        <footer style={footerStyle}>
+      <div style={badgeStyle}>Search report</div>
+      <header style={headerStyle(revealStage >= 1)}>
+        <h3 style={titleStyle}>{reportLayout.heading}</h3>
+        {reportLayout.lead ? <p style={leadStyle}>{reportLayout.lead}</p> : null}
+      </header>
+
+      {reportLayout.findings.length ? (
+        <section style={sectionStyle(revealStage >= 2)}>
+          <div style={sectionLabelStyle}>Key findings</div>
+          <ul style={listStyle}>
+            {reportLayout.findings.map((point, index) => (
+              <li key={`${point}-${index}`} style={pointStyle}>
+                {point}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {reportLayout.sources.length ? (
+        <footer style={{ ...footerStyle, ...sectionStyle(revealStage >= 2) }}>
           <button type="button" style={footerToggleStyle} onClick={() => setCollapsed((value) => !value)}>
-            {collapsed ? "View" : "Hide"} sources ({displayAnswer.sources.length})
+            {collapsed ? "View" : "Hide"} sources ({reportLayout.sources.length})
           </button>
           {!collapsed ? (
             <ul style={sourceListStyle}>
-              {displayAnswer.sources.map((source) => (
+              {reportLayout.sources.map((source) => (
                 <li key={`${source.title}-${source.url ?? "no-url"}`} style={sourceItemStyle}>
                   {source.url ? (
                     <a href={source.url} target="_blank" rel="noreferrer" style={sourceLinkStyle}>
@@ -205,18 +249,57 @@ const badgeStyle: CSSProperties = {
   letterSpacing: 0.4,
 };
 
+const headerStyle = (revealed: boolean): CSSProperties => ({
+  marginTop: 7,
+  opacity: revealed ? 1 : 0,
+  transform: `translateY(${revealed ? "0px" : "4px"})`,
+  transition: "opacity 170ms ease, transform 190ms ease",
+});
+
 const titleStyle: CSSProperties = {
-  margin: "8px 0 10px",
+  margin: "0 0 6px",
   fontSize: 14,
   fontWeight: 620,
+};
+
+const leadStyle: CSSProperties = {
+  margin: 0,
+  fontSize: 12,
+  color: "rgba(234, 241, 253, 0.95)",
+  display: "-webkit-box",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 3,
+  overflow: "hidden",
+};
+
+const sectionStyle = (revealed: boolean): CSSProperties => ({
+  opacity: revealed ? 1 : 0,
+  transform: `translateY(${revealed ? "0px" : "6px"})`,
+  transition: "opacity 190ms ease, transform 210ms ease",
+});
+
+const sectionLabelStyle: CSSProperties = {
+  marginTop: 10,
+  marginBottom: 6,
+  fontSize: 10,
+  letterSpacing: 0.35,
+  textTransform: "uppercase",
+  color: "rgba(188, 207, 235, 0.86)",
 };
 
 const listStyle: CSSProperties = {
   margin: 0,
   paddingLeft: 18,
   display: "grid",
-  gap: 8,
+  gap: 6,
   fontSize: 12,
+};
+
+const pointStyle: CSSProperties = {
+  display: "-webkit-box",
+  WebkitBoxOrient: "vertical",
+  WebkitLineClamp: 2,
+  overflow: "hidden",
 };
 
 const footerStyle: CSSProperties = {
