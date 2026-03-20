@@ -1,5 +1,6 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pathlib import Path
 
 
 def _parse_csv(raw: str) -> list[str]:
@@ -14,7 +15,8 @@ class Settings(BaseSettings):
     assistant_cooldown_seconds: float = 1.0
     assistant_max_queue_size: int = 200
     assistant_memory_window: int = 25
-    identity_store_path: str = "data/identity_memory.json"
+    local_data_dir: str = "data"
+    identity_store_path: str = "identity_memory.json"
 
     llm_provider: str = "auto"
     tts_provider: str = "auto"
@@ -28,7 +30,7 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = ""
     elevenlabs_model_id: str = "eleven_multilingual_v2"
 
-    web_search_provider: str = "brave"
+    web_search_provider: str = "none"
     brave_search_api_key: str = ""
     serpapi_api_key: str = ""
     web_search_max_results: int = 5
@@ -73,3 +75,17 @@ def resolve_backend_host() -> str:
 def resolve_cors_origins() -> list[str]:
     origins = _parse_csv(settings.cors_allowed_origins_raw)
     return origins if origins else ["*"]
+
+
+def resolve_local_data_dir() -> Path:
+    candidate = Path(settings.local_data_dir)
+    if candidate.is_absolute():
+        return candidate
+    return Path(__file__).resolve().parents[1] / candidate
+
+
+def resolve_identity_store_path() -> Path:
+    configured = Path(settings.identity_store_path)
+    if configured.is_absolute():
+        return configured
+    return resolve_local_data_dir() / configured

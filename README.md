@@ -6,8 +6,8 @@ It uses:
 - **FastAPI** backend
 - **React + Vite + TypeScript** frontend
 - **WebSocket event streaming** for real-time state updates
-- **OpenAI** for real LLM responses and speech-to-text (with fallback-safe behavior)
-- **ElevenLabs** for real TTS audio (with mock fallback)
+- **OpenAI** (optional) for real LLM responses and speech-to-text
+- **ElevenLabs** (optional) for real TTS audio
 - **Sarah.vrm** as the default visible assistant avatar
 
 Desktop branding identity is standardized to:
@@ -68,12 +68,13 @@ Desktop branding identity is standardized to:
   - `GET /health`
   - `WS /ws/events`
 - Stream orchestrator handles processing, state changes, and websocket event fanout.
-- LLM, TTS, STT, and web-search adapters are selected at startup with robust fallback logging.
+- LLM, TTS, and STT adapters are selected at startup with robust fallback logging.
+- Web search is optional and disabled by default for local-runtime startup safety.
 - ChatGPT-style web browsing path: freshness policy → search provider → top-page fetch/extract → LLM synthesis with source metadata retention.
 
 
-### ChatGPT-Style Browsing Flow
-When a message indicates freshness or explicit web lookup need, Sarah now runs:
+### Optional Browsing Flow
+When browsing is explicitly enabled and a message indicates freshness/web lookup need, Sarah runs:
 1. capability routing + browsing policy decision
 2. normalized provider search (Brave or SerpAPI)
 3. fetch of a small number of top pages with timeout/failure tolerance
@@ -81,7 +82,7 @@ When a message indicates freshness or explicit web lookup need, Sarah now runs:
 5. LLM synthesis into a direct answer first, then concise support
 6. source metadata retention for future UI surfacing
 
-If no provider is configured, Sarah answers honestly that live browsing is unavailable.
+If no provider is configured, Sarah answers that live browsing is unavailable and continues with local context.
 
 ### Frontend (`/frontend`)
 - Modern React desktop companion stage with Sarah anchored near desktop baseline and side panels for controls/web answers.
@@ -99,35 +100,37 @@ If no provider is configured, Sarah answers honestly that live browsing is unava
 ---
 
 
-## Windows Single-App Packaging Direction (Target: self-contained .exe)
+## Final Runtime Target (Windows local .exe)
 
-SarahNode is being aligned to a **single local Windows executable** target:
+SarahNode is now aligned to this runtime model:
 
-- One installer / executable entrypoint for end users
-- Bundled UI + API + local data storage
-- No hosted infrastructure required for core runtime
-- No manual backend startup step for normal desktop usage
+- **Final product target:** one self-contained Windows desktop app (`SarahNode.exe`).
+- **Always local:** frontend UI, Tauri shell, backend/orchestration, profiles, memory, identity logic, settings, avatar/presence logic, and persistence.
+- **Allowed external dependencies only:** LLM provider, STT provider, and TTS provider.
+- **No manual backend startup** for normal desktop use.
+- **Optional LAN companion mode:** phone/tablet clients connect to the Windows-hosted backend when enabled.
 
-### Dependency audit for local-first runtime
+### Runtime alignment snapshot
 
-| Component | Current state | Local/bundled target |
-|---|---|---|
-| Frontend (React/Vite) | Bundled into Tauri desktop shell | Keep bundled |
-| Desktop shell (Tauri) | Bundled | Keep bundled, default companion-sized window |
-| FastAPI backend | Separate process in dev flow | Launch as bundled sidecar/background process from Tauri |
-| Identity/memory data | Local JSON files | Keep local, bundle schema/defaults, persist in app data dir |
-| OpenAI LLM | External API dependency | Optional cloud mode; add local model adapter for offline mode |
-| OpenAI STT | External API dependency | Add local/offline STT adapter and runtime packaging |
-| ElevenLabs TTS | External API dependency | Keep browser/local fallback now; add local TTS adapter for full offline mode |
-| Web search providers | External dependency | Disable in offline mode with explicit user messaging |
+| Area | Current alignment |
+|---|---|
+| Desktop app entrypoint | Tauri app launches as the primary runtime entrypoint. |
+| Backend startup model | Tauri now attempts backend sidecar startup automatically on app boot. |
+| Local settings persistence | Desktop settings persist in Tauri app config directory (`desktop-settings.json`). |
+| Local identity/memory persistence | Backend identity + memory state persists to `LOCAL_DATA_DIR/identity_memory.json` (defaults to local data folder). |
+| Startup without cloud providers | Backend falls back to mock/disabled providers and still boots. |
+| Web browsing requirement | Disabled by default (`WEB_SEARCH_PROVIDER=none`) and optional to enable. |
+| LAN companion mode | Supported as opt-in by binding backend to host LAN interface and opening firewall on trusted networks. |
 
-### Packaging architecture notes (in progress)
+### Sidecar startup flow (desktop)
 
-1. Tauri app starts and initializes local settings/storage paths.
-2. App launches bundled backend sidecar (FastAPI) on localhost ephemeral port.
-3. Frontend resolves API base URL from runtime bridge (no hardcoded manual server setup).
-4. On app close/tray exit, frontend requests graceful backend shutdown.
-5. Offline mode profile forces local model/tts/stt adapters and disables remote web search.
+1. Tauri bootstraps local app state and window/tray settings.
+2. Tauri attempts to start backend automatically:
+   - **Dev:** `python run_server.py` in `/backend`.
+   - **Release target:** packaged `sidecar/sarahnode-backend.exe`.
+3. Tauri injects runtime env values (`LOCAL_DATA_DIR`, `WEB_SEARCH_PROVIDER=none`, local-only bind default).
+4. Frontend connects to local backend endpoints.
+5. On app exit, desktop shell terminates the sidecar process.
 
 ## Setup
 
@@ -147,9 +150,9 @@ Run backend (default local-only):
 python run_server.py
 ```
 
-### LAN host mode (Windows host + tablet/phone clients)
+### Optional LAN companion mode (Windows host + tablet/phone clients)
 
-1. In `backend/.env`, enable LAN bind:
+1. In backend runtime env, enable LAN bind:
 
 ```env
 BACKEND_BIND_ALL_INTERFACES=1
@@ -165,7 +168,7 @@ python run_server.py
 
 3. Find the host LAN IP on Windows (example `192.168.1.44`) and keep port `8000` open on local firewall for trusted/private network only.
 
-4. Start frontend so mobile can load it from the same host:
+4. Start frontend so mobile can load it from the same host (dev mode):
 
 ```bash
 cd frontend
@@ -175,7 +178,7 @@ npm run dev -- --host 0.0.0.0 --port 5173
 5. On tablet/phone (same Wi-Fi), open:
    - `http://<WINDOWS_LAN_IP>:5173`
 
-By default the web app auto-targets the same hostname for API/WS (`:8000`), so no extra mobile-specific frontend env values are required unless you want explicit overrides.
+By default the web app auto-targets the same hostname for API/WS (`:8000`), so no extra mobile-specific frontend env values are required unless explicit overrides are needed.
 
 ## 2) Frontend
 
@@ -225,7 +228,7 @@ Overlay mode details (Tauri desktop):
 - Sarah interaction region temporarily re-enables clicks, then restores click-through on leave.
 - Interaction hit-testing is region/bounds-based (not per-pixel mesh hit-testing).
 
-> Packaging transition status: current builds still launch FastAPI separately during development. Production target is a single Windows app bundle that includes the backend runtime, frontend assets, and local data directories with no manual backend startup.
+> Packaging transition status: development still uses Python backend runtime, but desktop startup no longer requires users to manually start backend. Release packaging target remains a single Windows app bundle with a bundled backend sidecar executable.
 
 ### Desktop Icon Branding
 
