@@ -4,7 +4,7 @@ import type { GesturePerformanceSnapshot } from "../../lib/gestureController";
 import { VRMAvatar } from "./VRMAvatar";
 import { useStageController } from "../../lib/stageController";
 import type { OverlayVisibility } from "../../lib/stageZones";
-import type { PresenceSignals } from "../../hooks/usePresenceBehavior";
+import type { PresenceSignals } from "../../lib/presenceSignals";
 import type { DisplayModeState } from "../../lib/displayMode";
 
 type AvatarPanelProps = {
