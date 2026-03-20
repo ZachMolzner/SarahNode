@@ -8,6 +8,9 @@ export type PresenceSignals = {
   userSpokeAtMs: number;
   replyAtMs: number;
   presentingAtMs: number;
+  searchHeadingRevealAtMs: number;
+  searchFindingsRevealAtMs: number;
+  searchSettledAtMs: number;
 };
 
 export type PresenceBehaviorInput = {
@@ -35,6 +38,9 @@ export function usePresenceBehavior() {
       userSpokeAtMs: input.signals.userSpokeAtMs,
       replyAtMs: input.signals.replyAtMs,
       presentingAtMs: input.signals.presentingAtMs,
+      searchHeadingRevealAtMs: input.signals.searchHeadingRevealAtMs,
+      searchFindingsRevealAtMs: input.signals.searchFindingsRevealAtMs,
+      searchSettledAtMs: input.signals.searchSettledAtMs,
     });
   }, []);
 }

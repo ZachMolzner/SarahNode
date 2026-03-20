@@ -16,6 +16,9 @@ export type PresenceInput = {
   userSpokeAtMs: number;
   replyAtMs: number;
   presentingAtMs: number;
+  searchHeadingRevealAtMs: number;
+  searchFindingsRevealAtMs: number;
+  searchSettledAtMs: number;
 };
 
 export type PresenceOutput = {
@@ -73,6 +76,28 @@ export const PRESENCE_TUNING = {
   },
   speakingHoldMs: 760,
   listeningHoldMs: 580,
+  presentationCues: {
+    heading: {
+      activeMs: 700,
+      tiltDeg: 1.2,
+      yOffset: -0.0018,
+      forwardX: 0.0028,
+      attentionX: 0.004,
+      attentionY: -0.0015,
+    },
+    findings: {
+      activeMs: 760,
+      tiltDeg: 1.45,
+      yOffset: -0.0022,
+      forwardX: 0.0032,
+      attentionX: 0.005,
+      attentionY: -0.0018,
+    },
+    settle: {
+      holdMs: 460,
+      fadeMs: 780,
+    },
+  },
 } as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -138,10 +163,11 @@ export class PresenceController {
     const baseTarget = idleBehavior.targetPosition ?? zones[this.zone];
     const interactionPresenceState = this.resolveInteractionPresenceState(input);
     const interactionOffset = this.resolveInteractionPoseOffset(interactionPresenceState, input);
+    const presentationCueOffset = this.resolvePresentationCueOffset(input);
     const microOffset = this.idleMicroOffset(input, idleBehavior.idleBehavior);
     const proposedTarget: StagePoint = {
-      x: clamp(baseTarget.x + microOffset.x + interactionOffset.xOffset, 0.08, 0.92),
-      y: clamp(baseTarget.y + microOffset.y + idleBehavior.poseYOffset + interactionOffset.yOffset, 0.28, 0.82),
+      x: clamp(baseTarget.x + microOffset.x + interactionOffset.xOffset + presentationCueOffset.xOffset, 0.08, 0.92),
+      y: clamp(baseTarget.y + microOffset.y + idleBehavior.poseYOffset + interactionOffset.yOffset + presentationCueOffset.yOffset, 0.28, 0.82),
     };
 
     const currentDelta = distance(proposedTarget, this.lastTarget);
@@ -149,7 +175,7 @@ export class PresenceController {
       this.lastTarget = proposedTarget;
     }
 
-    const attention = this.resolveAttention(input);
+    const attention = this.resolveAttention(input, presentationCueOffset.attentionOffset);
     this.focusOffset.x = smooth(this.focusOffset.x, attention.offset.x, PRESENCE_TUNING.focusSmoothing * 60, input.deltaSeconds);
     this.focusOffset.y = smooth(this.focusOffset.y, attention.offset.y, PRESENCE_TUNING.focusSmoothing * 60, input.deltaSeconds);
 
@@ -163,8 +189,28 @@ export class PresenceController {
       activityState: idleBehavior.activityState,
       idleBehavior: idleBehavior.idleBehavior,
       interactionPresenceState,
-      poseTiltDeg: idleBehavior.poseTiltDeg + interactionOffset.tiltDeg,
-      poseYOffset: idleBehavior.poseYOffset + interactionOffset.yOffset,
+      poseTiltDeg: idleBehavior.poseTiltDeg + interactionOffset.tiltDeg + presentationCueOffset.tiltDeg,
+      poseYOffset: idleBehavior.poseYOffset + interactionOffset.yOffset + presentationCueOffset.yOffset,
+    };
+  }
+
+  private resolvePresentationCueOffset(input: PresenceInput): { tiltDeg: number; yOffset: number; xOffset: number; attentionOffset: StagePoint } {
+    if (input.mode !== "presenting_search_results") {
+      return { tiltDeg: 0, yOffset: 0, xOffset: 0, attentionOffset: { x: 0, y: 0 } };
+    }
+
+    const cues = PRESENCE_TUNING.presentationCues;
+    const headingProgress = cueProgress(input.nowMs, input.searchHeadingRevealAtMs, cues.heading.activeMs);
+    const findingsProgress = cueProgress(input.nowMs, input.searchFindingsRevealAtMs, cues.findings.activeMs);
+    const settleFade = settleFadeFactor(input.nowMs, input.searchSettledAtMs, cues.settle.holdMs, cues.settle.fadeMs);
+    return {
+      tiltDeg: (cues.heading.tiltDeg * headingProgress + cues.findings.tiltDeg * findingsProgress) * settleFade,
+      yOffset: (cues.heading.yOffset * headingProgress + cues.findings.yOffset * findingsProgress) * settleFade,
+      xOffset: (cues.heading.forwardX * headingProgress + cues.findings.forwardX * findingsProgress) * settleFade,
+      attentionOffset: {
+        x: (cues.heading.attentionX * headingProgress + cues.findings.attentionX * findingsProgress) * settleFade,
+        y: (cues.heading.attentionY * headingProgress + cues.findings.attentionY * findingsProgress) * settleFade,
+      },
     };
   }
 
@@ -282,9 +328,9 @@ export class PresenceController {
     return recentlyActive ? 0.48 : 0.24;
   }
 
-  private resolveAttention(input: PresenceInput): { target: AttentionTarget; offset: StagePoint } {
+  private resolveAttention(input: PresenceInput, cueAttentionOffset: StagePoint): { target: AttentionTarget; offset: StagePoint } {
     if (input.nowMs - input.presentingAtMs < 4500) {
-      return { target: "web_answer_box", offset: { x: 0.024, y: -0.012 } };
+      return { target: "web_answer_box", offset: { x: 0.024 + cueAttentionOffset.x, y: -0.012 + cueAttentionOffset.y } };
     }
 
     if (input.mode === "shutting_down") {
@@ -301,7 +347,7 @@ export class PresenceController {
     }
 
     if (input.mode === "presenting" || input.mode === "presenting_search_results") {
-      return { target: "web_answer_box", offset: { x: 0.03, y: -0.013 } };
+      return { target: "web_answer_box", offset: { x: 0.03 + cueAttentionOffset.x, y: -0.013 + cueAttentionOffset.y } };
     }
 
     if (input.mode === "talking") {
@@ -340,4 +386,16 @@ export class PresenceController {
 
 function randomBetween(min: number, max: number) {
   return min + Math.random() * (max - min);
+}
+
+function cueProgress(nowMs: number, cueAtMs: number, activeMs: number) {
+  if (cueAtMs <= 0 || nowMs < cueAtMs) return 0;
+  const t = clamp((nowMs - cueAtMs) / Math.max(120, activeMs), 0, 1);
+  return Math.sin(t * Math.PI);
+}
+
+function settleFadeFactor(nowMs: number, settledAtMs: number, holdMs: number, fadeMs: number) {
+  if (settledAtMs <= 0 || nowMs <= settledAtMs + holdMs) return 1;
+  const t = clamp((nowMs - (settledAtMs + holdMs)) / Math.max(240, fadeMs), 0, 1);
+  return 1 - t;
 }
