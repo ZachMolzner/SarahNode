@@ -42,8 +42,8 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
     let mounted = true;
     const scene = new THREE.Scene();
 
-    const camera = new THREE.PerspectiveCamera(30, container.clientWidth / container.clientHeight, 0.1, 1000);
-    camera.position.set(0, 1.35, 2.4);
+    const camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 0.1, 1000);
+    camera.position.set(0, 1.28, 2.55);
 
     const renderer = new THREE.WebGLRenderer({ antialias: !reducedEffects, alpha: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, reducedEffects ? 1.25 : 2));
@@ -85,7 +85,7 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
         VRMUtils.rotateVRM0(vrm);
         scene.add(vrm.scene);
 
-        vrm.scene.position.set(0, -1.05, 0);
+        vrm.scene.position.set(0, -1.08, 0);
         vrm.scene.rotation.y = Math.PI;
 
         vrmRef.current = vrm;
@@ -124,7 +124,7 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
         const idleBob = Math.sin(elapsed * (state.mode === "talking" ? 1.45 : 0.95)) * 0.012;
         const performanceBob = performance.bobAccent * Math.sin(elapsed * 2.8) * 0.018;
         const moveBob = motion.bob * (state.mode === "walking" ? 1.35 : 0.75);
-        vrm.scene.position.y = -1.05 + idleBob + moveBob + performanceBob;
+        vrm.scene.position.y = -1.08 + idleBob + moveBob + performanceBob;
 
         const engagementLift = motion.engagementLevel * 0.018;
         const postureLead = performance.bodyLean * 0.05 + performance.emphasisPulse * 0.012;

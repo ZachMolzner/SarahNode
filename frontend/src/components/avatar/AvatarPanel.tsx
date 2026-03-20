@@ -53,6 +53,7 @@ export function AvatarPanel({
   }, [avatarState.mode, avatarState.reaction]);
 
   const isOverlayGrounded = displayMode.activeMode === "overlay";
+  const overlayScaleBoost = isOverlayGrounded ? 1.08 : 1;
   const dynamicAvatarScale = useMemo(() => {
     if (avatarState.mode === "idle") return 0.78;
     if (avatarState.mode === "listening" || avatarState.mode === "thinking") return 0.83;
@@ -69,7 +70,7 @@ export function AvatarPanel({
         style={{
           ...spotlightLayerStyle,
           background: `radial-gradient(circle at 50% 50%, ${glowColor} 0%, rgba(10, 13, 24, 0.01) 58%, transparent 76%)`,
-          opacity: glowIntensity,
+          opacity: isOverlayGrounded ? 0 : glowIntensity,
           transform: `${stageMotion.transform} scale(0.94) translateZ(0)`,
         }}
       />
@@ -78,17 +79,17 @@ export function AvatarPanel({
         ref={interactionRegionRef}
           style={{
             ...interactionRegionStyle,
-            left: isOverlayGrounded ? "78%" : interactionRegionStyle.left,
-            top: isOverlayGrounded ? "73%" : interactionRegionStyle.top,
-            width: isOverlayGrounded ? "min(34vw, 360px)" : interactionRegionStyle.width,
-            height: isOverlayGrounded ? "min(50vh, 500px)" : reducedEffects ? "min(52vh, 520px)" : interactionRegionStyle.height,
+            left: isOverlayGrounded ? "77%" : interactionRegionStyle.left,
+            top: isOverlayGrounded ? "72%" : interactionRegionStyle.top,
+            width: isOverlayGrounded ? "min(35vw, 380px)" : interactionRegionStyle.width,
+            height: isOverlayGrounded ? "min(52vh, 540px)" : reducedEffects ? "min(52vh, 520px)" : interactionRegionStyle.height,
           }}
           aria-label="Sarah interaction region"
       >
         <div
           style={{
             ...avatarMotionStyle,
-            transform: `${stageMotion.transform} scale(${dynamicAvatarScale})`,
+            transform: `${stageMotion.transform} scale(${dynamicAvatarScale * overlayScaleBoost})`,
             transition: "transform 380ms cubic-bezier(0.22, 0.61, 0.36, 1)",
           }}
         >
@@ -154,10 +155,10 @@ const avatarMotionStyle: CSSProperties = {
 const avatarAnchorStyle: CSSProperties = {
   position: "absolute",
   left: "50%",
-  top: "50%",
+  top: "51%",
   width: "min(24vw, 270px)",
-  height: "min(46vh, 420px)",
-  maxHeight: "48vh",
+  height: "min(48vh, 450px)",
+  maxHeight: "50vh",
 };
 
 const metaStyle: CSSProperties = {
