@@ -33,6 +33,7 @@ import { useSettingsStore } from "../hooks/useSettingsStore";
 import { computeWebGroundedSignature, normalizeWebGroundedPayload } from "../lib/webGroundedAnswer";
 import { resolveAvatarExpression } from "../lib/avatarExpressionResolver";
 import { resolvePlatformProfile } from "../lib/platformProfile";
+import type { SemanticPresenceMode } from "../lib/presenceController";
 
 const EXPRESSION_REACTION_COOLDOWN_MS = {
   interrupted: 2400,
@@ -48,6 +49,9 @@ const SEARCH_PRESENTATION_POLISH_MS = {
 const SEARCH_PRESENTATION_CUE_DEFAULTS = {
   noneAt: 0,
 } as const;
+
+const FOLLOW_UP_READY_WINDOW_MS = 6200;
+const SEARCH_WORKING_WINDOW_MS = 7600;
 
 type PresenceState = "idle" | "listening" | "thinking" | "speaking" | "presenting_search_results";
 
@@ -228,9 +232,20 @@ export function OverlayCompanionPage() {
           ? "speaking"
           : baseAvatarState.mode === "listening"
             ? "listening"
-            : baseAvatarState.mode === "thinking"
+          : baseAvatarState.mode === "thinking"
               ? "thinking"
               : "idle";
+  const semanticNowMs = Date.now();
+  const semanticPresenceMode: SemanticPresenceMode =
+    baseAvatarState.mode === "thinking" && !isWebAnswerVisible && semanticNowMs - searchStartedAt < SEARCH_WORKING_WINDOW_MS
+      ? "searching_browsing"
+      : isWebAnswerVisible && !isSpeaking
+        ? "processing_results"
+        : isSpeaking && !isWebAnswerVisible
+          ? "direct_answering"
+          : presenceState === "idle" && semanticNowMs - Math.max(lastReplyAt, speakingEndedAt) < FOLLOW_UP_READY_WINDOW_MS
+            ? "waiting_follow_up"
+            : "neutral";
   const lastInteractionAt = Math.max(lastUserSpeechAt, lastReplyAt, listeningStartedAt, interactionStartedAt);
   const expressionState = resolveAvatarExpression({
     nowMs: expressionClockMs,
@@ -793,6 +808,7 @@ export function OverlayCompanionPage() {
             searchFindingsRevealAtMs: searchFindingsRevealAt,
             searchSourcesRevealAtMs: searchSourcesRevealAt,
             searchSettledAtMs: searchRevealSettledAt,
+            semanticMode: semanticPresenceMode,
           }}
         />
         {shouldShowCaptions ? (

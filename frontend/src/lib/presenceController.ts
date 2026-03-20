@@ -4,6 +4,7 @@ import { IdleBehaviorManager } from "./idleBehaviorManager";
 
 export type AttentionTarget = "viewer_center" | "captions_area" | "overlay_area" | "transcript_source" | "web_answer_box" | "idle_neutral" | "inward_focus";
 export type InteractionPresenceState = "idle" | "listening" | "thinking" | "speaking";
+export type SemanticPresenceMode = "neutral" | "searching_browsing" | "processing_results" | "direct_answering" | "waiting_follow_up";
 
 export type PresenceInput = {
   mode: MovementState;
@@ -20,6 +21,7 @@ export type PresenceInput = {
   searchFindingsRevealAtMs: number;
   searchSourcesRevealAtMs: number;
   searchSettledAtMs: number;
+  semanticMode: SemanticPresenceMode;
 };
 
 export type PresenceOutput = {
@@ -32,6 +34,7 @@ export type PresenceOutput = {
   activityState: "active" | "idle";
   idleBehavior: "none" | "wander" | "corner_rest";
   interactionPresenceState: InteractionPresenceState;
+  semanticMode: SemanticPresenceMode;
   poseTiltDeg: number;
   poseYOffset: number;
 };
@@ -116,6 +119,45 @@ export const PRESENCE_TUNING = {
       fadeMs: 780,
     },
   },
+  semanticPresence: {
+    transitionMs: 360,
+    searching_browsing: {
+      tiltDeg: 0.24,
+      yOffset: -0.0004,
+      forwardX: 0.0007,
+      idleMicroDampen: 0.45,
+      movementWillingnessScale: 0.84,
+      attentionX: 0.003,
+      attentionY: -0.001,
+    },
+    processing_results: {
+      tiltDeg: 0.3,
+      yOffset: -0.0006,
+      forwardX: 0.0004,
+      idleMicroDampen: 0.62,
+      movementWillingnessScale: 0.9,
+      attentionX: 0.0022,
+      attentionY: -0.0022,
+    },
+    direct_answering: {
+      tiltDeg: 0,
+      yOffset: 0,
+      forwardX: 0,
+      idleMicroDampen: 1,
+      movementWillingnessScale: 1,
+      attentionX: 0,
+      attentionY: 0,
+    },
+    waiting_follow_up: {
+      tiltDeg: 0.22,
+      yOffset: -0.0003,
+      forwardX: 0.0005,
+      idleMicroDampen: 0.58,
+      movementWillingnessScale: 0.78,
+      attentionX: 0.0014,
+      attentionY: 0.001,
+    },
+  },
 } as const;
 
 function clamp(value: number, min: number, max: number) {
@@ -141,6 +183,8 @@ export class PresenceController {
   private idleBehaviorManager = new IdleBehaviorManager();
   private interactionPresenceState: InteractionPresenceState = "idle";
   private interactionPose = { tiltDeg: 0, yOffset: 0, xOffset: 0 };
+  private semanticMode: SemanticPresenceMode = "neutral";
+  private semanticPose = { tiltDeg: 0, yOffset: 0, xOffset: 0 };
   private thinkingPulse = {
     active: false,
     startedAtMs: 0,
@@ -186,11 +230,16 @@ export class PresenceController {
     const baseTarget = idleBehavior.targetPosition ?? zones[this.zone];
     const interactionPresenceState = this.resolveInteractionPresenceState(input);
     const interactionOffset = this.resolveInteractionPoseOffset(interactionPresenceState, input);
+    const semanticPresence = this.resolveSemanticPresenceOverlay(input);
     const presentationCueOffset = this.resolvePresentationCueOffset(input);
-    const microOffset = this.idleMicroOffset(input, idleBehavior.idleBehavior);
+    const microOffset = this.idleMicroOffset(input, idleBehavior.idleBehavior, semanticPresence.idleMicroDampen);
     const proposedTarget: StagePoint = {
-      x: clamp(baseTarget.x + microOffset.x + interactionOffset.xOffset + presentationCueOffset.xOffset, 0.08, 0.92),
-      y: clamp(baseTarget.y + microOffset.y + idleBehavior.poseYOffset + interactionOffset.yOffset + presentationCueOffset.yOffset, 0.28, 0.82),
+      x: clamp(baseTarget.x + microOffset.x + interactionOffset.xOffset + semanticPresence.poseOffset.xOffset + presentationCueOffset.xOffset, 0.08, 0.92),
+      y: clamp(
+        baseTarget.y + microOffset.y + idleBehavior.poseYOffset + interactionOffset.yOffset + semanticPresence.poseOffset.yOffset + presentationCueOffset.yOffset,
+        0.28,
+        0.82
+      ),
     };
 
     const currentDelta = distance(proposedTarget, this.lastTarget);
@@ -198,7 +247,10 @@ export class PresenceController {
       this.lastTarget = proposedTarget;
     }
 
-    const attention = this.resolveAttention(input, presentationCueOffset.attentionOffset);
+    const attention = this.resolveAttention(input, {
+      x: presentationCueOffset.attentionOffset.x + semanticPresence.attentionOffset.x,
+      y: presentationCueOffset.attentionOffset.y + semanticPresence.attentionOffset.y,
+    });
     this.focusOffset.x = smooth(this.focusOffset.x, attention.offset.x, PRESENCE_TUNING.focusSmoothing * 60, input.deltaSeconds);
     this.focusOffset.y = smooth(this.focusOffset.y, attention.offset.y, PRESENCE_TUNING.focusSmoothing * 60, input.deltaSeconds);
 
@@ -208,12 +260,54 @@ export class PresenceController {
       attentionTarget: attention.target,
       attentionOffset: { ...this.focusOffset },
       engagementLevel: this.engagement,
-      movementWillingness: idleBehavior.movementWillingness ?? this.movementWillingness(input.mode, input),
+      movementWillingness:
+        (idleBehavior.movementWillingness ?? this.movementWillingness(input.mode, input)) * semanticPresence.movementWillingnessScale,
       activityState: idleBehavior.activityState,
       idleBehavior: idleBehavior.idleBehavior,
       interactionPresenceState,
-      poseTiltDeg: idleBehavior.poseTiltDeg + interactionOffset.tiltDeg + presentationCueOffset.tiltDeg,
-      poseYOffset: idleBehavior.poseYOffset + interactionOffset.yOffset + presentationCueOffset.yOffset,
+      semanticMode: semanticPresence.mode,
+      poseTiltDeg: idleBehavior.poseTiltDeg + interactionOffset.tiltDeg + semanticPresence.poseOffset.tiltDeg + presentationCueOffset.tiltDeg,
+      poseYOffset: idleBehavior.poseYOffset + interactionOffset.yOffset + semanticPresence.poseOffset.yOffset + presentationCueOffset.yOffset,
+    };
+  }
+
+  private resolveSemanticPresenceOverlay(input: PresenceInput): {
+    mode: SemanticPresenceMode;
+    poseOffset: { tiltDeg: number; yOffset: number; xOffset: number };
+    attentionOffset: StagePoint;
+    movementWillingnessScale: number;
+    idleMicroDampen: number;
+  } {
+    const mode = input.semanticMode;
+    const transitionMs = PRESENCE_TUNING.semanticPresence.transitionMs;
+    const ratePerSecond = 1000 / Math.max(120, transitionMs);
+    if (mode !== this.semanticMode) {
+      this.semanticMode = mode;
+    }
+
+    if (mode === "neutral") {
+      this.semanticPose.tiltDeg = smooth(this.semanticPose.tiltDeg, 0, ratePerSecond, input.deltaSeconds);
+      this.semanticPose.yOffset = smooth(this.semanticPose.yOffset, 0, ratePerSecond, input.deltaSeconds);
+      this.semanticPose.xOffset = smooth(this.semanticPose.xOffset, 0, ratePerSecond, input.deltaSeconds);
+      return {
+        mode,
+        poseOffset: { ...this.semanticPose },
+        attentionOffset: { x: 0, y: 0 },
+        movementWillingnessScale: 1,
+        idleMicroDampen: 1,
+      };
+    }
+
+    const tuning = PRESENCE_TUNING.semanticPresence[mode];
+    this.semanticPose.tiltDeg = smooth(this.semanticPose.tiltDeg, tuning.tiltDeg, ratePerSecond, input.deltaSeconds);
+    this.semanticPose.yOffset = smooth(this.semanticPose.yOffset, tuning.yOffset, ratePerSecond, input.deltaSeconds);
+    this.semanticPose.xOffset = smooth(this.semanticPose.xOffset, tuning.forwardX, ratePerSecond, input.deltaSeconds);
+    return {
+      mode,
+      poseOffset: { ...this.semanticPose },
+      attentionOffset: { x: tuning.attentionX, y: tuning.attentionY },
+      movementWillingnessScale: tuning.movementWillingnessScale,
+      idleMicroDampen: tuning.idleMicroDampen,
     };
   }
 
@@ -424,14 +518,14 @@ export class PresenceController {
     return { target: "idle_neutral", offset: { x: 0.003 * Math.sin(input.nowMs * 0.0006), y: 0.002 } };
   }
 
-  private idleMicroOffset(input: PresenceInput, idleBehavior: "none" | "wander" | "corner_rest"): StagePoint {
+  private idleMicroOffset(input: PresenceInput, idleBehavior: "none" | "wander" | "corner_rest", dampen = 1): StagePoint {
     if (input.mode !== "idle") return { x: 0, y: 0 };
     if (idleBehavior === "corner_rest") return { x: 0, y: 0 };
     if (this.engagement > 0.55) return { x: 0, y: 0 };
     if (input.overlays.shutdownVisible) return { x: 0, y: 0 };
 
-    const x = Math.sin(input.nowMs * 0.00027) * PRESENCE_TUNING.idleMicroShiftAmplitude;
-    const y = Math.cos(input.nowMs * 0.00023) * PRESENCE_TUNING.idleMicroShiftAmplitude * 0.4;
+    const x = Math.sin(input.nowMs * 0.00027) * PRESENCE_TUNING.idleMicroShiftAmplitude * dampen;
+    const y = Math.cos(input.nowMs * 0.00023) * PRESENCE_TUNING.idleMicroShiftAmplitude * 0.4 * dampen;
     return { x, y };
   }
 }

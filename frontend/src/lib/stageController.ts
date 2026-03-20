@@ -3,7 +3,7 @@ import { MovementController, type MovementSnapshot, type MovementState } from ".
 import type { OverlayVisibility, StageZoneName } from "./stageZones";
 import { createScreenEnvironment } from "./screenEnvironment";
 import { usePresenceBehavior, type PresenceSignals } from "../hooks/usePresenceBehavior";
-import type { AttentionTarget, InteractionPresenceState } from "./presenceController";
+import type { AttentionTarget, InteractionPresenceState, SemanticPresenceMode } from "./presenceController";
 import type { DisplayModeState } from "./displayMode";
 import { resolveDesktopGroundedMotion } from "./desktopGroundController";
 
@@ -42,6 +42,7 @@ export type StageMotion = {
   activityState: "active" | "idle";
   idleBehavior: "none" | "wander" | "corner_rest";
   interactionPresenceState: InteractionPresenceState;
+  semanticMode: SemanticPresenceMode;
   poseTiltDeg: number;
 };
 
@@ -102,6 +103,7 @@ export function useStageController(
     activityState: "active" as const,
     idleBehavior: "none" as const,
     interactionPresenceState: "idle" as const,
+    semanticMode: "neutral" as const,
     poseTiltDeg: 0,
   });
 
@@ -270,6 +272,7 @@ export function useStageController(
         activityState: presence.activityState,
         idleBehavior: presence.idleBehavior,
         interactionPresenceState: presence.interactionPresenceState,
+        semanticMode: presence.semanticMode,
         poseTiltDeg: presence.poseTiltDeg,
       });
 
