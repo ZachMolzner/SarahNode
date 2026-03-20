@@ -1,198 +1,165 @@
-# SarahNode — Local-First Personal AI Assistant
+# SarahNode
 
-SarahNode is a practical **local-first personal AI assistant** you can run on your own machine and access from computer, tablet, and phone.
+SarahNode is a local-first AI companion built as a full-stack desktop/web system: a FastAPI orchestration backend, a React + TypeScript realtime client, and a Tauri shell for desktop runtime and tray-native behavior.
 
-It uses:
-- **FastAPI** backend
-- **React + Vite + TypeScript** frontend
-- **WebSocket event streaming** for real-time state updates
-- **OpenAI** (optional) for real LLM responses and speech-to-text
-- **ElevenLabs** (optional) for real TTS audio
-- **Sarah.vrm** as the default visible assistant avatar
-
-Desktop branding identity is standardized to:
-- **App name**: `SarahNode`
-- **Desktop window title**: `SarahNode`
+This project is positioned as an engineering portfolio piece focused on practical system design decisions: provider abstraction, realtime event orchestration, identity-aware dialogue context, and frontend presence behavior that reacts to assistant state instead of scripted animation loops.
 
 ---
 
-## Key Features
+## 1) Project overview
 
-- Real-time assistant flow: message → moderation → LLM → optional TTS → live UI events.
-- Voice push-to-talk flow: mic record → `/api/assistant/transcribe` → transcript → existing assistant message pipeline.
-- Provider abstraction:
-  - `LLM_PROVIDER=auto|mock|openai`
-  - `TTS_PROVIDER=auto|mock|elevenlabs`
-  - `STT_PROVIDER=auto|openai`
-- Automatic fallback behavior and clear errors when required credentials are missing.
-- Modern desktop companion layout with clean assistant-first panels and restrained visual treatment.
-- Companion-safe avatar framing with capped full-body height (about half-screen by default).
-- Presence behavior system: Sarah now uses deterministic contextual stage behavior (not random motion) to choose where to stand, when to approach, and when to settle.
-- Reactive gesture/performance system layered above movement + presence for intentional startup greeting, listening acknowledgments, thinking posture, response-delivery emphasis, and calm reset behavior.
-- Stage zones and contextual occupancy: center presentation, relaxed side anchors, listening anchor, caption-friendly zone, and shutdown settle zone.
-- Engagement-based positioning: interaction heat rises during voice/transcript/reply activity and softly decays during idle to guide approach/retreat behavior.
-- Attention and focus behavior: Sarah blends viewer focus, neutral idle gaze, thinking/inward focus, and subtle caption/overlay-aware focus shifts.
-- Idle micro-behaviors: gentle low-amplitude shifts and posture/gaze adjustments when calm, with suppression during listening/thinking/shutdown.
-- Overlay awareness: menu/transcript/caption/shutdown overlays softly bias zone selection to reduce visual conflict without mechanical snapping.
-- Overlay grounded locomotion mode: in overlay display mode Sarah uses a desktop-ground model (bottom-edge walking path, horizontal-first travel, edge-zone settling) instead of free-stage floating.
-- Edge-aware resting behavior: Sarah can subtly lean/perch near left/right boundaries and relax into low-motion posture approximations when idle.
-- Mode-aware stage model: immersive mode keeps cinematic freer presentation while overlay mode uses grounded desktop behavior through one shared movement stack.
-- Desktop companion shell behavior: tray-first lifecycle (close hides to tray when enabled), always-on-top toggle, overlay/immersive toggles, close-to-tray toggle parity, and summon hotkey (`Ctrl+Shift+Space`) for deterministic restore/focus.
-- Persistent local settings model + reusable frontend settings store to keep desktop preferences across launches.
-- Web-grounded answer textbox beside Sarah with stale-event suppression, replacement behavior for newer answers, auto-dismiss + interaction pinning, and collapsible source details (with optional URLs).
-- Presence “presenting” behavior for web-grounded moments: Sarah shifts attention toward the web summary panel and can read key bullets aloud when voice output is enabled.
-- Assistant capability routing readiness: lightweight intent buckets for general Q&A, information lookup, web/browse tasks, coding help, shutdown commands, and greeting/smalltalk.
-- Intent-aware response style steering: coding requests get structured guidance; lookup/browse requests explicitly indicate when live web verification is needed vs local context answers.
-- Subtitle-style on-stage captions for user transcripts and Sarah replies (lightweight, auto-fading, and separate from transcript history).
-- Centralized voice orchestration layer that is ElevenLabs-first with graceful browser speech fallback.
-- Startup greeting, assistant replies, and shutdown goodbye now all route through one shared voice orchestration API.
-- Sarah voice profile tuning is centralized (`frontend/src/lib/voiceProfile.ts`) for tone + ElevenLabs + browser fallback behavior.
-- Startup and shutdown use curated line pools with anti-repeat selection (`frontend/src/lib/voiceLines.ts`).
-- Startup includes a one-time happy/excited Sarah greeting with caption sync and provider fallback handling.
-- Shutdown includes a dedicated goodbye line plus a respectful Japanese-bow-inspired performance before close/fallback handling.
-- Minimal overlays for mic/listening, connection status, optional transcript, and tucked-away controls.
-- Voice shutdown intent handling with confirmation and graceful browser-safe fallback.
-- VRM avatar panel with Sarah.vrm loaded from `/assets/Sarah.vrm`.
-- Responsive experience across desktop/tablet/phone.
+SarahNode provides a conversational assistant experience that combines:
+
+- **Text + voice interaction** (message input and push-to-talk transcription).
+- **Realtime state streaming** from backend to frontend over WebSocket events.
+- **Avatar-driven companion UI** with deterministic presence and gesture layers.
+- **Optional web-grounded answers** that can surface concise findings and sources.
+- **Desktop-first runtime model** through Tauri (tray menu, summon hotkey, close-to-tray, overlay mode, sidecar backend process).
+
+The architecture is intentionally modular so core assistant behavior can run with mock providers locally, then upgrade to live providers (OpenAI/ElevenLabs/search) via configuration.
 
 ---
 
-## Architecture
+## 2) Why SarahNode is different
 
-### Backend (`/backend`)
-- FastAPI API routes:
-  - `POST /api/assistant/messages`
-  - `POST /api/assistant/transcribe`
-  - `POST /api/assistant/voice/event`
-  - `GET /api/assistant/state`
-  - `GET /health`
-  - `WS /ws/events`
-- Stream orchestrator handles processing, state changes, and websocket event fanout.
-- LLM, TTS, and STT adapters are selected at startup with robust fallback logging.
-- Web search is optional and disabled by default for local-runtime startup safety.
-- ChatGPT-style web browsing path: freshness policy → search provider → top-page fetch/extract → LLM synthesis with source metadata retention.
+SarahNode is not just “chat UI + LLM API.” It emphasizes **runtime orchestration and behavior systems**:
 
-
-### Optional Browsing Flow
-When browsing is explicitly enabled and a message indicates freshness/web lookup need, Sarah runs:
-1. capability routing + browsing policy decision
-2. normalized provider search (Brave or SerpAPI)
-3. fetch of a small number of top pages with timeout/failure tolerance
-4. text extraction + truncation for relevance
-5. LLM synthesis into a direct answer first, then concise support
-6. source metadata retention for future UI surfacing
-
-If no provider is configured, Sarah answers that live browsing is unavailable and continues with local context.
-
-### Frontend (`/frontend`)
-- Modern React desktop companion stage with Sarah anchored near desktop baseline and side panels for controls/web answers.
-- Push-to-talk microphone capture via `getUserMedia` + `MediaRecorder`.
-- Transcript is auto-submitted through the existing assistant text message path.
-- Avatar panel renders `Sarah.vrm` via Three.js + `@pixiv/three-vrm` with smooth mood/state transitions.
-- Presence layer is implemented above raw movement interpolation (`presenceController` + `stageZones` + `usePresenceBehavior`) and feeds zone, target, engagement, and focus outputs into the existing movement/VRM pipeline.
-- Gesture/performance layer is implemented above presence and locomotion (`gestureController` + `useGesturePerformance`) and contributes deterministic expressive offsets, priorities, cooldowns, and recovery easing.
-- Speaking sync improvements: talking motion now follows TTS playback timing when available, with text-duration fallback when no audio payload exists.
-- Voice orchestration module (`voiceOrchestrator`) provides `speakText`, `stopSpeaking`, and status/debug metadata across ElevenLabs and browser fallback paths.
-- Browser + Tauri-aware stage/screen abstraction (`ScreenEnvironment` + stage bounds provider) with active-region seams for future native work-area/taskbar geometry support.
-- Overlay movement controller (`desktopGroundController`) models `groundLineY`, left/right travel boundaries, edge zones, and perch candidate behavior while preserving browser-safe fallback.
-- Auto-play + replay support for generated speech audio.
+- **Provider decoupling by adapter contract** for LLM, STT, TTS, avatar, and web search so runtime capability can degrade gracefully instead of failing hard.
+- **Event-first orchestration** where backend state changes (moderation, routing, reply selection, speaking state, web grounding) are emitted as explicit events that power UI behavior.
+- **Identity-aware addressing** in the dialogue path (speaker resolution, addressing mode/tone directive, persisted context).
+- **Deterministic presence layer** in the frontend (engagement-aware stage movement, search presentation pose, overlay-aware positioning) rather than purely random idle motion.
+- **Desktop operations details** (system tray lifecycle, always-on-top/overlay toggles, summon shortcut, backend sidecar startup/teardown).
 
 ---
 
+## 3) Core features
 
-## Final Runtime Target (Windows local .exe)
+- Priority message queue with cooldown-aware processing.
+- Safety/moderation gate before response generation.
+- Capability routing (`ask_general`, `lookup_information`, `browse_web`, `coding_help`, `shutdown_command`, `smalltalk_or_greeting`).
+- Optional web lookup flow with fetch/extract/synthesis and source metadata retention.
+- TTS speaking synchronization events and frontend playback coordination.
+- Push-to-talk transcription endpoint integrated into the same assistant pipeline.
+- Web-grounded answer textbox with staged reveal and collapsible source list.
+- Overlay/immersive presence modes with desktop-ground movement behavior.
+- Persistent desktop settings (`always_on_top`, `overlay_mode`, `close_to_tray_on_close`, `voice_output_enabled`).
 
-SarahNode is now aligned to this runtime model:
+---
 
-- **Final product target:** one self-contained Windows desktop app (`SarahNode.exe`).
-- **Always local:** frontend UI, Tauri shell, backend/orchestration, profiles, memory, identity logic, settings, avatar/presence logic, and persistence.
-- **Allowed external dependencies only:** LLM provider, STT provider, and TTS provider.
-- **No manual backend startup** for normal desktop use.
-- **Optional LAN companion mode:** phone/tablet clients connect to the Windows-hosted backend when enabled.
+## 4) Architecture overview
 
-### Runtime alignment snapshot
+```text
+┌──────────────────────────────────────────┐
+│                Frontend                  │
+│ React + Vite + TypeScript + Three/VRM   │
+│ - OverlayCompanionPage                   │
+│ - Presence + gesture + search presentation│
+└───────────────┬──────────────────────────┘
+                │ REST + WebSocket
+                ▼
+┌──────────────────────────────────────────┐
+│            FastAPI Backend               │
+│ - Routers (/messages, /transcribe, /ws) │
+│ - StreamOrchestrator worker + fanout     │
+│ - DialogueEngine + moderation + policy   │
+│ - MemoryManager + IdentityService        │
+└───────┬──────────────┬───────────────┬───┘
+        │              │               │
+        ▼              ▼               ▼
+   LLM Adapter     STT/TTS Adapters   Web Search + Page Fetch/Extract
+ (mock/openai)   (openai/elevenlabs) (none/brave/serpapi optional)
 
-| Area | Current alignment |
-|---|---|
-| Desktop app entrypoint | Tauri app launches as the primary runtime entrypoint. |
-| Backend startup model | Tauri now attempts backend sidecar startup automatically on app boot. |
-| Local settings persistence | Desktop settings persist in Tauri app config directory (`desktop-settings.json`). |
-| Local identity/memory persistence | Backend identity + memory state persists to `LOCAL_DATA_DIR/identity_memory.json` (defaults to local data folder). |
-| Startup without cloud providers | Backend falls back to mock/disabled providers and still boots. |
-| Web browsing requirement | Disabled by default (`WEB_SEARCH_PROVIDER=none`) and optional to enable. |
-| LAN companion mode | Supported as opt-in by binding backend to host LAN interface and opening firewall on trusted networks. |
+Desktop runtime (optional but primary target):
+Tauri shell manages window/tray/shortcut/settings and starts backend sidecar.
+```
 
-### Sidecar startup flow (desktop)
+---
 
-1. Tauri bootstraps local app state and window/tray settings.
-2. Tauri attempts to start backend automatically:
-   - **Dev:** `python run_server.py` in `/backend`.
-   - **Release target:** packaged `sidecar/sarahnode-backend.exe`.
-3. Tauri injects runtime env values (`LOCAL_DATA_DIR`, `WEB_SEARCH_PROVIDER=none`, local-only bind default).
-4. Frontend connects to local backend endpoints.
-5. On app exit, desktop shell terminates the sidecar process.
+## 5) Frontend behavior / presence system
 
-## Setup
+Frontend behavior is built from layered controllers rather than one monolithic animation module:
 
-## 1) Backend
+- **Avatar state layer** (`useAvatarState`) reacts to streamed assistant events.
+- **Presence mode derivation** maps interaction context into semantic modes (speaking, presenting search results, listening, shutdown, idle transitions).
+- **Presence controller stack** (zones, movement, overlay constraints, idle behavior) handles where Sarah should stand and how she settles.
+- **Gesture/performance layer** adds deterministic expressive moments (startup greeting, listening acknowledgment, thinking/speaking posture, shutdown performance).
+- **Expression resolver** fuses timing signals (recent interaction, search activity, interruptions/errors) into mood/expression outputs.
+
+This split keeps behavior understandable and testable: state comes from backend events, while movement/presentation is handled by dedicated frontend systems.
+
+---
+
+## 6) Search presentation / reporting flow
+
+SarahNode treats web-grounded responses as a separate presentation path:
+
+1. Backend classifies request capability and browsing policy.
+2. If enabled and needed, search provider returns ranked results.
+3. Top pages are fetched + text-extracted with bounded limits/timeouts.
+4. Dialogue synthesis uses extracted context and returns reply.
+5. Backend emits `web_grounded_answer` event containing title, concise bullets, sources, and provider metadata.
+6. Frontend normalizes payload, suppresses stale/duplicate updates, and mounts `WebAnswerTextbox`.
+7. Textbox reveals in stages (heading → findings → settled), and source visibility can be expanded/collapsed.
+
+This creates a readable “search report” UI surface without blocking the core conversational reply path.
+
+---
+
+## 7) Tech stack
+
+**Backend**
+- Python
+- FastAPI + Uvicorn
+- Pydantic / pydantic-settings
+- Adapter-based integrations for OpenAI, ElevenLabs, Brave Search, SerpAPI
+
+**Frontend**
+- React 18
+- TypeScript
+- Vite
+- Three.js + `@pixiv/three-vrm`
+
+**Desktop shell**
+- Tauri 2 (Rust)
+- Tray menu + global shortcut plugin
+
+---
+
+## 8) Local development setup
+
+> SarahNode can run as web app (frontend + backend dev servers) or as Tauri desktop app that launches the frontend and manages desktop behavior.
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- npm
+- (Optional) Rust toolchain for Tauri development
+
+### Backend (FastAPI)
 
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows PowerShell: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-cp .env.example .env
-```
-
-Run backend (default local-only):
-
-```bash
 python run_server.py
 ```
 
-### Optional LAN companion mode (Windows host + tablet/phone clients)
+Backend defaults:
+- host: `0.0.0.0`
+- port: `8000`
+- env file support via `backend/.env` (optional)
 
-1. In backend runtime env, enable LAN bind:
-
-```env
-BACKEND_BIND_ALL_INTERFACES=1
-BACKEND_PORT=8000
-CORS_ALLOWED_ORIGINS=*
-```
-
-2. Start backend from the Windows host:
-
-```bash
-python run_server.py
-```
-
-3. Find the host LAN IP on Windows (example `192.168.1.44`) and keep port `8000` open on local firewall for trusted/private network only.
-
-4. Start frontend so mobile can load it from the same host (dev mode):
-
-```bash
-cd frontend
-npm run dev -- --host 0.0.0.0 --port 5173
-```
-
-5. On tablet/phone (same Wi-Fi), open:
-   - `http://<WINDOWS_LAN_IP>:5173`
-
-By default the web app auto-targets the same hostname for API/WS (`:8000`), so no extra mobile-specific frontend env values are required unless explicit overrides are needed.
-
-## 2) Frontend
+### Frontend (Vite)
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-
-## 3) Desktop Shell (Tauri 2)
-
-SarahNode now includes a **Tauri 2 desktop shell** that wraps the existing React + Vite frontend (it does not replace the web stack).
+### Desktop shell (Tauri)
 
 ```bash
 cd frontend
@@ -200,287 +167,67 @@ npm install
 npm run tauri:dev
 ```
 
-Production desktop build:
+### Optional provider configuration
 
-```bash
-cd frontend
-npm install
-npm run tauri:build
+Set environment variables (typically in `backend/.env`) as needed:
+
+- `LLM_PROVIDER` (`auto|mock|openai`)
+- `STT_PROVIDER` (`auto|openai`)
+- `TTS_PROVIDER` (`auto|mock|elevenlabs`)
+- `OPENAI_API_KEY`
+- `ELEVENLABS_API_KEY`
+- `WEB_SEARCH_PROVIDER` (`none|brave|serpapi`)
+- `BRAVE_SEARCH_API_KEY` / `SERPAPI_API_KEY`
+
+---
+
+## 9) Current limitations
+
+- Web browsing is **opt-in** and disabled by default (`WEB_SEARCH_PROVIDER=none`), so live verification requires explicit configuration.
+- `web_grounded_answer` bullets are currently derived from search snippets/context and are intentionally concise (not a full citation engine).
+- Display mode defaults differ across layers (desktop settings are overlay-first; parser defaults are immersive unless overridden).
+- Tauri release packaging expects a sidecar backend executable path and still needs end-to-end packaging validation in production distribution.
+- Main page structure still carries dashboard-era naming in some areas despite companion-first runtime behavior.
+
+---
+
+## 10) Roadmap / next steps
+
+Near-term engineering priorities:
+
+1. **Production packaging hardening**
+   - Validate sidecar build/distribution path and installer workflow.
+2. **Search grounding quality**
+   - Improve source ranking, attribution detail, and finding distillation quality.
+3. **Presence system observability**
+   - Add diagnostics/telemetry hooks for mode transitions and movement decisions.
+4. **Frontend modularity pass**
+   - Continue decomposing page-level orchestration into focused feature slices.
+5. **Expanded automated tests**
+   - Add higher-level integration coverage across event stream, search path, and desktop setting lifecycles.
+
+---
+
+## Repository structure (quick map)
+
+```text
+/backend
+  /app
+    /adapters      # provider contracts + implementations
+    /services      # dialogue, search, fetch/extract, voice, policy
+    /orchestration # stream orchestrator
+    /routers        # API and WebSocket routes
+    /memory         # state manager + persistence glue
+/frontend
+  /src             # React UI, behavior hooks, avatar/presence logic
+  /src-tauri       # desktop shell (Rust/Tauri)
+/docs              # audits, roadmap notes, and smoke checklist
 ```
 
-Tauri integration uses:
-- `beforeDevCommand`: starts the existing Vite dev server
-- `devUrl`: points Tauri to Vite during development
-- `beforeBuildCommand`: runs the existing frontend build
-- `frontendDist`: points Tauri to `frontend/dist` output
-
-Desktop launch behavior defaults:
-- App title remains `SarahNode`
-- Frameless presentation for reduced OS chrome (`decorations: false`)
-- Transparent native window enabled (`transparent: true`)
-- Startup display mode is configurable with `VITE_DISPLAY_MODE=immersive|overlay`
-- Immersive mode requests fullscreen at runtime; overlay mode stays windowed and transparent
-
-Overlay mode details (Tauri desktop):
-- Native window is transparent and frameless, so there is no visible rectangular app box.
-- Cinematic stage background layers are disabled; Sarah is the primary visible element.
-- Empty space is click-through via `setIgnoreCursorEvents(true, { forward: true })`.
-- Sarah interaction region temporarily re-enables clicks, then restores click-through on leave.
-- Interaction hit-testing is region/bounds-based (not per-pixel mesh hit-testing).
-
-> Packaging transition status: development still uses Python backend runtime, but desktop startup no longer requires users to manually start backend. Release packaging target remains a single Windows app bundle with a bundled backend sidecar executable.
-
-### Desktop Icon Branding
-
-The source icon is maintained as text/vector at:
-
-- `frontend/src-tauri/icons/icon.svg`
-
-Design: bold **“S”** mark in blue with white outline for readability at small sizes.
-
-To generate platform binaries locally (not committed in git), run:
-
-```bash
-cd frontend/src-tauri
-cargo tauri icon icons/icon.svg
-```
-
-This generates standard Tauri icon outputs including PNG sizes and Windows `.ico`.
-
-### Changing Window Behavior Later
-
-If you want a less immersive startup for debugging or alternate workflows, edit:
-
-- `frontend/src-tauri/tauri.conf.json` → `app.windows[0]`
-
-Common toggles:
-- Set `fullscreen` to `false`
-- Keep `maximized: true` for large-window fallback
-- Set `decorations` to `true` to restore native title bar
-- Keep `resizable: true` for development flexibility
-
-### Tauri Permissions for Overlay Mode
-
-Overlay click-through and runtime mode switching require explicit window permissions in:
-
-- `frontend/src-tauri/capabilities/default.json`
-
-Added permissions:
-- `core:window:allow-set-ignore-cursor-events`
-- `core:window:allow-set-fullscreen`
-- `core:window:allow-show`
-- `core:window:allow-hide`
-- `core:window:allow-minimize`
-- `core:window:allow-unminimize`
-- `core:window:allow-set-focus`
-- `core:window:allow-set-always-on-top`
-- `core:window:allow-set-decorations`
-
-These are intentionally minimal additions on top of the existing close permission.
-
----
-
-## Platform Experience Model
-
-- **Windows PC (primary host):** full SarahNode experience (Tauri shell + tray + always-on-top + close-to-tray + summon hotkey + native window controls).
-- **Galaxy tablet (LAN companion web client):** responsive touch companion; no native tray/window-management controls; visual effects may be reduced depending on viewport/performance.
-- **Samsung phone (compact LAN companion web client):** responsive compact companion; reduced visual effects by default; desktop-only controls hidden.
-
-### Desktop-only features
-
-The following are intentionally desktop-only and guarded in web/mobile runtime:
-- Tray lifecycle
-- Always-on-top
-- Close-to-tray
-- Global summon hotkey (`Ctrl+Shift+Space`)
-- Native window controls / overlay click-through
-
-### Mobile/tablet behavior notes
-
-- Mobile browsers require a user gesture before reliable audio playback; SarahNode prompts for a tap to unlock audio.
-- Mic capture depends on browser support for `getUserMedia` + `MediaRecorder`; unsupported browsers degrade with an explanatory message instead of crashing.
-- On phone-sized devices, SarahNode uses reduced visual effects for smoother performance.
-
----
-
-## Runtime Modes
-
-- **Browser mode**
-  - Run frontend with `npm run dev` and backend separately.
-  - Shutdown uses browser-safe close fallback behavior when tab close is blocked.
-  - Overlay visuals can be previewed, but native click-through/window behavior is not available in browser runtime.
-
-- **Tauri desktop mode**
-  - Run frontend with `npm run tauri:dev` and backend separately.
-  - Shutdown flow can issue a **real native window close** through Tauri APIs.
-  - Overlay mode includes transparent window + click-through behavior with a bounded Sarah interaction region.
-  - Closing the main window hides SarahNode to tray by default (instead of quitting).
-  - Tray menu supports: Show/Hide (label tracks visibility), Always-on-top toggle, Overlay mode toggle, Hide-on-close toggle, and Quit.
-  - Tray checkmark/label state refreshes after startup restore, tray actions, settings panel changes, and hide/restore transitions.
-  - Global summon shortcut: `Ctrl+Shift+Space` (hidden => restore/focus, visible => bring-to-front/focus).
-
-### Desktop Settings (Persisted)
-
-SarahNode now persists desktop settings locally (frontend local storage + Tauri desktop config file) so preferences survive relaunches:
-
-Desktop startup now waits for native settings hydration before rendering mode-specific UI to avoid overlay/immersive flash mismatches.
-
-- `alwaysOnTop` (default: `true`)
-- `overlayMode` (default: `true`)
-- `closeToTrayOnClose` (default: `true`)
-- `voiceOutputEnabled` (default: `true`)
-- `preferredMode` (default: `overlay`)
-- `showSourceFooterCollapsed` (default: `true`)
-
-Settings can be adjusted in the lightweight in-app **Desktop Settings** panel.
-
-Mode detection and native window behavior are centralized in frontend utilities (`displayMode`, `overlayController`, `tauriEnvironment`, and `appShell`) so Tauri-specific calls are not scattered across UI components.
-
----
-
-## Required Environment Variables
-
-### Backend
-- `LLM_PROVIDER` = `auto` | `mock` | `openai`
-- `TTS_PROVIDER` = `auto` | `mock` | `elevenlabs`
-- `STT_PROVIDER` = `auto` | `openai`
-- `OPENAI_API_KEY` (required for real OpenAI responses/transcription)
-- `OPENAI_MODEL` (default `gpt-4o-mini`)
-- `OPENAI_TRANSCRIPTION_MODEL` (default `whisper-1`)
-- `ELEVENLABS_API_KEY` (required for real ElevenLabs TTS)
-- `ELEVENLABS_VOICE_ID` (required for real ElevenLabs TTS)
-- `ELEVENLABS_MODEL_ID` (default `eleven_multilingual_v2`)
-- `WEB_SEARCH_PROVIDER` = `brave` | `serpapi` | `none` (default `brave`)
-- `BRAVE_SEARCH_API_KEY` (required when using `brave`)
-- `SERPAPI_API_KEY` (required when using `serpapi`)
-- `WEB_SEARCH_MAX_RESULTS` (default `5`)
-- `WEB_FETCH_MAX_PAGES` (default `3`)
-- `WEB_FETCH_TIMEOUT_SECONDS` (default `6`)
-- `WEB_FETCH_MAX_CHARS` (default `6000`)
-
-### Frontend
-- `VITE_PUBLIC_API_BASE_URL` (default `http://localhost:8000`)
-- `VITE_PUBLIC_WS_BASE_URL` (default `ws://localhost:8000`)
-- `VITE_DISPLAY_MODE` = `immersive` | `overlay` (default `immersive`)
-
----
-
-
-## Assistant Capability Categories
-
-Sarah routes each incoming message through a lightweight capability classifier before generation:
-
-- `ask_general`: default Q&A and explanations.
-- `lookup_information`: factual lookup/explanation requests (with verification cues when needed).
-- `browse_web`: explicit search/research/browse tasks.
-- `coding_help`: structured debugging and implementation guidance.
-- `shutdown_command`: shutdown intent handling path.
-- `smalltalk_or_greeting`: concise social responses.
-
-Notes on implementation status:
-- Implemented now: intent routing, freshness-aware browsing policy, web provider abstraction (Brave + SerpAPI), top-result page fetch/extract, and synthesized web-grounded answers.
-- Sarah explicitly says when she checked live web sources, and honestly reports when provider configuration or evidence quality is insufficient.
-- Scope is intentionally practical (search + fetch + synthesize), not a large autonomous deep-research agent.
-
-## Voice Testing Quick Start
-
-1. Start backend and frontend.
-2. Open dashboard in your browser.
-3. Click **Start Recording** and allow microphone permission.
-4. Speak, then click **Stop Recording**.
-5. Confirm UI shows transcribing, transcript appears in message box, and message is sent.
-6. Confirm assistant response appears and (if TTS enabled) audio plays.
-7. Confirm startup line and shutdown goodbye are selected from small anti-repeat pools.
-8. If ElevenLabs is unavailable, confirm browser speech fallback still speaks with captions intact.
-
-If mic permission is denied or transcription fails, typed chat remains fully usable.
-
-## Voice Profile Tuning
-
-Tune Sarah's voice behavior in:
-
-- `frontend/src/lib/voiceProfile.ts`
-  - ElevenLabs defaults:
-    - `stability: 0.46`
-    - `similarity_boost: 0.76`
-    - `style: 0.18`
-    - `use_speaker_boost: false`
-  - Browser fallback defaults:
-    - `rate: 0.92`
-    - `pitch: 1.3`
-    - `volume: 1.0`
-
-Startup/listening/shutdown line pools and anti-repeat behavior live in:
-
-- `frontend/src/lib/voiceLines.ts`
-
----
-
-## Avatar Asset Location
-
-`Sarah.vrm` is expected at:
-
-`frontend/public/assets/Sarah.vrm`
-
-The frontend loads it from:
-
-`/assets/Sarah.vrm`
-
----
-
-## Current Limitations
-
-- Stage 1 push-to-talk is implemented; always-listening/VAD is a future extension.
-- Conversation memory is currently in-memory only (no long-term persistence yet).
-- TTS uses base64 audio event payloads for immediate playback; no file storage pipeline yet.
-- Browser builds support movement within the current viewport/stage only; true cross-monitor geometry requires a native wrapper (Tauri/Electron) that can provide monitor bounds and window placement APIs.
-- Multi-display movement architecture is prepared through `ScreenEnvironment` and stage-bounds abstractions, but browser runtime currently uses viewport-safe regions.
-- Avatar animation remains lightweight and stable (no full mocap rig / phoneme viseme pipeline yet).
-
-
-## Stage Presence and Display-Space Notes
-
-What works now in browser:
-- Sarah can move smoothly across the visible stage area with intentional behavior priorities (shutdown > listening > talking > thinking > overlay-aware reposition > idle relaxed presence).
-- In overlay mode, stage targets are remapped to a desktop-ground plane with a bottom-edge walking line, horizontal travel boundaries, edge-zone settling, and perch-like posture approximation.
-- Immersive mode keeps freer stage placement; overlay mode uses grounded desktop behavior without duplicating the movement stack.
-- Stage zones are computed from normalized stage coordinates and adapt to viewport bounds, preserving browser-safe behavior while remaining ready for native display-region inputs.
-- Presence behaviors include anti-pacing safeguards (zone dwell time, movement cooldowns, target hysteresis, and movement suppression during high-priority states).
-- Stage movement uses normalized stage coordinates and interpolation to avoid jitter, with graceful pseudo-walking body rhythm when no dedicated walk animation exists.
-- The browser implementation uses current viewport/stage bounds and can optionally read segmented window regions where supported.
-
-What needs a native wrapper for full monitor-aware behavior:
-- Enumerating full multi-monitor geometry reliably (all displays, work areas, DPI-scaled coordinates).
-- True cross-monitor routing and window-aware movement beyond the current browser viewport.
-- OS-level placement constraints and display targeting logic for persistent avatar movement across monitors.
-
-Planned extension path:
-1. Keep movement logic display-agnostic via `ScreenEnvironment` / `StageBoundsProvider`.
-2. Keep presence behavior display-agnostic via normalized stage zones + overlay/layout inputs.
-3. Add a Tauri/Electron monitor provider that supplies monitor regions and active-window coordinates.
-4. Feed those regions into the same movement + presence controllers without rewriting avatar behavior logic.
-
-Current Tauri note:
-- The adapter can query monitor regions in Tauri mode and overlay movement now uses bottom-edge grounded approximations, but this is still an approximation (not true OS taskbar/work-area detection yet).
-
-
-## Shutdown Behavior
-
-SarahNode supports voice-triggered shutdown intents (for example: "Sarah, close program" or "close SarahNode").
-
-- Most shutdown phrases require confirmation (e.g., "yes" / "confirm") before ending the session.
-- On confirmed shutdown, Sarah performs a dedicated goodbye sequence: a spoken/captioned goodbye line plus a respectful Japanese-bow-inspired animation, then active listening/audio are halted and close is requested.
-- Browser tabs may block programmatic close calls; when that happens SarahNode falls back to: **"Session closed. You can now close this tab."**
-- The close behavior is isolated behind a shell abstraction. In browser mode it keeps the safe fallback message, and in Tauri mode it requests native window close via Tauri.
-
-
-### Web-grounded textbox behavior
-
-The grounded-answer panel now follows a tighter presentation lifecycle:
-
-- New grounded payloads replace previous panel content (newest wins).
-- Consecutive identical payloads are deduplicated to avoid repeated full voice replay.
-- Panel auto-dismisses when idle, but hover/focus/source expansion pins visibility temporarily.
-- Source footer stays collapsed by default and can be expanded via **View sources**; if URLs are present they are opened as links, otherwise titles are shown gracefully.
-
-Known limitation: full desktop tray/window integration is validated through manual smoke checks (see `docs/manual-smoke-checklist.md`) because CI/browser environments cannot fully emulate native tray + global shortcut behavior.
+If you’re reviewing SarahNode as a portfolio project, start with:
+
+- `backend/app/orchestration/stream_orchestrator.py`
+- `backend/app/services/dialogue_engine.py`
+- `frontend/src/pages/OverlayCompanionPage.tsx`
+- `frontend/src/components/WebAnswerTextbox.tsx`
+- `frontend/src-tauri/src/lib.rs`
