@@ -146,6 +146,8 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
             ? Math.PI + 0.08
             : state.mode === "shutting_down"
               ? Math.PI - 0.07
+              : state.mode === "presenting_search_results"
+                ? Math.PI - 0.15 - motion.lean * 0.45 + performance.headTilt * 0.08
               : Math.PI - motion.lean * 0.55 + performance.headTilt * 0.08 - motion.edgeLean * 0.28;
         vrm.scene.rotation.y += (targetRot - vrm.scene.rotation.y) * 0.07;
         vrm.scene.rotation.z += (motion.lean * 0.38 + performance.bodyLean * 0.35 - vrm.scene.rotation.z) * 0.06;
@@ -159,8 +161,10 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
                   ? 0.11
                   : state.mode === "thinking"
                     ? -0.07
-                    : state.mode === "shutting_down"
+                  : state.mode === "shutting_down"
                       ? -0.12
+                      : state.mode === "presenting_search_results"
+                        ? 0.11
                       : expression === "surprised"
                         ? 0.16
                         : expression === "apologetic"
@@ -179,6 +183,8 @@ export function VRMAvatar({ avatarState, stageMotion, gesturePerformance, reduce
             const spineTarget =
               state.mode === "walking"
                 ? motion.lean * 0.5
+                : state.mode === "presenting_search_results"
+                  ? motion.lean * 0.2 + focusLean + motion.edgeLean * 0.5 + 0.02
                 : motion.lean * 0.25 + focusLean + motion.edgeLean * 0.45;
             spine.rotation.z += (spineTarget + performance.bodyLean * 0.35 - spine.rotation.z) * 0.08;
             const postureTarget =

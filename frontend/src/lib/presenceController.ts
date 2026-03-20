@@ -169,7 +169,7 @@ export class PresenceController {
   }
 
   private resolveInteractionPresenceState(input: PresenceInput): InteractionPresenceState {
-    if (input.mode === "talking" || input.mode === "presenting") return "speaking";
+    if (input.mode === "talking" || input.mode === "presenting" || input.mode === "presenting_search_results") return "speaking";
     if (input.mode === "listening") return "listening";
     if (input.mode === "thinking") return "thinking";
     if (input.nowMs - input.replyAtMs < PRESENCE_TUNING.speakingHoldMs || input.nowMs - input.presentingAtMs < PRESENCE_TUNING.speakingHoldMs) {
@@ -241,7 +241,7 @@ export class PresenceController {
     const transcriptLocked = input.nowMs - input.transcriptEventAtMs < PRESENCE_TUNING.transcriptLockMs;
     if (input.mode === "shutting_down") return "shutdown_settle";
     if (input.mode === "listening") return "listening_anchor";
-    if (input.mode === "presenting") return "left_relaxed";
+    if (input.mode === "presenting" || input.mode === "presenting_search_results") return "left_relaxed";
     if (input.mode === "talking") return input.overlays.captionsVisible ? "caption_friendly" : "center_presentation";
     if (input.mode === "thinking") return "center_presentation";
     if (transcriptLocked) return "listening_anchor";
@@ -258,6 +258,7 @@ export class PresenceController {
   private movementWillingness(mode: MovementState, input: PresenceInput): number {
     if (mode === "shutting_down") return 0;
     if (mode === "presenting") return 0.1;
+    if (mode === "presenting_search_results") return 0.06;
     if (mode === "talking") return 0.14;
     if (mode === "listening") {
       const transcriptLocked = input.nowMs - input.transcriptEventAtMs < PRESENCE_TUNING.transcriptLockMs;
@@ -271,6 +272,7 @@ export class PresenceController {
     if (mode === "shutting_down") return 0;
     if (mode === "listening") return 0.82;
     if (mode === "presenting") return 0.96;
+    if (mode === "presenting_search_results") return 0.98;
     if (mode === "talking") return 0.92;
     if (mode === "thinking") return 0.64;
 
@@ -298,8 +300,8 @@ export class PresenceController {
       return { target: "viewer_center", offset: { x: overlayPull, y: 0.006 } };
     }
 
-    if (input.mode === "presenting") {
-      return { target: "web_answer_box", offset: { x: 0.026, y: -0.012 } };
+    if (input.mode === "presenting" || input.mode === "presenting_search_results") {
+      return { target: "web_answer_box", offset: { x: 0.03, y: -0.013 } };
     }
 
     if (input.mode === "talking") {

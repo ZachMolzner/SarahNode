@@ -40,6 +40,8 @@ const EXPRESSION_REACTION_COOLDOWN_MS = {
   groundedResult: 3600,
 } as const;
 
+type PresenceState = "idle" | "listening" | "thinking" | "speaking" | "presenting_search_results";
+
 export function OverlayCompanionPage() {
   const adminEntryRequestedOnLaunch = useMemo(() => {
     if (typeof window === "undefined") return false;
@@ -145,6 +147,19 @@ export function OverlayCompanionPage() {
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
   const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying;
+  const isSearchPresentationActive = isWebAnswerVisible && isSpeaking;
+  const presenceState: PresenceState =
+    shutdownStatus === "starting" || shutdownStatus === "ended"
+      ? "idle"
+      : isSearchPresentationActive
+        ? "presenting_search_results"
+        : isSpeaking
+          ? "speaking"
+          : baseAvatarState.mode === "listening"
+            ? "listening"
+            : baseAvatarState.mode === "thinking"
+              ? "thinking"
+              : "idle";
   const lastInteractionAt = Math.max(lastUserSpeechAt, lastReplyAt, listeningStartedAt, interactionStartedAt);
   const expressionState = resolveAvatarExpression({
     nowMs: expressionClockMs,
@@ -187,7 +202,12 @@ export function OverlayCompanionPage() {
         }
       : {
           ...baseAvatarState,
-          mode: isWebAnswerVisible ? "presenting" : isSpeaking ? "talking" : baseAvatarState.mode,
+          mode:
+            presenceState === "presenting_search_results"
+              ? "presenting_search_results"
+              : presenceState === "speaking"
+                ? "talking"
+                : baseAvatarState.mode,
           mood: expressionState.mood,
           isSpeaking,
           mouthIntensity: mouthOpenAmount,
@@ -508,6 +528,7 @@ export function OverlayCompanionPage() {
     setInteractionStartedAt(now);
     setSearchStartedAt(now);
     setError(null);
+    setIsWebAnswerVisible(false);
 
     try {
       await sendAssistantMessage({ username, content: messageText, priority, conversation_mode: conversationMode });
@@ -749,6 +770,7 @@ export function OverlayCompanionPage() {
                   setVoiceStatus("listening");
                   setListeningStartedAt(Date.now());
                   setInteractionStartedAt(Date.now());
+                  setIsWebAnswerVisible(false);
                   if (isSpeaking) stampReactionWithCooldown("interrupted", setInterruptedAt);
                   void emitVoiceEvent("voice:recording_started");
                 }}
@@ -891,7 +913,7 @@ export function OverlayCompanionPage() {
 
         <WebAnswerTextbox
           answer={webAnswer}
-          visible={isWebAnswerVisible}
+          visible={isSearchPresentationActive}
           defaultCollapsedSources={settings.showSourceFooterCollapsed}
           onInteractionChange={setIsWebAnswerInteracting}
           onSourceExpansionChange={(expanded) => {
