@@ -138,8 +138,8 @@ const boxStyle: CSSProperties = {
 };
 
 const overlayBoxStyle: CSSProperties = {
-  left: "calc(50% + min(5vw, 56px))",
-  top: "36%",
+  left: "calc(50% + min(5.8vw, 64px))",
+  top: "34%",
   width: "min(240px, 24vw)",
 };
 

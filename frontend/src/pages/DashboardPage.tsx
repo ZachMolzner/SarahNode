@@ -398,17 +398,17 @@ export function DashboardPage() {
       }
     }
 
-    scheduleWebAnswerDismiss(identicalPayload ? 2600 : 5600);
+    scheduleWebAnswerDismiss(identicalPayload ? 3000 : 6200);
   }, [events, overlayEnabled, scheduleWebAnswerDismiss, settings.voiceOutputEnabled, stampReactionWithCooldown]);
 
   useEffect(() => {
     if (!isWebAnswerVisible) return;
-    scheduleWebAnswerDismiss(5200);
+    scheduleWebAnswerDismiss(5600);
   }, [isWebAnswerVisible, scheduleWebAnswerDismiss]);
 
   useEffect(() => {
     if (!isWebAnswerVisible || isSpeaking) return;
-    scheduleWebAnswerDismiss(2600);
+    scheduleWebAnswerDismiss(3000);
   }, [isSpeaking, isWebAnswerVisible, scheduleWebAnswerDismiss]);
 
   useEffect(() => {
