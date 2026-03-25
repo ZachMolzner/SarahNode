@@ -40,6 +40,7 @@ SarahNode is not just “chat UI + LLM API.” It emphasizes **runtime orchestra
 - Optional web lookup flow with fetch/extract/synthesis and source metadata retention.
 - TTS speaking synchronization events and frontend playback coordination.
 - Push-to-talk transcription endpoint integrated into the same assistant pipeline.
+- Microphone permission request flow delivered through Sarah’s existing dialogue textbox flow (no separate mic permission panel).
 - Web-grounded answer textbox with staged reveal and collapsible source list.
 - Overlay/immersive presence modes with desktop-ground movement behavior.
 - Persistent desktop settings (`always_on_top`, `overlay_mode`, `close_to_tray_on_close`, `voice_output_enabled`).
@@ -158,6 +159,8 @@ cd frontend
 npm install
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
+
+Microphone access in browser mode must run on **HTTPS or localhost** because `getUserMedia` is blocked on insecure origins.
 
 ### Desktop shell (Tauri)
 

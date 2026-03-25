@@ -33,6 +33,7 @@ import { resolvePlatformProfile } from "../lib/platformProfile";
 import { derivePresenceModes } from "../lib/presenceModes";
 import { useSearchPresentation } from "../hooks/useSearchPresentation";
 import { useSettingsPanelActions } from "../hooks/useSettingsPanelActions";
+import { useMicrophonePermission } from "../hooks/useMicrophonePermission";
 
 const EXPRESSION_REACTION_COOLDOWN_MS = {
   interrupted: 2400,
@@ -57,6 +58,8 @@ export function OverlayCompanionPage() {
   const startupLineRef = useRef<string | null>(null);
   const shutdownLineRef = useRef<string | null>(null);
   const lastSearchReactionAtRef = useRef(0);
+  const microphonePermissionSequenceStartedRef = useRef(false);
+  const microphoneDialogueVisibilityTimerRef = useRef<number | null>(null);
 
   const [username, setUsername] = useState("zach");
   const [content, setContent] = useState("Give me a quick plan for today.");
@@ -101,6 +104,8 @@ export function OverlayCompanionPage() {
   const [errorAt, setErrorAt] = useState(0);
   const [noResultAt, setNoResultAt] = useState(0);
   const [speakingEndedAt, setSpeakingEndedAt] = useState(0);
+  const [microphoneDialogueVisible, setMicrophoneDialogueVisible] = useState(false);
+  const [microphoneDialogueAnswer, setMicrophoneDialogueAnswer] = useState<WebAnswerViewModel | null>(null);
   const [identityState, setIdentityState] = useState<IdentityStateResponse | null>(null);
   const [memoryItems, setMemoryItems] = useState<MemoryItem[]>([]);
   const [profileRefreshError, setProfileRefreshError] = useState<string | null>(null);
@@ -148,7 +153,7 @@ export function OverlayCompanionPage() {
   const latestReply = events.find((event) => event.type === "reply_selected")?.payload?.["text"];
   const baseAvatarState = useAvatarState(events);
   const isSpeaking = baseAvatarState.isSpeaking || isAudioPlaying;
-  const isSearchPresentationActive = isWebAnswerVisible && isSpeaking;
+  const isSearchPresentationActive = (isWebAnswerVisible && isSpeaking) || microphoneDialogueVisible;
   const {
     isSearchPresentationPoseActive,
     isSearchTextboxVisible,
@@ -200,6 +205,13 @@ export function OverlayCompanionPage() {
   const [adminSurfaceVisible, setAdminSurfaceVisible] = useState(() => adminEntryRequestedOnLaunch);
   const [isAvatarDragging, setIsAvatarDragging] = useState(false);
   const motionDebugEnabled = typeof window !== "undefined" && window.location.search.includes("debugMotion=1");
+  const {
+    permissionState: microphonePermissionState,
+    permissionMessage: microphonePermissionMessage,
+    activeStream,
+    setSarahPrompting,
+    requestMicrophoneAccess,
+  } = useMicrophonePermission();
 
   const avatarState =
     shutdownStatus === "starting" || shutdownStatus === "ended"
@@ -403,6 +415,90 @@ export function OverlayCompanionPage() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (microphoneDialogueVisibilityTimerRef.current) {
+        window.clearTimeout(microphoneDialogueVisibilityTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!microphonePermissionMessage) return;
+    setMicrophoneDialogueAnswer({
+      title: "Sarah",
+      bullets: [microphonePermissionMessage],
+      sources: [],
+      mode: overlayEnabled ? "overlay" : "immersive",
+    });
+  }, [microphonePermissionMessage, overlayEnabled]);
+
+  useEffect(() => {
+    if (!microphonePermissionMessage) return;
+    setMicrophoneDialogueVisible(true);
+
+    if (microphoneDialogueVisibilityTimerRef.current) {
+      window.clearTimeout(microphoneDialogueVisibilityTimerRef.current);
+      microphoneDialogueVisibilityTimerRef.current = null;
+    }
+
+    if (microphonePermissionState === "granted" || microphonePermissionState === "denied" || microphonePermissionState === "error") {
+      microphoneDialogueVisibilityTimerRef.current = window.setTimeout(() => {
+        setMicrophoneDialogueVisible(false);
+      }, 6200);
+    }
+  }, [microphonePermissionMessage, microphonePermissionState]);
+
+  useEffect(() => {
+    if (!startupGreetingDelivered || shutdownStatus !== "idle" || microphonePermissionSequenceStartedRef.current) return;
+
+    microphonePermissionSequenceStartedRef.current = true;
+    let cancelled = false;
+    let timerId: number | null = null;
+
+    const wait = (delayMs: number) =>
+      new Promise<void>((resolve) => {
+        timerId = window.setTimeout(() => resolve(), delayMs);
+      });
+
+    const runMicrophoneSequence = async () => {
+      setSarahPrompting();
+      if (settings.voiceOutputEnabled) {
+        await voiceOrchestratorRef.current.speakText("To hear you directly, I need permission to use your microphone.", {
+          context: "reply",
+          mood: "warm",
+        });
+      }
+      if (cancelled) return;
+
+      await wait(320);
+      if (cancelled) return;
+
+      if (settings.voiceOutputEnabled) {
+        await voiceOrchestratorRef.current.speakText("Your browser may ask for permission now.", {
+          context: "reply",
+          mood: "focused",
+        });
+      }
+      if (cancelled) return;
+
+      await requestMicrophoneAccess();
+    };
+
+    void runMicrophoneSequence();
+
+    return () => {
+      cancelled = true;
+      if (timerId) window.clearTimeout(timerId);
+    };
+  }, [requestMicrophoneAccess, setSarahPrompting, settings.voiceOutputEnabled, shutdownStatus, startupGreetingDelivered]);
+
+  useEffect(() => {
+    if (activeStream) {
+      setVoiceStatus("microphone ready");
+    }
+  }, [activeStream]);
 
   useEffect(() => {
     const groundedEvent = events.find((event) => event.type === "web_grounded_answer");
@@ -719,6 +815,7 @@ export function OverlayCompanionPage() {
 
   useEffect(() => {
     setWebAnswer((current) => (current ? { ...current, mode: overlayEnabled ? "overlay" : "immersive" } : current));
+    setMicrophoneDialogueAnswer((current) => (current ? { ...current, mode: overlayEnabled ? "overlay" : "immersive" } : current));
   }, [overlayEnabled]);
 
   const showOverlayControls = adminSurfaceVisible && (!overlayEnabled || overlayControlsVisible || platformProfile.isMobileWeb);
@@ -935,7 +1032,7 @@ export function OverlayCompanionPage() {
         ) : null}
 
         <WebAnswerTextbox
-          answer={webAnswer}
+          answer={microphoneDialogueVisible ? microphoneDialogueAnswer : webAnswer}
           visible={isSearchTextboxVisible}
           onRevealStageChange={setWebAnswerRevealStage}
           onSourcesVisibleCue={() => setSearchSourcesRevealAt(Date.now())}
