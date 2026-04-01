@@ -225,7 +225,7 @@ export function WebAnswerTextbox({
                   <li key={`${source.title}-${source.url ?? "no-url"}-${index}`} style={sourceItemStyle}>
                     <span style={sourceIndexStyle}>{index + 1}</span>
                     {source.url ? (
-                      <a href={source.url} target="_blank" rel="noreferrer" style={sourceChipLinkStyle} title={source.title}>
+                      <a href={source.url} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer" style={sourceChipLinkStyle} title={source.title}>
                         <span style={sourceLabelStyle}>{displayLabel}</span>
                       </a>
                     ) : (

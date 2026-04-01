@@ -1,6 +1,7 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pathlib import Path
 
 
 def _parse_csv(raw: str) -> list[str]:
@@ -40,11 +41,13 @@ class Settings(BaseSettings):
     web_fetch_max_chars: int = 6000
 
     backend_bind_all_interfaces: bool = False
-    backend_host: str = "0.0.0.0"
+    backend_host: str = "127.0.0.1"
     backend_port: int = 8000
 
-    cors_allowed_origins_raw: str = "*"
+    cors_allowed_origins_raw: str = "http://localhost:5173,http://127.0.0.1:5173,tauri://localhost"
     cors_allow_credentials: bool = False
+
+    allowed_ws_origins_raw: str = "http://localhost:5173,http://127.0.0.1:5173,tauri://localhost"
 
     public_api_base_url: str = "http://localhost:8000"
     public_ws_base_url: str = "ws://localhost:8000"
@@ -74,7 +77,11 @@ def resolve_backend_host() -> str:
 
 def resolve_cors_origins() -> list[str]:
     origins = _parse_csv(settings.cors_allowed_origins_raw)
-    return origins if origins else ["*"]
+    return origins if origins else ["http://localhost:5173", "http://127.0.0.1:5173", "tauri://localhost"]
+
+
+def resolve_ws_allowed_origins() -> set[str]:
+    return set(_parse_csv(settings.allowed_ws_origins_raw))
 
 
 def resolve_local_data_dir() -> Path:

@@ -211,11 +211,11 @@ async def transcribe_audio(request: Request) -> dict[str, object]:
     try:
         result = await voice_service.transcribe_upload(upload)
     except RuntimeError as exc:
-        await stream_orchestrator.emit_event("voice:error", {"stage": "configuration", "details": str(exc)})
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        await stream_orchestrator.emit_event("voice:error", {"stage": "configuration", "details": "service unavailable"})
+        raise HTTPException(status_code=503, detail="Speech-to-text is not configured.") from exc
     except Exception as exc:
         logger.exception("Transcription failed")
-        await stream_orchestrator.emit_event("voice:error", {"stage": "transcription", "details": str(exc)})
+        await stream_orchestrator.emit_event("voice:error", {"stage": "transcription", "details": "transcription failed"})
         raise HTTPException(status_code=500, detail="Transcription failed.") from exc
 
     await stream_orchestrator.emit_event(
