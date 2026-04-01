@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 
@@ -33,7 +35,34 @@ class PageFetcher:
             pages.append(await self._fetch_page(result.url, fallback_title=result.title))
         return pages
 
+    def _is_disallowed_url(self, raw_url: str) -> bool:
+        parsed = urlparse(raw_url)
+        if parsed.scheme not in {"https", "http"}:
+            return True
+
+        host = (parsed.hostname or "").strip().lower()
+        if not host:
+            return True
+
+        if host in {"localhost", "127.0.0.1", "::1"}:
+            return True
+
+        try:
+            ip = ipaddress.ip_address(host)
+            return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+        except ValueError:
+            return False
+
     async def _fetch_page(self, url: str, fallback_title: str) -> FetchedPage:
+        if self._is_disallowed_url(url):
+            return FetchedPage(
+                url=url,
+                title=fallback_title,
+                extracted_text="",
+                fetch_status="skipped_disallowed_url",
+                char_count=0,
+            )
+
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
                 response = await client.get(url)
@@ -57,8 +86,8 @@ class PageFetcher:
                     fetch_status="ok",
                     char_count=len(text),
                 )
-        except Exception as exc:
-            logger.info("Failed fetching %s: %s", url, exc)
+        except Exception:
+            logger.info("Failed fetching web page")
             return FetchedPage(
                 url=url,
                 title=fallback_title,

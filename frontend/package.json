@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.4.2",

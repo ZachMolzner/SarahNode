@@ -1,8 +1,28 @@
+# Python
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node / frontend
 node_modules/
 dist/
+frontend/dist/
+frontend/node_modules/
+
+# Secrets and local overrides
 .env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+frontend/.env
+frontend/.env.*
+
+# Runtime data
+backend/app/data/*.json
+!backend/app/data/.gitkeep
+*.log
