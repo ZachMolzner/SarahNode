@@ -2,8 +2,9 @@ import { type CSSProperties, useEffect, useRef } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
+import { defaultAvatarModel } from "../../config/avatar";
 
-const VRM_PATH = "/assets/Sarah.vrm";
+const VRM_PATH = defaultAvatarModel.path;
 
 type SarahMotionState =
   | "idle"
