@@ -1,4 +1,9 @@
-import { type CSSProperties, useEffect, useRef } from "react";
+import {
+  type CSSProperties,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
@@ -21,14 +26,60 @@ type MotionController = {
   transitionProgress: number;
 };
 
+type SpeechRecognitionAlternativeLike = {
+  transcript: string;
+};
+
+type SpeechRecognitionResultLike = {
+  0: SpeechRecognitionAlternativeLike;
+  isFinal: boolean;
+  length: number;
+};
+
+type SpeechRecognitionEventLike = Event & {
+  results: ArrayLike<SpeechRecognitionResultLike>;
+};
+
+type SpeechRecognitionErrorEventLike = Event & {
+  error: string;
+  message?: string;
+};
+
+type SpeechRecognitionLike = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onend: (() => void) | null;
+  onresult: ((event: SpeechRecognitionEventLike) => void) | null;
+  onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => SpeechRecognitionLike;
+    webkitSpeechRecognition?: new () => SpeechRecognitionLike;
+  }
+}
+
+const SpeechRecognitionCtor =
+  typeof window !== "undefined"
+    ? window.SpeechRecognition || window.webkitSpeechRecognition
+    : undefined;
+
 export function VRMAvatar() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const vrmRef = useRef<VRM | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
   const baseYRef = useRef(0);
   const lookTargetRef = useRef<THREE.Object3D | null>(null);
+  const speakingRef = useRef(false);
+  const listeningRef = useRef(false);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const mountedRef = useRef(true);
 
-  // Placeholder runtime control state
   const motionControllerRef = useRef<MotionController>({
     currentState: "idle",
     nextState: null,
@@ -36,7 +87,14 @@ export function VRMAvatar() {
     transitionProgress: 1,
   });
 
+  const [statusText, setStatusText] = useState("Sarah is waking up...");
+  const [lastHeard, setLastHeard] = useState("");
+  const [lastReply, setLastReply] = useState("");
+  const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
+
   useEffect(() => {
+    mountedRef.current = true;
+
     const container = containerRef.current;
     if (!container) return;
 
@@ -57,6 +115,10 @@ export function VRMAvatar() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 0);
 
+    if ("outputColorSpace" in renderer) {
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+    }
+
     container.innerHTML = "";
     container.appendChild(renderer.domElement);
 
@@ -74,42 +136,121 @@ export function VRMAvatar() {
     lookTargetRef.current = lookTarget;
 
     const loader = new GLTFLoader();
+    loader.crossOrigin = "anonymous";
     loader.register((parser) => new VRMLoaderPlugin(parser));
 
-    loader.load(VRM_PATH, (gltf) => {
-      if (disposed) return;
+    loader.load(
+      VRM_PATH,
+      (gltf) => {
+        if (disposed) return;
 
-      const vrm = gltf.userData.vrm as VRM;
-      VRMUtils.rotateVRM0(vrm);
-      scene.add(vrm.scene);
+        try {
+          const vrm = gltf.userData.vrm as VRM | undefined;
 
-      const box = new THREE.Box3().setFromObject(vrm.scene);
-      const size = new THREE.Vector3();
-      box.getSize(size);
+          if (!vrm) {
+            console.error("VRM failed to load from gltf.userData.vrm");
+            if (mountedRef.current) {
+              setStatusText("Avatar failed to load");
+            }
+            return;
+          }
 
-      const scale = 1.5 / size.y;
-      vrm.scene.scale.setScalar(scale);
+          VRMUtils.removeUnnecessaryVertices(gltf.scene);
+          VRMUtils.removeUnnecessaryJoints(gltf.scene);
+          VRMUtils.rotateVRM0(vrm);
 
-      const newBox = new THREE.Box3().setFromObject(vrm.scene);
-      vrm.scene.position.y = -newBox.min.y;
-      baseYRef.current = vrm.scene.position.y;
+          gltf.scene.traverse((obj) => {
+            const mesh = obj as THREE.Mesh;
 
-      vrmRef.current = vrm;
-      mixerRef.current = new THREE.AnimationMixer(vrm.scene);
+            if (!("isMesh" in mesh) || !mesh.isMesh || !mesh.material) return;
 
-      motionControllerRef.current = {
-        currentState: "idle",
-        nextState: null,
-        stateStartedAt: performance.now(),
-        transitionProgress: 1,
-      };
+            const materials = Array.isArray(mesh.material)
+              ? mesh.material
+              : [mesh.material];
 
-      // Placeholder:
-      // When you return with the Blender-updated VRM, this is where we can:
-      // 1. register imported animation clips
-      // 2. capture reference bones
-      // 3. initialize default pose state
-    });
+            materials.forEach((material) => {
+              const mat = material as THREE.MeshStandardMaterial & {
+                map?: THREE.Texture | null;
+                emissiveMap?: THREE.Texture | null;
+                shadeMultiplyTexture?: THREE.Texture | null;
+                rimMultiplyTexture?: THREE.Texture | null;
+                outlineWidthMultiplyTexture?: THREE.Texture | null;
+                uvAnimationMaskTexture?: THREE.Texture | null;
+              };
+
+              const textures = [
+                mat.map,
+                mat.emissiveMap,
+                mat.shadeMultiplyTexture,
+                mat.rimMultiplyTexture,
+                mat.outlineWidthMultiplyTexture,
+                mat.uvAnimationMaskTexture,
+              ];
+
+              textures.forEach((texture) => {
+                if (!texture) return;
+
+                try {
+                  if ("colorSpace" in texture) {
+                    texture.colorSpace = THREE.SRGBColorSpace;
+                  }
+                } catch (error) {
+                  console.warn("Texture colorSpace safely skipped", error);
+                }
+              });
+            });
+          });
+
+          scene.add(vrm.scene);
+
+          const box = new THREE.Box3().setFromObject(vrm.scene);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+
+          if (size.y > 0) {
+            const scale = 1.5 / size.y;
+            vrm.scene.scale.setScalar(scale);
+          }
+
+          const newBox = new THREE.Box3().setFromObject(vrm.scene);
+          vrm.scene.position.y = -newBox.min.y;
+          baseYRef.current = vrm.scene.position.y;
+
+          vrmRef.current = vrm;
+          mixerRef.current = new THREE.AnimationMixer(vrm.scene);
+
+          motionControllerRef.current = {
+            currentState: "idle",
+            nextState: null,
+            stateStartedAt: performance.now(),
+            transitionProgress: 1,
+          };
+
+          console.log("VRM loaded successfully:", VRM_PATH);
+
+          setTimeout(() => {
+            if (!mountedRef.current) return;
+            speakText("Hello. I am Sarah. Click me when you are ready to talk.");
+          }, 1200);
+        } catch (error) {
+          console.error("VRM processing error:", error);
+          if (mountedRef.current) {
+            setStatusText("Avatar processing error");
+          }
+        }
+      },
+      (progress) => {
+        if (!progress.total) return;
+        const percent = (progress.loaded / progress.total) * 100;
+        console.log(`Loading model: ${percent.toFixed(1)}%`);
+      },
+      (error) => {
+        console.error("GLTF/VRM load error:", error);
+        if (mountedRef.current) {
+          setStatusText("Avatar load error");
+        }
+      }
+    );
 
     const clock = new THREE.Clock();
 
@@ -128,18 +269,14 @@ export function VRMAvatar() {
         mixer?.update(delta);
 
         const controller = motionControllerRef.current;
-
         updateStateMachine(controller, now);
 
-        // --- BASE LAYER -----------------------------------------------------
-        // Keep this subtle. Blender should define Sarah's default body posture.
         applyBaseIdlePresence({
           vrm,
           baseY: baseYRef.current,
           timeSeconds: t,
         });
 
-        // --- STATE LAYER ----------------------------------------------------
         switch (controller.currentState) {
           case "idle":
             applyIdleState({
@@ -189,7 +326,6 @@ export function VRMAvatar() {
             break;
         }
 
-        // --- LOOK / ATTENTION LAYER ----------------------------------------
         if (vrm.lookAt && lookTargetObj) {
           const eyeX = Math.sin(t * 0.5) * 0.3;
           const eyeY = Math.sin(t * 0.8) * 0.15;
@@ -198,22 +334,24 @@ export function VRMAvatar() {
           vrm.lookAt.target = lookTargetObj;
         }
 
-        // --- EXPRESSION LAYER ----------------------------------------------
         if (vrm.expressionManager) {
           const blinkPulse = Math.sin(t * 1.6);
           const blink =
-            blinkPulse > 0.992 ? Math.min(1, (blinkPulse - 0.992) * 140) : 0;
+            blinkPulse > 0.992
+              ? Math.min(1, (blinkPulse - 0.992) * 140)
+              : 0;
+
+          const talking = speakingRef.current
+            ? Math.sin(t * 10) * 0.5 + 0.5
+            : 0;
 
           vrm.expressionManager.setValue("blink", blink);
           vrm.expressionManager.setValue("happy", 0.12);
           vrm.expressionManager.setValue("relaxed", 0.1);
 
-          // Placeholder:
-          // Later we can drive expressions by state:
-          // - listening -> attentive
-          // - speaking -> warm / engaged
-          // - bowing -> soft eyes / polite
-          // - shutdown -> calm / closed-mouth smile
+          vrm.expressionManager.setValue("aa", talking * 0.45);
+          vrm.expressionManager.setValue("ih", talking * 0.22);
+          vrm.expressionManager.setValue("ou", talking * 0.18);
         }
       }
 
@@ -234,30 +372,249 @@ export function VRMAvatar() {
     window.addEventListener("resize", onResize);
 
     return () => {
+      mountedRef.current = false;
       disposed = true;
       cancelAnimationFrame(frameId);
       window.removeEventListener("resize", onResize);
       renderer.dispose();
-      mixerRef.current = null;
+      recognitionRef.current?.stop();
+      recognitionRef.current = null;
+      window.speechSynthesis.cancel();
       container.innerHTML = "";
       lookTargetRef.current = null;
       vrmRef.current = null;
+      mixerRef.current = null;
     };
   }, []);
 
-  return <div ref={containerRef} style={style} />;
+  const getAudioInputDevices = async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return [];
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    return devices.filter((device) => device.kind === "audioinput");
+  };
+
+  const speakText = (text: string) => {
+    if (!("speechSynthesis" in window)) {
+      setStatusText("Speech playback not supported in this browser");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    utterance.pitch = 1.02;
+    utterance.volume = 1;
+
+    utterance.onstart = () => {
+      speakingRef.current = true;
+      listeningRef.current = false;
+      setStatusText("Sarah is speaking...");
+    };
+
+    utterance.onend = () => {
+      speakingRef.current = false;
+      setStatusText("Click Sarah to talk again");
+    };
+
+    utterance.onerror = () => {
+      speakingRef.current = false;
+      setStatusText("Speech playback error");
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const buildReply = (heard: string) => {
+    const clean = heard.trim();
+
+    if (!clean) {
+      return "I did not catch that. Please try again.";
+    }
+
+    if (/hello|hi|hey/i.test(clean)) {
+      return "Hello. I am ready. Ask me anything.";
+    }
+
+    if (/who are you|what are you/i.test(clean)) {
+      return "I am Sarah, your local assistant avatar test loop.";
+    }
+
+    if (/time/i.test(clean)) {
+      return `The current time is ${new Date().toLocaleTimeString()}.`;
+    }
+
+    if (/date|day/i.test(clean)) {
+      return `Today is ${new Date().toLocaleDateString()}.`;
+    }
+
+    return `I heard you say: ${clean}`;
+  };
+
+  const startConversation = async () => {
+    if (listeningRef.current || speakingRef.current) return;
+
+    if (
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== "function"
+    ) {
+      setMicAvailable(false);
+      setStatusText("Microphone API not available in this browser");
+      speakText("I cannot access a microphone in this browser.");
+      return;
+    }
+
+    try {
+      const audioInputs = await getAudioInputDevices();
+      console.log("Detected audio inputs:", audioInputs);
+
+      if (audioInputs.length === 0) {
+        setMicAvailable(false);
+        setStatusText("No microphone detected");
+        speakText(
+          "I could not find a microphone on this device. Please connect one and try again."
+        );
+        return;
+      }
+
+      const preferredDeviceId = audioInputs[0].deviceId;
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: preferredDeviceId
+          ? { deviceId: { ideal: preferredDeviceId } }
+          : true,
+      });
+
+      setMicAvailable(true);
+      stream.getTracks().forEach((track) => track.stop());
+    } catch (error) {
+      console.error("Microphone permission/device error:", error);
+      setMicAvailable(false);
+      setStatusText("No microphone found or permission denied");
+      speakText(
+        "I could not access a microphone. Please connect one and allow access."
+      );
+      return;
+    }
+
+    if (!SpeechRecognitionCtor) {
+      setStatusText("Speech recognition is not supported in this browser");
+      speakText(
+        "Speech recognition is not supported here. Please use Chrome or Edge."
+      );
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognitionCtor();
+      recognitionRef.current = recognition;
+
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      recognition.onstart = () => {
+        listeningRef.current = true;
+        setStatusText("Listening...");
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results?.[0]?.[0]?.transcript?.trim() ?? "";
+        setLastHeard(transcript);
+
+        const reply = buildReply(transcript);
+        setLastReply(reply);
+        setStatusText("Heard you. Preparing response...");
+        speakText(reply);
+      };
+
+      recognition.onerror = (event) => {
+        listeningRef.current = false;
+        console.error("Speech recognition error:", event.error, event.message);
+
+        if (event.error === "no-speech") {
+          setStatusText("No speech detected");
+          return;
+        }
+
+        if (event.error === "not-allowed") {
+          setStatusText("Microphone permission denied");
+          speakText("Microphone permission was denied.");
+          return;
+        }
+
+        if (event.error === "audio-capture") {
+          setStatusText("No microphone available");
+          speakText("I cannot hear you because no microphone is available.");
+          return;
+        }
+
+        setStatusText(`Speech recognition error: ${event.error}`);
+      };
+
+      recognition.onend = () => {
+        listeningRef.current = false;
+
+        if (!speakingRef.current && mountedRef.current) {
+          setStatusText((prev) =>
+            prev === "Listening..." ? "Click Sarah to talk again" : prev
+          );
+        }
+      };
+
+      recognition.start();
+    } catch (error) {
+      console.error("Failed to start speech recognition:", error);
+      setStatusText("Could not start speech recognition");
+    }
+  };
+
+  return (
+    <div style={wrapperStyle}>
+      <div
+        ref={containerRef}
+        style={style}
+        onClick={startConversation}
+        title="Click Sarah to start talking"
+      />
+
+      <div style={statusPanelStyle}>
+        <div style={pillStyle}>
+          {listeningRef.current
+            ? "LISTENING"
+            : speakingRef.current
+            ? "SPEAKING"
+            : "READY"}
+        </div>
+
+        <div style={statusTextStyle}>{statusText}</div>
+
+        {micAvailable === false ? (
+          <div style={detailTextStyle}>
+            No microphone detected or access denied.
+          </div>
+        ) : null}
+
+        {lastHeard ? (
+          <div style={detailTextStyle}>
+            <strong>You:</strong> {lastHeard}
+          </div>
+        ) : null}
+
+        {lastReply ? (
+          <div style={detailTextStyle}>
+            <strong>Sarah:</strong> {lastReply}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function updateStateMachine(controller: MotionController, now: number) {
   const elapsed = now - controller.stateStartedAt;
   controller.transitionProgress = Math.min(1, elapsed / 500);
-
-  // Placeholder:
-  // Later this can become real transition logic:
-  // - if shutdown requested -> bowing
-  // - after bowing hold -> shutdown
-  // - if user sits Sarah -> sitting
-  // - if user calls Sarah over -> moving
+  void elapsed;
 }
 
 function applyBaseIdlePresence({
@@ -308,11 +665,57 @@ function applyIdleState({
   vrm: VRM;
   timeSeconds: number;
 }) {
-  // Placeholder:
-  // Neutral standing pose should come from Blender.
-  // Keep code-side body edits minimal here.
-  void vrm;
-  void timeSeconds;
+  const humanoid = vrm.humanoid;
+  if (!humanoid) return;
+
+  const leftUpperArm = humanoid.getNormalizedBoneNode("leftUpperArm");
+  const rightUpperArm = humanoid.getNormalizedBoneNode("rightUpperArm");
+  const leftLowerArm = humanoid.getNormalizedBoneNode("leftLowerArm");
+  const rightLowerArm = humanoid.getNormalizedBoneNode("rightLowerArm");
+  const leftHand = humanoid.getNormalizedBoneNode("leftHand");
+  const rightHand = humanoid.getNormalizedBoneNode("rightHand");
+  const hips = humanoid.getNormalizedBoneNode("hips");
+  const spine = humanoid.getNormalizedBoneNode("spine");
+
+  const breathe = Math.sin(timeSeconds * 1.5) * 0.015;
+  const weightShift = Math.sin(timeSeconds * 0.6) * 0.05;
+
+  if (hips) {
+    hips.rotation.z = weightShift * 0.4;
+  }
+
+  if (spine) {
+    spine.rotation.z = weightShift * 0.2;
+    spine.rotation.x = breathe * 0.5;
+  }
+
+  if (leftUpperArm) {
+    leftUpperArm.rotation.z = Math.PI * 0.38;
+    leftUpperArm.rotation.x = 0.12 + breathe;
+  }
+
+  if (rightUpperArm) {
+    rightUpperArm.rotation.z = -Math.PI * 0.38;
+    rightUpperArm.rotation.x = 0.12 + breathe;
+  }
+
+  if (leftLowerArm) {
+    leftLowerArm.rotation.z = 0.15;
+    leftLowerArm.rotation.x = -0.08;
+  }
+
+  if (rightLowerArm) {
+    rightLowerArm.rotation.z = -0.15;
+    rightLowerArm.rotation.x = -0.08;
+  }
+
+  if (leftHand) {
+    leftHand.rotation.y = 0.08 + Math.sin(timeSeconds * 1.2) * 0.02;
+  }
+
+  if (rightHand) {
+    rightHand.rotation.y = -0.08 + Math.sin(timeSeconds * 1.2) * 0.02;
+  }
 }
 
 function applyMovingState({
@@ -324,10 +727,6 @@ function applyMovingState({
   timeSeconds: number;
   progress: number;
 }) {
-  // Placeholder for:
-  // - walk cycle clip
-  // - stage movement syncing
-  // - slight forward intention in torso/head
   void vrm;
   void timeSeconds;
   void progress;
@@ -342,10 +741,6 @@ function applySittingState({
   timeSeconds: number;
   progress: number;
 }) {
-  // Placeholder for:
-  // - seated pose clip
-  // - seated idle breathing
-  // - reduced body sway
   void vrm;
   void timeSeconds;
   void progress;
@@ -360,8 +755,6 @@ function applyStandingUpState({
   timeSeconds: number;
   progress: number;
 }) {
-  // Placeholder for:
-  // - stand-up transition clip
   void vrm;
   void timeSeconds;
   void progress;
@@ -383,8 +776,6 @@ function applyBowingState({
   const neck = humanoid.getNormalizedBoneNode("neck");
   const head = humanoid.getNormalizedBoneNode("head");
 
-  // Very light placeholder bow so the file is ready.
-  // Replace with authored animation later.
   const bowAmount = Math.min(1, progress) * 0.35;
 
   if (chest) chest.rotation.x -= bowAmount * 0.6;
@@ -403,16 +794,57 @@ function applyShutdownState({
   timeSeconds: number;
   progress: number;
 }) {
-  // Placeholder for:
-  // - final settle
-  // - expression fade
-  // - maybe slight lowering / stillness
   void vrm;
   void timeSeconds;
   void progress;
 }
 
+const wrapperStyle: CSSProperties = {
+  position: "relative",
+  width: "100%",
+  height: "100%",
+};
+
 const style: CSSProperties = {
   width: "100%",
   height: "100%",
+  cursor: "pointer",
+};
+
+const statusPanelStyle: CSSProperties = {
+  position: "absolute",
+  top: 16,
+  left: 16,
+  maxWidth: 360,
+  padding: 14,
+  borderRadius: 16,
+  background: "rgba(5, 13, 32, 0.78)",
+  border: "1px solid rgba(96, 165, 250, 0.35)",
+  color: "#e5eefc",
+  backdropFilter: "blur(8px)",
+  pointerEvents: "none",
+};
+
+const pillStyle: CSSProperties = {
+  display: "inline-block",
+  padding: "4px 10px",
+  borderRadius: 999,
+  border: "1px solid rgba(148, 163, 184, 0.45)",
+  fontSize: 12,
+  fontWeight: 700,
+  letterSpacing: 0.6,
+  marginBottom: 10,
+};
+
+const statusTextStyle: CSSProperties = {
+  fontSize: 18,
+  fontWeight: 700,
+  marginBottom: 8,
+};
+
+const detailTextStyle: CSSProperties = {
+  fontSize: 14,
+  lineHeight: 1.45,
+  opacity: 0.95,
+  marginTop: 6,
 };
