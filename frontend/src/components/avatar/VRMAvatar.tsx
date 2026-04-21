@@ -8,6 +8,8 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { VRM, VRMLoaderPlugin, VRMUtils } from "@pixiv/three-vrm";
 import { defaultAvatarModel } from "../../config/avatar";
+import type { AvatarState } from "../../types/avatar";
+import type { GesturePerformanceSnapshot } from "../../lib/gestureController";
 
 const VRM_PATH = defaultAvatarModel.path;
 
@@ -26,6 +28,7 @@ type MotionController = {
   transitionProgress: number;
 };
 
+<<<<<<< HEAD
 type SpeechRecognitionAlternativeLike = {
   transcript: string;
 };
@@ -70,6 +73,21 @@ const SpeechRecognitionCtor =
     : undefined;
 
 export function VRMAvatar() {
+=======
+type VRMAvatarProps = {
+  avatarState?: AvatarState;
+  stageMotion?: unknown;
+  gesturePerformance?: GesturePerformanceSnapshot;
+  reducedEffects?: boolean;
+};
+
+export function VRMAvatar({
+  avatarState,
+  stageMotion,
+  gesturePerformance,
+  reducedEffects,
+}: VRMAvatarProps) {
+>>>>>>> 06e81a3 (Describe your SarahNode changes)
   const containerRef = useRef<HTMLDivElement | null>(null);
   const vrmRef = useRef<VRM | null>(null);
   const mixerRef = useRef<THREE.AnimationMixer | null>(null);
@@ -93,7 +111,14 @@ export function VRMAvatar() {
   const [micAvailable, setMicAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
+<<<<<<< HEAD
     mountedRef.current = true;
+=======
+    void avatarState;
+    void stageMotion;
+    void gesturePerformance;
+    void reducedEffects;
+>>>>>>> 06e81a3 (Describe your SarahNode changes)
 
     const container = containerRef.current;
     if (!container) return;
@@ -107,13 +132,17 @@ export function VRMAvatar() {
     const scene = new THREE.Scene();
 
     const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 1000);
-    camera.position.set(0, 1.2, 2.5);
-    camera.lookAt(0, 1, 0);
+    camera.position.set(0, 1.4, 2.8);
+    camera.lookAt(0, 1.2, 0);
 
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+    const renderer = new THREE.WebGLRenderer({
+      alpha: true,
+      antialias: true,
+    });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setClearColor(0x000000, 0);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     if ("outputColorSpace" in renderer) {
       renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -124,11 +153,11 @@ export function VRMAvatar() {
 
     scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
 
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(1, 2, 3);
-    scene.add(light);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    directionalLight.position.set(1, 2, 3);
+    scene.add(directionalLight);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
 
     const lookTarget = new THREE.Object3D();
     lookTarget.position.set(0, 1.2, 0.5);
@@ -139,6 +168,7 @@ export function VRMAvatar() {
     loader.crossOrigin = "anonymous";
     loader.register((parser) => new VRMLoaderPlugin(parser));
 
+<<<<<<< HEAD
     loader.load(
       VRM_PATH,
       (gltf) => {
@@ -250,6 +280,75 @@ export function VRMAvatar() {
           setStatusText("Avatar load error");
         }
       }
+=======
+    console.log("Loading VRM from:", VRM_PATH);
+
+    loader.load(
+      VRM_PATH,
+      (gltf) => {
+        if (disposed) return;
+
+        console.log("✅ VRM loaded");
+
+        const vrm = gltf.userData.vrm as VRM | undefined;
+
+        if (!vrm) {
+          console.error("❌ No VRM found in GLTF userData");
+          return;
+        }
+
+        VRMUtils.rotateVRM0(vrm);
+        scene.add(vrm.scene);
+
+        const box = new THREE.Box3().setFromObject(vrm.scene);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+
+        console.log("📏 Model size:", size);
+        console.log("📍 Model center:", center);
+
+        if (size.y > 0) {
+          const scale = 1.5 / size.y;
+          vrm.scene.scale.setScalar(scale);
+        } else {
+          console.warn("⚠️ Model height was 0, using fallback scale");
+          vrm.scene.scale.setScalar(1);
+        }
+
+        const scaledBox = new THREE.Box3().setFromObject(vrm.scene);
+        const scaledCenter = new THREE.Vector3();
+        scaledBox.getCenter(scaledCenter);
+
+        vrm.scene.position.x = -scaledCenter.x;
+        vrm.scene.position.y = -scaledBox.min.y;
+        vrm.scene.position.z = 0;
+
+        baseYRef.current = vrm.scene.position.y;
+
+        console.log("📦 Final model position:", vrm.scene.position);
+        console.log("📦 Final model scale:", vrm.scene.scale);
+
+        vrmRef.current = vrm;
+        mixerRef.current = new THREE.AnimationMixer(vrm.scene);
+
+        motionControllerRef.current = {
+          currentState: "idle",
+          nextState: null,
+          stateStartedAt: performance.now(),
+          transitionProgress: 1,
+        };
+      },
+      (progressEvent) => {
+        if (!progressEvent.total) return;
+        const percent = (progressEvent.loaded / progressEvent.total) * 100;
+        console.log(`📥 VRM loading: ${percent.toFixed(1)}%`);
+      },
+      (error) => {
+        console.error("❌ VRM failed to load:", error);
+      },
+>>>>>>> 06e81a3 (Describe your SarahNode changes)
     );
 
     const clock = new THREE.Clock();
@@ -348,10 +447,13 @@ export function VRMAvatar() {
           vrm.expressionManager.setValue("blink", blink);
           vrm.expressionManager.setValue("happy", 0.12);
           vrm.expressionManager.setValue("relaxed", 0.1);
+<<<<<<< HEAD
 
           vrm.expressionManager.setValue("aa", talking * 0.45);
           vrm.expressionManager.setValue("ih", talking * 0.22);
           vrm.expressionManager.setValue("ou", talking * 0.18);
+=======
+>>>>>>> 06e81a3 (Describe your SarahNode changes)
         }
       }
 
@@ -385,7 +487,7 @@ export function VRMAvatar() {
       vrmRef.current = null;
       mixerRef.current = null;
     };
-  }, []);
+  }, [avatarState, stageMotion, gesturePerformance, reducedEffects]);
 
   const getAudioInputDevices = async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return [];
@@ -614,7 +716,10 @@ export function VRMAvatar() {
 function updateStateMachine(controller: MotionController, now: number) {
   const elapsed = now - controller.stateStartedAt;
   controller.transitionProgress = Math.min(1, elapsed / 500);
+<<<<<<< HEAD
   void elapsed;
+=======
+>>>>>>> 06e81a3 (Describe your SarahNode changes)
 }
 
 function applyBaseIdlePresence({
@@ -665,6 +770,7 @@ function applyIdleState({
   vrm: VRM;
   timeSeconds: number;
 }) {
+<<<<<<< HEAD
   const humanoid = vrm.humanoid;
   if (!humanoid) return;
 
@@ -716,6 +822,10 @@ function applyIdleState({
   if (rightHand) {
     rightHand.rotation.y = -0.08 + Math.sin(timeSeconds * 1.2) * 0.02;
   }
+=======
+  void vrm;
+  void timeSeconds;
+>>>>>>> 06e81a3 (Describe your SarahNode changes)
 }
 
 function applyMovingState({
