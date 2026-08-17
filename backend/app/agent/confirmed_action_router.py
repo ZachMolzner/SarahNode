@@ -13,6 +13,7 @@ from app.agent.confirmed_action_tools import (
     resolve_existing_mutation_path,
     resolve_new_mutation_path,
 )
+from app.agent.desktop_action_tools import _normalize_app_name
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +109,6 @@ def parse_confirmed_action(text: str) -> ConfirmedActionRequest | None:
 
     prefix = r"^(?:sarah[,:]?\s+)?(?:please\s+)?"
 
-    # Create a new folder: "create folder Test in Downloads" or an exact profile path.
     match = re.match(prefix + r"(?:create|make)\s+(?:a\s+)?folder(?:\s+named)?\s+(.+?)\s+in\s+(.+?)\s*$", raw, re.IGNORECASE)
     if match:
         name = _clean(match.group(1))
@@ -128,13 +128,11 @@ def parse_confirmed_action(text: str) -> ConfirmedActionRequest | None:
         target = _clean(match.group(1))
         if target.lower() in _GENERIC_TARGETS:
             return None
-        # Only accept explicit/known profile paths in this form. A bare word is too ambiguous.
         if not any(separator in target for separator in ("\\", "/")) and _known_folder(target) is None:
             return None
         resolved = resolve_new_mutation_path(target)
         return ConfirmedActionRequest("create_folder", {"path": str(resolved)}, f'create the folder "{resolved}"')
 
-    # Create a text file. Optional quoted text keeps this parser deterministic.
     match = re.match(
         prefix + r"(?:create|make)\s+(?:a\s+)?file(?:\s+named)?\s+(.+?)\s+in\s+(.+?)(?:\s+with\s+(?:text|content)\s+[\"'](.*)[\"'])?\s*$",
         raw,
@@ -164,7 +162,6 @@ def parse_confirmed_action(text: str) -> ConfirmedActionRequest | None:
         resolved = resolve_new_mutation_path(target)
         return ConfirmedActionRequest("create_file", {"path": str(resolved), "content": ""}, f'create the empty file "{resolved}"')
 
-    # Rename keeps the item in its current parent unless a full destination is supplied.
     match = re.match(prefix + r"rename\s+(.+?)\s+to\s+(.+?)\s*$", raw, re.IGNORECASE)
     if match:
         source_text = _clean(match.group(1))
@@ -182,7 +179,6 @@ def parse_confirmed_action(text: str) -> ConfirmedActionRequest | None:
             f'rename "{source}" to "{destination.name}"',
         )
 
-    # Move an item to a folder/path.
     match = re.match(prefix + r"move\s+(.+?)\s+to\s+(.+?)\s*$", raw, re.IGNORECASE)
     if match:
         source_text = _clean(match.group(1))
@@ -203,7 +199,6 @@ def parse_confirmed_action(text: str) -> ConfirmedActionRequest | None:
             f'move "{source}" to "{destination}"',
         )
 
-    # Delete is intentionally implemented as Recycle Bin, never permanent deletion.
     match = re.match(prefix + r"(?:delete|remove|recycle)\s+(.+?)\s*$", raw, re.IGNORECASE)
     if match:
         target = _clean(match.group(1))
@@ -216,7 +211,23 @@ def parse_confirmed_action(text: str) -> ConfirmedActionRequest | None:
             f'move "{path}" to the Recycle Bin',
         )
 
-    # Close/quit an allowlisted app using WM_CLOSE; no force kill in Phase 4C.
+    # Force termination is deliberately distinct from a normal close. It can discard
+    # unsaved work, so it maps to a HIGH-risk tool and receives its own confirmation.
+    match = re.match(prefix + r"(?:force\s+close|force\s+quit|kill|terminate)\s+(.+?)\s*$", raw, re.IGNORECASE)
+    if match:
+        app = _clean(match.group(1))
+        try:
+            _app_executable(app)
+        except ValueError:
+            return None
+        if _normalize_app_name(app) in {"explorer", "file explorer"}:
+            raise ValueError("Force-closing File Explorer is blocked because it also hosts the Windows shell")
+        return ConfirmedActionRequest(
+            "terminate_app",
+            {"app": app},
+            f'force-close {app} and terminate its matching processes',
+        )
+
     match = re.match(prefix + r"(?:close|quit|exit)\s+(.+?)\s*$", raw, re.IGNORECASE)
     if match:
         app = _clean(match.group(1))
