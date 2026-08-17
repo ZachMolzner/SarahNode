@@ -18,6 +18,8 @@ class PermissionScope(str, Enum):
     DESKTOP_READ = "desktop.read"
     DESKTOP_CONTROL = "desktop.control"
     WEB_READ = "web.read"
+    MEMORY_READ = "memory.read"
+    MEMORY_WRITE = "memory.write"
     COMMUNICATIONS_READ = "communications.read"
     COMMUNICATIONS_SEND = "communications.send"
     CALENDAR_READ = "calendar.read"
