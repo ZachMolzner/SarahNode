@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from app.agent.app_lifecycle_tools import hardened_close_app_tool, hardened_terminate_app_tool
 from app.agent.automation import AutomationRegistry
 from app.agent.builtin_tools import builtin_tools
 from app.agent.confirmed_action_tools import confirmed_action_tools
@@ -40,7 +41,16 @@ class SarahAgentRuntime:
 
         # Phase 4C/4D mutation and termination tools require confirmed=True at the
         # ToolRegistry boundary. Batch execution never bypasses this permission check.
-        self.tools.register_many(confirmed_action_tools())
+        # Close/terminate use launch-aware wrappers so an immediately-following step
+        # can wait for a just-launched app to become observable before acting on it.
+        confirmed_tools = [
+            tool
+            for tool in confirmed_action_tools()
+            if tool.name not in {"close_app", "terminate_app"}
+        ]
+        self.tools.register_many(confirmed_tools)
+        self.tools.register(hardened_close_app_tool())
+        self.tools.register(hardened_terminate_app_tool())
 
         self.events = EventBus()
         self.automations = AutomationRegistry()
@@ -78,8 +88,8 @@ class SarahAgentRuntime:
                 "confirmed_file_create": "active",
                 "confirmed_file_move_rename": "active",
                 "confirmed_recycle_bin": "active",
-                "confirmed_app_close": "verified_window_close_active",
-                "confirmed_force_app_terminate": "high_risk_active",
+                "confirmed_app_close": "verified_window_close_launch_aware",
+                "confirmed_force_app_terminate": "high_risk_launch_aware",
                 "multi_action_plans": "up_to_8_sequential_actions_active",
                 "batch_confirmation": "single_confirmation_for_mutating_plan",
                 "permanent_delete": "not_available",
