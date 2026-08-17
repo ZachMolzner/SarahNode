@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from app.agent.automation import AutomationRegistry
 from app.agent.builtin_tools import builtin_tools
 from app.agent.desktop_action_tools import desktop_action_tools
@@ -7,6 +9,7 @@ from app.agent.desktop_tools import desktop_read_tools
 from app.agent.event_bus import EventBus
 from app.agent.permissions import default_policy
 from app.agent.tool_registry import ToolRegistry
+from app.agent.web_launch_tools import safe_open_url_tool
 
 
 class SarahAgentRuntime:
@@ -15,7 +18,25 @@ class SarahAgentRuntime:
         self.tools = ToolRegistry(self.permissions)
         self.tools.register_many(builtin_tools())
         self.tools.register_many(desktop_read_tools())
-        self.tools.register_many(desktop_action_tools())
+
+        # Register the app/folder/file launch tools with a strict "explicit action"
+        # description so model-driven calls cannot reinterpret informational questions
+        # as commands. URL opening is registered from the hardened HTTP/HTTPS-only tool.
+        action_tools = [
+            replace(
+                tool,
+                description=(
+                    "Use only when the user explicitly asks Sarah to perform this desktop action now. "
+                    "Never use for hypothetical questions, instructions, or suggestions. "
+                    + tool.description
+                ),
+            )
+            for tool in desktop_action_tools()
+            if tool.name != "open_url"
+        ]
+        self.tools.register_many(action_tools)
+        self.tools.register(safe_open_url_tool())
+
         self.events = EventBus()
         self.automations = AutomationRegistry()
 
