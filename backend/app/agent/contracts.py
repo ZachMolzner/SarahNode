@@ -22,6 +22,8 @@ class PermissionScope(str, Enum):
     DESKTOP_READ = "desktop.read"
     DESKTOP_CONTROL = "desktop.control"
     SCREEN_READ = "screen.read"
+    SCREEN_POINTER = "screen.pointer"
+    SCREEN_CLICK = "screen.click"
     APPS_LAUNCH = "apps.launch"
     APPS_FOCUS = "apps.focus"
     APPS_CLOSE = "apps.close"
