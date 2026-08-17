@@ -13,8 +13,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+import httpx
 import psutil
-from openai import AsyncOpenAI
 from PIL import Image, ImageGrab
 
 from app.agent.contracts import PermissionScope
@@ -170,12 +170,6 @@ def classify_screen_reasoning_mode(text: str) -> ScreenReasoningMode:
 class ScreenAwarenessService:
     def __init__(self, permission_policy: PermissionPolicy) -> None:
         self.permission_policy = permission_policy
-        base_url = settings.local_llm_base_url.rstrip("/") + "/"
-        self.client = AsyncOpenAI(
-            base_url=base_url,
-            api_key=settings.local_llm_api_key,
-            timeout=settings.screen_vision_timeout_seconds,
-        )
 
     def should_handle(self, text: str) -> bool:
         return settings.screen_awareness_enabled and is_screen_awareness_request(text)
@@ -219,16 +213,13 @@ class ScreenAwarenessService:
         point = POINT()
         if not user32.GetCursorPos(ctypes.byref(point)):
             return None
-
         monitor = user32.MonitorFromPoint(point, 2)
         if not monitor:
             return None
-
         info = MONITORINFO()
         info.cbSize = ctypes.sizeof(MONITORINFO)
         if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
             return None
-
         rect = info.rcMonitor
         return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
 
@@ -249,14 +240,12 @@ class ScreenAwarenessService:
         hwnd = user32.GetForegroundWindow()
         if not hwnd:
             return None, "", ""
-
         length = int(user32.GetWindowTextLengthW(hwnd))
         title = ""
         if length > 0:
             buffer = ctypes.create_unicode_buffer(length + 1)
             user32.GetWindowTextW(hwnd, buffer, length + 1)
             title = buffer.value.strip()
-
         pid = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         process_name = ""
@@ -265,22 +254,18 @@ class ScreenAwarenessService:
                 process_name = psutil.Process(int(pid.value)).name()
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 pass
-
         return int(hwnd), title, process_name
 
     def _hide_sarah_if_foreground(self) -> int | None:
         if platform.system() != "Windows" or not settings.screen_hide_sarah_during_capture:
             return None
-
         hwnd, title, process_name = self._foreground_window_identity()
         if not hwnd:
             return None
-
         title_key = title.lower().replace(".", "")
         process_key = process_name.lower().replace(".", "")
         if "sarahnode" not in title_key and "sarahnode" not in process_key:
             return None
-
         ctypes.windll.user32.ShowWindow(wintypes.HWND(hwnd), 0)
         return hwnd
 
@@ -302,10 +287,7 @@ class ScreenAwarenessService:
             image = image.convert("RGB")
 
         source_width, source_height = image.size
-        if bbox is None:
-            capture_left, capture_top = 0, 0
-        else:
-            capture_left, capture_top = int(bbox[0]), int(bbox[1])
+        capture_left, capture_top = (0, 0) if bbox is None else (int(bbox[0]), int(bbox[1]))
         capture_width, capture_height = source_width, source_height
 
         max_dimension = max(800, int(settings.screen_capture_max_dimension))
@@ -372,65 +354,177 @@ class ScreenAwarenessService:
         )
 
     @staticmethod
+    def _structured_schema() -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "answer": {"type": "string"},
+                "observations": {"type": "array", "items": {"type": "string"}},
+                "recommended_steps": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "maxItems": 6,
+                },
+                "targets": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "role": {"type": "string"},
+                            "visible_text": {"type": "string"},
+                            "bbox": {
+                                "anyOf": [
+                                    {
+                                        "type": "array",
+                                        "items": {"type": "number", "minimum": 0, "maximum": 1000},
+                                        "minItems": 4,
+                                        "maxItems": 4,
+                                    },
+                                    {"type": "null"},
+                                ]
+                            },
+                            "confidence": {
+                                "anyOf": [
+                                    {"type": "number", "minimum": 0, "maximum": 1},
+                                    {"type": "null"},
+                                ]
+                            },
+                        },
+                        "required": ["label", "role", "visible_text", "bbox", "confidence"],
+                    },
+                },
+                "caution": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+            },
+            "required": ["answer", "observations", "recommended_steps", "targets", "caution"],
+        }
+
+    @staticmethod
     def _structured_user_prompt(question: str, mode: ScreenReasoningMode) -> str:
+        schema = json.dumps(ScreenAwarenessService._structured_schema(), separators=(",", ":"))
         return (
             f"User request: {question}\n"
             f"Reasoning mode: {mode.value}.\n"
-            "Return ONLY one JSON object with this schema:\n"
-            "{\n"
-            '  "answer": "natural concise answer for the user",\n'
-            '  "observations": ["visible fact", "visible fact"],\n'
-            '  "recommended_steps": ["step 1", "step 2"],\n'
-            '  "targets": [\n'
-            '    {"label": "Save", "role": "button", "visible_text": "Save", "bbox": [left, top, right, bottom], "confidence": 0.0}\n'
-            "  ],\n"
-            '  "caution": null\n'
-            "}\n"
-            "bbox coordinates are normalized to the screenshot: left edge=0, top edge=0, right edge=1000, bottom edge=1000. "
-            "Only include a target if you can visibly identify it. If you cannot locate a requested control, use an empty targets list and say so. "
-            "Use at most 6 recommended steps and 8 targets. Confidence must be between 0 and 1. "
-            "Do not put markdown fences around the JSON."
+            "Return a concise answer plus any visibly identifiable UI targets. "
+            "Target bbox coordinates use 0-1000 normalized screenshot coordinates. "
+            "If a requested control is not clearly visible, return an empty targets list instead of guessing. "
+            f"Follow this JSON schema exactly: {schema}"
         )
 
     @staticmethod
     def _plain_user_prompt(question: str) -> str:
         return f"User request: {question}\nInspect the screenshot and answer the request naturally as Sarah."
 
-    async def _request_vision(self, frame: _CapturedFrame, user_text: str, *, max_tokens: int) -> str:
+    @staticmethod
+    def _native_ollama_chat_url() -> str:
+        base = settings.local_llm_base_url.rstrip("/")
+        if base.endswith("/v1"):
+            base = base[:-3]
+        return base.rstrip("/") + "/api/chat"
+
+    @staticmethod
+    def _frame_base64(frame: _CapturedFrame) -> str:
+        _prefix, separator, encoded = frame.data_url.partition(",")
+        if not separator or not encoded:
+            raise ScreenAwarenessError("The captured screen image could not be prepared for visual analysis.")
+        return encoded
+
+    async def _post_ollama_chat(self, body: dict[str, Any]) -> dict[str, Any]:
+        timeout = httpx.Timeout(float(settings.screen_vision_timeout_seconds))
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(self._native_ollama_chat_url(), json=body)
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, dict):
+            raise ScreenAwarenessError("The local vision server returned an invalid response.")
+        return payload
+
+    async def _request_vision(
+        self,
+        frame: _CapturedFrame,
+        user_text: str,
+        *,
+        max_tokens: int,
+        structured: bool = False,
+    ) -> str:
         model = settings.local_vision_model
+        body: dict[str, Any] = {
+            "model": model,
+            "stream": False,
+            "think": False,
+            "keep_alive": "10m",
+            "messages": [
+                {"role": "system", "content": self._base_system_prompt()},
+                {
+                    "role": "user",
+                    "content": user_text,
+                    "images": [self._frame_base64(frame)],
+                },
+            ],
+            "options": {
+                "temperature": 0.15,
+                "num_predict": max_tokens,
+            },
+        }
+        if structured:
+            body["format"] = self._structured_schema()
+
         try:
-            response = await self.client.chat.completions.create(
-                model=model,
-                temperature=0.15,
-                max_tokens=max_tokens,
-                messages=[
-                    {"role": "system", "content": self._base_system_prompt()},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": user_text},
-                            {"type": "image_url", "image_url": {"url": frame.data_url}},
-                        ],
-                    },
-                ],
-            )
-        except Exception as exc:
-            logger.exception("Local vision request failed")
-            lowered = str(exc).lower()
-            if "not found" in lowered or "404" in lowered:
+            payload = await self._post_ollama_chat(body)
+        except httpx.HTTPStatusError as exc:
+            logger.exception("Local Ollama vision request failed")
+            response_text = exc.response.text.lower()
+            if exc.response.status_code == 404 or "not found" in response_text:
                 raise ScreenAwarenessError(
                     f"My screen capture is ready, but the local vision model '{model}' is not installed. Run: ollama pull {model}"
                 ) from exc
-            if "connection" in lowered or "connect" in lowered:
-                raise ScreenAwarenessError(
-                    "I captured the screen, but I couldn't reach the local Ollama server for visual analysis."
-                ) from exc
+            raise ScreenAwarenessError("I captured the screen, but the local vision model couldn't analyze it.") from exc
+        except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+            logger.exception("Could not reach local Ollama vision server")
+            raise ScreenAwarenessError(
+                "I captured the screen, but I couldn't reach the local Ollama server for visual analysis."
+            ) from exc
+        except httpx.TimeoutException as exc:
+            logger.exception("Local Ollama vision request timed out")
+            raise ScreenAwarenessError(
+                "I captured the screen, but visual analysis took too long. Try again after the vision model has warmed up."
+            ) from exc
+        except ScreenAwarenessError:
+            raise
+        except Exception as exc:
+            logger.exception("Local vision request failed")
             raise ScreenAwarenessError("I captured the screen, but the local vision model couldn't analyze it.") from exc
 
-        text = response.choices[0].message.content or ""
-        if not isinstance(text, str) or not text.strip():
+        message = payload.get("message") if isinstance(payload, dict) else None
+        text = str(message.get("content") or "").strip() if isinstance(message, dict) else ""
+        if text:
+            return text
+
+        # A thinking-capable model can occasionally return no final content even when
+        # thinking is disabled. Retry once without the structured format and with a
+        # direct final-answer instruction rather than failing the user's whole turn.
+        retry_body = dict(body)
+        retry_body.pop("format", None)
+        retry_body["messages"] = [
+            {"role": "system", "content": self._base_system_prompt()},
+            {
+                "role": "user",
+                "content": user_text + "\nReturn a concise final answer now. Do not return an empty response.",
+                "images": [self._frame_base64(frame)],
+            },
+        ]
+        retry_body["options"] = {"temperature": 0.1, "num_predict": min(max_tokens, 650)}
+        try:
+            retry_payload = await self._post_ollama_chat(retry_body)
+        except Exception as exc:
+            logger.exception("Local vision retry failed")
+            raise ScreenAwarenessError("The local vision model returned an empty screen analysis.") from exc
+        retry_message = retry_payload.get("message") if isinstance(retry_payload, dict) else None
+        retry_text = str(retry_message.get("content") or "").strip() if isinstance(retry_message, dict) else ""
+        if not retry_text:
             raise ScreenAwarenessError("The local vision model returned an empty screen analysis.")
-        return text.strip()
+        return retry_text
 
     @staticmethod
     def _extract_json_object(raw: str) -> dict[str, Any] | None:
@@ -527,20 +621,16 @@ class ScreenAwarenessService:
         parts: list[str] = []
         if answer:
             parts.append(answer)
-
         if targets and mode in {ScreenReasoningMode.LOCATE, ScreenReasoningMode.PLAN}:
             primary = targets[0]
             location = cls._target_region(primary.bbox_normalized)
             label = primary.visible_text or primary.label
             parts.append(f'I can identify "{label}" {location}.')
-
         if steps:
             rendered_steps = "\n".join(f"{index}. {step}" for index, step in enumerate(steps, start=1))
             parts.append("Suggested steps:\n" + rendered_steps)
-
         if caution:
             parts.append("Caution: " + caution)
-
         return "\n\n".join(parts).strip()
 
     async def analyze(self, question: str) -> ScreenAnalysisResult:
@@ -550,19 +640,26 @@ class ScreenAwarenessService:
         frame = await self._capture()
         model = settings.local_vision_model
         mode = classify_screen_reasoning_mode(question)
-
         targets: tuple[VisualTarget, ...] = ()
         steps: tuple[str, ...] = ()
         caution: str | None = None
 
         if mode in {ScreenReasoningMode.DESCRIBE, ScreenReasoningMode.READ}:
-            text = await self._request_vision(frame, self._plain_user_prompt(question), max_tokens=700)
+            text = await self._request_vision(
+                frame,
+                self._plain_user_prompt(question),
+                max_tokens=650,
+                structured=False,
+            )
         else:
-            raw = await self._request_vision(frame, self._structured_user_prompt(question, mode), max_tokens=1100)
+            raw = await self._request_vision(
+                frame,
+                self._structured_user_prompt(question, mode),
+                max_tokens=850,
+                structured=True,
+            )
             payload = self._extract_json_object(raw)
             if payload is None:
-                # Vision models occasionally ignore structured-output instructions.
-                # Keep the answer useful instead of failing the entire visual turn.
                 text = raw
             else:
                 answer = str(payload.get("answer") or "").strip()
