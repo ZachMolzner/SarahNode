@@ -34,6 +34,13 @@ class ToolDefinition:
     name: str
     description: str
     handler: Callable[[Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
+    parameters: Mapping[str, Any] = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        }
+    )
     scopes: frozenset[PermissionScope] = field(default_factory=frozenset)
     risk: RiskLevel = RiskLevel.READ_ONLY
     requires_confirmation: bool = False
