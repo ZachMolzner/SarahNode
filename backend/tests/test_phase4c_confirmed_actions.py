@@ -12,7 +12,11 @@ from app.agent.confirmed_action_router import (
     is_confirmation,
     parse_confirmed_action,
 )
-from app.agent.confirmed_action_tools import confirmed_action_tools, resolve_existing_mutation_path
+from app.agent.confirmed_action_tools import (
+    _process_names_for_app,
+    confirmed_action_tools,
+    resolve_existing_mutation_path,
+)
 from app.agent.contracts import PermissionScope
 from app.agent.permissions import PermissionDenied, default_policy
 
@@ -98,9 +102,31 @@ def test_close_app_requires_confirmation_request() -> None:
     assert request.arguments == {"app": "Opera"}
 
 
+def test_force_close_is_a_distinct_high_risk_request() -> None:
+    request = parse_confirmed_action("Kill Opera")
+    assert request is not None
+    assert request.tool_name == "terminate_app"
+    assert request.arguments == {"app": "Opera"}
+    assert "force-close" in request.summary
+
+    request = parse_confirmed_action("Force close VS Code")
+    assert request is not None
+    assert request.tool_name == "terminate_app"
+
+
+def test_force_close_file_explorer_is_blocked() -> None:
+    with pytest.raises(ValueError):
+        parse_confirmed_action("Kill File Explorer")
+
+
+def test_calculator_uses_packaged_process_alias() -> None:
+    names = {name.lower() for name in _process_names_for_app("Calculator")}
+    assert "calculatorapp.exe" in names
+    assert "calc.exe" in names
+
+
 def test_generic_or_unsupported_requests_are_not_auto_staged(fake_home: Path) -> None:
     assert parse_confirmed_action("Delete a file") is None
-    assert parse_confirmed_action("Kill Opera") is None
     assert parse_confirmed_action("Install Discord") is None
     assert parse_confirmed_action("Run PowerShell as administrator") is None
 
@@ -132,6 +158,7 @@ def test_default_policy_uses_granular_scopes_not_broad_control() -> None:
     assert PermissionScope.FILES_MOVE in policy.granted_scopes
     assert PermissionScope.FILES_RECYCLE in policy.granted_scopes
     assert PermissionScope.APPS_CLOSE in policy.granted_scopes
+    assert PermissionScope.APPS_TERMINATE in policy.granted_scopes
 
     assert PermissionScope.FILES_WRITE not in policy.granted_scopes
     assert PermissionScope.DESKTOP_CONTROL not in policy.granted_scopes
