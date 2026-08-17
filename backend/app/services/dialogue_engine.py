@@ -77,6 +77,8 @@ class DialogueEngine:
         if request.tool_name == "focus_app":
             if data.get("focused"):
                 return f"Brought {subject} to the front."
+            if data.get("raised"):
+                return f"Brought {subject} to the front, but Windows kept keyboard focus in the current app."
             reason = str(data.get("reason") or "Windows did not allow the foreground switch").strip()
             if reason.lower() == "app is not running":
                 return f"{subject} isn't running, so I couldn't bring it to the front."
