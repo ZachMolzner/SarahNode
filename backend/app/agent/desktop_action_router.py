@@ -28,8 +28,6 @@ _KNOWN_FOLDERS = {
     "videos",
     "sarahnode",
     "sarah node",
-    "sarahnode folder",
-    "sarah node folder",
     "sarahnode repo",
     "sarah node repo",
 }
@@ -67,6 +65,15 @@ def _known_app(value: str) -> bool:
     return normalized in _KNOWN_APPS
 
 
+def _known_folder_key(value: str) -> str | None:
+    normalized = " ".join(value.lower().replace("_", " ").split())
+    normalized = normalized.removeprefix("my ").strip()
+    normalized = normalized.removesuffix(" folder").strip()
+    if normalized in _KNOWN_FOLDERS:
+        return normalized
+    return None
+
+
 def parse_desktop_action(text: str) -> DesktopActionRequest | None:
     """Parse only clear, low-risk desktop launch commands.
 
@@ -77,7 +84,6 @@ def parse_desktop_action(text: str) -> DesktopActionRequest | None:
     if not raw:
         return None
 
-    # Foreground/focus commands are explicit and never launch a new instance.
     focus_patterns = (
         r"^(?:sarah[,:]?\s+)?(?:please\s+)?(?:focus|switch to)\s+(.+?)\s*$",
         r"^(?:sarah[,:]?\s+)?(?:please\s+)?bring\s+(.+?)\s+(?:to the front|to front|forward)\s*$",
@@ -90,8 +96,6 @@ def parse_desktop_action(text: str) -> DesktopActionRequest | None:
                 return DesktopActionRequest("focus_app", {"app": target}, target)
             return None
 
-    # Open/launch/start commands. Keep the parser conservative and hand anything
-    # more complicated to the model/tool layer instead of guessing.
     match = re.match(
         r"^(?:sarah[,:]?\s+)?(?:please\s+)?(?:open|launch|start)\s+(.+?)\s*$",
         raw,
@@ -99,19 +103,17 @@ def parse_desktop_action(text: str) -> DesktopActionRequest | None:
     )
     if match:
         target = _clean_target(match.group(1))
-        lowered = target.lower()
 
         if _URLISH_RE.match(target) or target.lower().startswith(("http://", "https://")):
             return DesktopActionRequest("open_url", {"url": target}, target)
 
-        folder_key = lowered.removeprefix("my ").strip()
-        if folder_key in _KNOWN_FOLDERS:
+        folder_key = _known_folder_key(target)
+        if folder_key is not None:
             return DesktopActionRequest("open_path", {"path": folder_key}, target)
 
         if _WINDOWS_PATH_RE.match(target) or any(sep in target for sep in ("\\", "/")):
             return DesktopActionRequest("open_path", {"path": target}, target)
 
-        # Common file names with an extension can be resolved safely by open_path.
         if re.search(r"\.[a-zA-Z0-9]{1,8}$", target):
             return DesktopActionRequest("open_path", {"path": target}, target)
 
@@ -120,8 +122,6 @@ def parse_desktop_action(text: str) -> DesktopActionRequest | None:
 
         return None
 
-    # "Go to" is reserved for clear web addresses so it cannot be confused with
-    # focusing an app or navigating the file system.
     match = re.match(
         r"^(?:sarah[,:]?\s+)?(?:please\s+)?go to\s+(.+?)\s*$",
         raw,
