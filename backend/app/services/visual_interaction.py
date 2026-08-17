@@ -146,15 +146,18 @@ class PendingVisualClickStore:
 
 
 def _clean_target(raw: str) -> str:
-    target = raw.strip().strip('"').strip("'").strip()
+    original = raw.strip().strip(" .,!;:")
+    target = original.strip('"').strip("'").strip()
     target = re.sub(r"\s+(?:please|for me)$", "", target, flags=re.IGNORECASE).strip()
-    target = re.sub(
+    without_role = re.sub(
         r"\s+(?:button|link|tab|checkbox|option|menu\s+item|field|search\s+box|textbox|control|icon)$",
         "",
         target,
         flags=re.IGNORECASE,
     ).strip()
-    return target
+    if without_role:
+        target = without_role
+    return target.strip().strip('"').strip("'").strip()
 
 
 def parse_visual_interaction_request(text: str) -> VisualInteractionRequest | None:
@@ -262,6 +265,9 @@ class VisualInteractionService:
     def has_pending(self, user_id: str) -> bool:
         return self.pending.get(user_id) is not None
 
+    def cancel_pending(self, user_id: str) -> PendingVisualClick | None:
+        return self.pending.cancel(user_id)
+
     def can_handle(self, message: ChatMessage) -> bool:
         if self.has_pending(message.user_id) and (
             is_visual_confirmation(message.content) or is_visual_cancellation(message.content)
@@ -271,8 +277,7 @@ class VisualInteractionService:
 
     async def _locate(self, target_query: str) -> tuple[ScreenAnalysisResult, VisualTarget, float]:
         prompt = (
-            f'Find the visible UI control labeled or clearly corresponding to "{target_query}" on my screen. '
-            "It may be a button, link, field, menu item, tab, checkbox, option, or icon. "
+            f'Find the button, field, link, tab, checkbox, menu item, icon, or other visible UI control labeled "{target_query}" on my screen. '
             "Return a target only if you can identify it confidently from the screenshot."
         )
         analysis = await self.screen.analyze(prompt)
@@ -329,8 +334,6 @@ class VisualInteractionService:
                     should_speak=True,
                 )
 
-            # Fresh localization is mandatory. We confirm the semantic target, not a
-            # stale coordinate from the earlier preview frame.
             try:
                 fresh_analysis, fresh_target, _score = await self._locate(pending.target_query)
             except ScreenAwarenessError as exc:
@@ -404,16 +407,14 @@ class VisualInteractionService:
 
         if request.action == "click" and other_system_change_pending:
             return AssistantReply(
-                text=(
-                    "You already have another pending system change. Confirm or cancel that action before staging a visual click."
-                ),
+                text="You already have another pending system change. Confirm or cancel that action before staging a visual click.",
                 emotion="concerned",
                 should_speak=True,
             )
 
         try:
             analysis, target, _score = await self._locate(request.target)
-            x, y = await self._move_to(analysis, target)
+            await self._move_to(analysis, target)
         except ScreenAwarenessError as exc:
             return AssistantReply(text=str(exc), emotion="concerned", should_speak=True)
 
@@ -425,11 +426,13 @@ class VisualInteractionService:
                 should_speak=True,
             )
 
+        # Strong confirmation is driven by the requested/visible control identity,
+        # not by generic vision-model caution prose. Every click still requires at
+        # least ordinary confirmation through click_pointer's permission boundary.
         consequential = _consequential_from_text(
             request.target,
             target.label,
             target.visible_text,
-            analysis.caution or "",
         )
         self.pending.stage(
             user_id,
