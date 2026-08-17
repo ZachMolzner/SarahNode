@@ -9,6 +9,10 @@ from app.services.identity_service import IdentityService
 
 
 _TOKEN_RE = re.compile(r"[a-zA-Z0-9'-]+")
+_EXPLICIT_REMEMBER_RE = re.compile(
+    r"^(?:sarah[,:]?\s+)?(?:please\s+)?(?:remember|save|learn)\s+(?:that\s+)?(.+?)\s*$",
+    re.IGNORECASE,
+)
 _STOPWORDS = {
     "the",
     "and",
@@ -52,6 +56,74 @@ class MemoryLearningService:
             for token in _TOKEN_RE.findall(normalized)
             if len(token) > 2 and token.lower() not in _STOPWORDS
         }
+
+    @staticmethod
+    def _slug(text: str, *, max_words: int = 6) -> str:
+        words = [
+            token.lower()
+            for token in _TOKEN_RE.findall(text.replace("_", " ").replace("-", " "))
+            if token.lower() not in _STOPWORDS
+        ][:max_words]
+        return "_".join(words) or "memory"
+
+    def _parse_explicit_memory(self, text: str) -> tuple[MemoryCategory, str, str] | None:
+        match = _EXPLICIT_REMEMBER_RE.match(text.strip())
+        if not match:
+            return None
+
+        value = match.group(1).strip().rstrip(".")
+        if not value:
+            return None
+
+        # Questions such as "remember what I said?" are retrieval requests, not writes.
+        lowered = value.lower()
+        if lowered.startswith(("what ", "when ", "where ", "which ", "who ", "why ", "how ", "whether ")):
+            return None
+
+        favorite_match = re.search(
+            r"\bmy\s+favorite\s+([a-zA-Z0-9 _-]+?)\s+is\s+(.+)$",
+            value,
+            re.IGNORECASE,
+        )
+        if favorite_match:
+            subject = favorite_match.group(1).strip()
+            return (
+                MemoryCategory.preference,
+                f"favorite_{self._slug(subject, max_words=4)}",
+                value,
+            )
+
+        if re.search(r"\b(?:i\s+prefer|my\s+preference|i\s+like)\b", lowered):
+            return MemoryCategory.preference, f"preference_{self._slug(value)}", value
+        if re.search(r"\b(?:goal|my\s+goal|i\s+want\s+to|i\s+plan\s+to)\b", lowered):
+            return MemoryCategory.goal, f"goal_{self._slug(value)}", value
+        if re.search(r"\b(?:project|sarahnode)\b", lowered):
+            return MemoryCategory.project, f"project_{self._slug(value)}", value
+        if re.search(r"\b(?:routine|every\s+day|every\s+morning|every\s+night)\b", lowered):
+            return MemoryCategory.routine, f"routine_{self._slug(value)}", value
+        if re.search(r"\b(?:habit|usually|normally)\b", lowered):
+            return MemoryCategory.habit, f"habit_{self._slug(value)}", value
+        if re.search(r"\b(?:wife|husband|spouse|friend|brother|sister|mother|father)\b", lowered):
+            return MemoryCategory.relationship, f"relationship_{self._slug(value)}", value
+        if re.search(r"\b(?:computer|pc|phone|tablet|laptop|device)\b", lowered):
+            return MemoryCategory.device, f"device_{self._slug(value)}", value
+        if re.search(r"\b(?:live\s+in|live\s+at|located\s+in|address|place)\b", lowered):
+            return MemoryCategory.place, f"place_{self._slug(value)}", value
+
+        return MemoryCategory.knowledge, self._slug(value), value
+
+    def capture_explicit_memory(self, text: str, *, scope: str) -> MemoryItem | None:
+        parsed = self._parse_explicit_memory(text)
+        if not parsed:
+            return None
+        category, key, value = parsed
+        return self.remember(
+            scope=scope,
+            category=category,
+            key=key,
+            value=value,
+            sensitive=False,
+        )
 
     def search(
         self,
@@ -111,7 +183,8 @@ class MemoryLearningService:
         sensitive: bool = False,
     ) -> MemoryItem:
         normalized_key = key.strip().lower().replace(" ", "_")
-        for existing in self.identity_service.list_memory_items(scope=scope):
+        normalized_scope = scope.strip().lower()
+        for existing in self.identity_service.list_memory_items(scope=normalized_scope):
             if existing.key == normalized_key and existing.category == category:
                 return self.identity_service.update_memory_item(
                     existing.id,
@@ -124,7 +197,7 @@ class MemoryLearningService:
                 )
 
         return self.identity_service.add_memory_item(
-            scope=scope.strip().lower(),
+            scope=normalized_scope,
             category=category,
             source=MemorySource.explicit,
             key=normalized_key,
@@ -138,6 +211,14 @@ class MemoryLearningService:
 
     def context_for(self, query: str, *, scopes: Iterable[str], limit: int = 8) -> str:
         scope_set = set(scopes)
+
+        # Explicit memory commands are persisted by the backend before the model
+        # sees the turn. This guarantees that a small local model cannot merely
+        # claim it remembered something without actually writing it to disk.
+        user_scopes = sorted(scope for scope in scope_set if scope != "household")
+        write_scope = user_scopes[0] if user_scopes else "household"
+        self.capture_explicit_memory(query, scope=write_scope)
+
         candidates: dict[str, MemoryItem] = {}
         for scope in scope_set:
             for item in self.search(query, scope=scope, limit=limit):
