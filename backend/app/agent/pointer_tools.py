@@ -116,6 +116,7 @@ def pointer_tools() -> list[ToolDefinition]:
             scopes=frozenset({PermissionScope.SCREEN_POINTER}),
             risk=RiskLevel.LOW,
             requires_confirmation=False,
+            model_visible=False,
         ),
         ToolDefinition(
             name="click_pointer",
@@ -137,5 +138,6 @@ def pointer_tools() -> list[ToolDefinition]:
             scopes=frozenset({PermissionScope.SCREEN_CLICK}),
             risk=RiskLevel.MEDIUM,
             requires_confirmation=True,
+            model_visible=False,
         ),
     ]
