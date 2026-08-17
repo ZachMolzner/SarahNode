@@ -18,6 +18,7 @@ from app.schemas.events import SystemEvent
 from app.services.dialogue_engine import DialogueEngine
 from app.services.identity_service import IdentityService
 from app.services.screen_awareness import ScreenAwarenessError, ScreenAwarenessService
+from app.services.visual_interaction import VisualInteractionService
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class StreamOrchestrator:
         identity_service: IdentityService,
         memory_learning_service: MemoryLearningService,
         screen_awareness_service: ScreenAwarenessService,
+        visual_interaction_service: VisualInteractionService,
     ) -> None:
         self.dialogue_engine = dialogue_engine
         self.tts_client = tts_client
@@ -44,6 +46,7 @@ class StreamOrchestrator:
         self.identity_service = identity_service
         self.memory_learning_service = memory_learning_service
         self.screen_awareness_service = screen_awareness_service
+        self.visual_interaction_service = visual_interaction_service
 
         self.queue: asyncio.PriorityQueue[tuple[int, int, ChatMessage]] | None = None
         self.events: asyncio.Queue[SystemEvent] | None = None
@@ -260,7 +263,62 @@ class StreamOrchestrator:
         generated_reply = None
 
         if moderation.allowed:
-            if self.screen_awareness_service.should_handle(message.content):
+            visual_interaction_requested = self.visual_interaction_service.can_handle(message)
+
+            # A visual click is intentionally ephemeral. Any intervening request that
+            # is not its confirmation/cancellation invalidates it before another
+            # system action or visual analysis can be staged.
+            if self.visual_interaction_service.has_pending(message.user_id) and not visual_interaction_requested:
+                cancelled = self.visual_interaction_service.cancel_pending(message.user_id)
+                if cancelled is not None:
+                    await self.emit_event(
+                        "visual_interaction_invalidated",
+                        {
+                            "target": cancelled.target_query,
+                            "reason": "intervening_user_message",
+                        },
+                    )
+
+            if visual_interaction_requested:
+                self.dialogue_engine.last_web_context = None
+                other_pending = bool(
+                    self.dialogue_engine.pending_confirmed_actions.get(message.user_id)
+                    or self.dialogue_engine.pending_action_plans.get(message.user_id)
+                )
+                await self.emit_event(
+                    "visual_interaction_started",
+                    {
+                        "persistence": "ephemeral",
+                        "other_system_change_pending": other_pending,
+                    },
+                )
+                try:
+                    generated_reply = await self.visual_interaction_service.handle(
+                        message,
+                        other_system_change_pending=other_pending,
+                    )
+                    await self.emit_event(
+                        "visual_interaction_completed",
+                        {
+                            "pending_click": self.visual_interaction_service.has_pending(message.user_id),
+                        },
+                    )
+                except Exception as exc:
+                    logger.exception("Visual interaction failed")
+                    generated_reply = AssistantReply(
+                        text=f"I couldn't complete that visual interaction safely: {exc}",
+                        emotion="concerned",
+                        should_speak=True,
+                    )
+                    await self.emit_event(
+                        "error",
+                        {
+                            "stage": "visual_interaction",
+                            "username": message.username,
+                            "details": str(exc),
+                        },
+                    )
+            elif self.screen_awareness_service.should_handle(message.content):
                 # Screen requests bypass the text-model/tool loop. Capture happens only
                 # for this explicit turn and the image is never added to memory/history.
                 self.dialogue_engine.last_web_context = None
@@ -282,6 +340,8 @@ class StreamOrchestrator:
                         "screen_analysis_completed",
                         {
                             "model": visual.model,
+                            "reasoning_mode": visual.reasoning_mode,
+                            "target_count": len(visual.targets),
                             "source_width": visual.source_width,
                             "source_height": visual.source_height,
                             "sent_width": visual.sent_width,
