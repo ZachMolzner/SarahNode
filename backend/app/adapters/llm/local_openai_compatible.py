@@ -36,9 +36,10 @@ class LocalOpenAICompatibleClient(LLMClient):
         )
         self.tool_registry = tool_registry
 
-    def _tool_specs(self) -> list[dict[str, Any]]:
+    def _tool_specs(self, *, exclude_names: set[str] | None = None) -> list[dict[str, Any]]:
         if not self.tool_registry:
             return []
+        excluded = exclude_names or set()
         return [
             {
                 "type": "function",
@@ -49,6 +50,7 @@ class LocalOpenAICompatibleClient(LLMClient):
                 },
             }
             for tool in self.tool_registry.list_tools()
+            if tool.name not in excluded
         ]
 
     async def _complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Any:
@@ -62,11 +64,13 @@ class LocalOpenAICompatibleClient(LLMClient):
     async def _invoke_live_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any] | None:
         if not self.tool_registry:
             return None
+        resolved_arguments = arguments or {}
         result = await self.tool_registry.invoke(
-            ToolInvocation(tool_name=name, arguments=arguments or {}, requested_by="live_context_prefetch")
+            ToolInvocation(tool_name=name, arguments=resolved_arguments, requested_by="live_context_prefetch")
         )
         return {
             "tool": name,
+            "arguments": resolved_arguments,
             "ok": result.ok,
             "data": dict(result.data),
             "error": result.error,
@@ -149,7 +153,6 @@ class LocalOpenAICompatibleClient(LLMClient):
         ):
             requests.append(("system_resources", {}))
 
-        # Deduplicate identical requests while preserving order.
         seen: set[str] = set()
         context: list[dict[str, Any]] = []
         for name, arguments in requests:
@@ -161,6 +164,76 @@ class LocalOpenAICompatibleClient(LLMClient):
             if result is not None:
                 context.append(result)
         return context
+
+    @staticmethod
+    def _render_live_context(context: list[dict[str, Any]]) -> str:
+        if not context:
+            return "No pre-fetched live host context for this turn."
+
+        lines: list[str] = []
+        for item in context:
+            tool = str(item.get("tool", ""))
+            arguments = item.get("arguments") or {}
+            data = item.get("data") or {}
+            if not item.get("ok"):
+                lines.append(f"LIVE TOOL ERROR: {tool}: {item.get('error') or 'unknown error'}")
+                continue
+
+            if tool == "running_processes":
+                name_filter = str(arguments.get("name_filter", "")).strip()
+                processes = data.get("processes") or []
+                matched = int(data.get("matched", len(processes)) or 0)
+                if name_filter:
+                    if matched == 0:
+                        lines.append(
+                            f"PROCESS CHECK: requested='{name_filter}'; match_count=0; conclusion=NOT RUNNING. "
+                            "This means only that the requested process was not found; other processes are still running."
+                        )
+                    else:
+                        names = ", ".join(
+                            f"{proc.get('name')} (PID {proc.get('pid')}, {proc.get('memory_mb')} MB)"
+                            for proc in processes[:10]
+                        )
+                        lines.append(
+                            f"PROCESS CHECK: requested='{name_filter}'; match_count={matched}; conclusion=RUNNING; matches={names}"
+                        )
+                else:
+                    if not processes:
+                        lines.append("TOP MEMORY PROCESSES: live process query returned no rows.")
+                    else:
+                        rows = "; ".join(
+                            f"{index}. {proc.get('name')} (PID {proc.get('pid')}) = {proc.get('memory_mb')} MB"
+                            for index, proc in enumerate(processes[:20], start=1)
+                        )
+                        lines.append(f"TOP MEMORY PROCESSES (highest memory first): {rows}")
+                continue
+
+            if tool == "active_window":
+                if data.get("supported") is False:
+                    lines.append(f"ACTIVE WINDOW: unsupported; reason={data.get('reason')}")
+                else:
+                    lines.append(
+                        "ACTIVE WINDOW: "
+                        f"title='{data.get('title') or ''}'; "
+                        f"process='{data.get('process_name') or ''}'; "
+                        f"pid={data.get('pid')}"
+                    )
+                continue
+
+            if tool == "system_resources":
+                memory = data.get("memory") or {}
+                disk = data.get("disk") or {}
+                lines.append(
+                    "SYSTEM RESOURCES: "
+                    f"cpu={data.get('cpu_percent')}%; "
+                    f"RAM total={memory.get('total_gb')} GB, available={memory.get('available_gb')} GB, used={memory.get('used_percent')}%; "
+                    f"disk free={disk.get('free_gb')} GB of {disk.get('total_gb')} GB, used={disk.get('used_percent')}%"
+                )
+                continue
+
+            lines.append(f"LIVE {tool}: {json.dumps(data, ensure_ascii=False)}")
+
+        return "\n".join(lines)
 
     async def generate_reply(
         self,
@@ -177,13 +250,19 @@ class LocalOpenAICompatibleClient(LLMClient):
         persona_name = str(persona.get("name", settings.persona_name))
         persona_style = str(persona.get("style", settings.persona_style))
         history_text = "\n".join(recent_history[-8:]) if recent_history else "No prior turns recorded."
-        tools = self._tool_specs()
+
         live_context = await self._prefetch_live_context(message.content)
-        live_context_text = (
-            json.dumps(live_context, ensure_ascii=False)
-            if live_context
-            else "No pre-fetched live host context for this turn."
-        )
+        live_context_text = self._render_live_context(live_context)
+
+        # If a volatile host tool has already produced successful fresh evidence for
+        # this turn, do not let a small local model call that same tool again with
+        # different arguments and accidentally replace good evidence with a weaker result.
+        prefetched_tools = {
+            str(item.get("tool"))
+            for item in live_context
+            if item.get("ok") and item.get("tool")
+        }
+        tools = self._tool_specs(exclude_names=prefetched_tools)
 
         messages: list[dict[str, Any]] = [
             {
@@ -195,7 +274,10 @@ class LocalOpenAICompatibleClient(LLMClient):
                     "For volatile computer state (running processes, active window, CPU/RAM/disk use, current files), live tool data always overrides memory and prior conversation. "
                     "Never claim a process is running/not running, name the active window, or give current resource usage from memory alone. "
                     "If LIVE HOST CONTEXT is supplied, it was read from the host just before this answer; use it as authoritative current evidence. "
+                    "For a filtered PROCESS CHECK, match_count=0 means the requested process is not running; it does NOT mean the computer has no running processes. "
+                    "If TOP MEMORY PROCESSES are supplied, report those rows directly and do not say the process list is unavailable or empty. "
                     "Do not say you lack real-time computer access when successful LIVE HOST CONTEXT is present. "
+                    "Answer live-host questions naturally; never mention the internal label 'LIVE HOST CONTEXT' to the user. "
                     "Persistent memory supplied in the request is durable SarahNode memory stored on disk and survives app restarts. "
                     "Treat explicit persistent memories as authoritative user facts unless the user corrects or updates them. "
                     "When a relevant persistent memory directly answers the user's non-volatile question, answer from it naturally and confidently. "
@@ -217,7 +299,7 @@ class LocalOpenAICompatibleClient(LLMClient):
                     "The following memory context may contain two different kinds of memory. "
                     "Anything labeled PERSISTENT is durable stored memory and should be treated as remembered fact for stable user information. "
                     "Do not use memory to infer volatile current host state.\n\n"
-                    f"LIVE HOST CONTEXT (fresh, current, overrides memory for computer state):\n{live_context_text}\n\n"
+                    f"FRESH HOST FACTS (current, authoritative for computer state):\n{live_context_text}\n\n"
                     f"Memory context:\n{memory_summary}\n\n"
                     f"Recent conversation:\n{history_text}\n\n"
                     f"User ({message.username}): {message.content}"
