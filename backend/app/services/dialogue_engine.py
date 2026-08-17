@@ -4,6 +4,13 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.llm.base import LLMClient
+from app.agent.confirmed_action_router import (
+    ConfirmedActionRequest,
+    PendingConfirmedActionStore,
+    is_cancellation,
+    is_confirmation,
+    parse_confirmed_action,
+)
 from app.agent.contracts import ToolInvocation
 from app.agent.desktop_action_router import DesktopActionRequest, parse_desktop_action
 from app.agent.runtime import agent_runtime
@@ -37,6 +44,7 @@ class DialogueEngine:
         self.web_browsing_policy = web_browsing_policy or WebBrowsingPolicy()
         self.web_answer_synthesizer = web_answer_synthesizer or WebAnswerSynthesizer()
         self.last_web_context: WebAnswerContext | None = None
+        self.pending_confirmed_actions = PendingConfirmedActionStore(ttl_seconds=180)
 
     def _load_persona(self) -> dict[str, Any]:
         if not self.persona_path.exists():
@@ -96,6 +104,112 @@ class DialogueEngine:
 
         return "Done."
 
+    @staticmethod
+    def _confirmed_action_success_text(request: ConfirmedActionRequest, data: dict[str, Any]) -> str:
+        if request.tool_name == "create_folder":
+            return f"Confirmed. Created the folder {data.get('path')}."
+
+        if request.tool_name == "create_file":
+            return f"Confirmed. Created the file {data.get('path')}."
+
+        if request.tool_name == "move_path":
+            return f"Confirmed. Moved it to {data.get('destination')}."
+
+        if request.tool_name == "recycle_path":
+            return f"Confirmed. Moved {data.get('path')} to the Recycle Bin."
+
+        if request.tool_name == "close_app":
+            action = str(data.get("action") or "")
+            app = str(data.get("app") or request.arguments.get("app") or "the app")
+            if action == "already_closed":
+                return f"{app} is already closed."
+            if action == "close_requested":
+                windows = int(data.get("windows_signaled", 0) or 0)
+                noun = "window" if windows == 1 else "windows"
+                return f"Confirmed. Asked {app} to close normally ({windows} {noun})."
+            reason = str(data.get("reason") or "I couldn't close it safely.")
+            return f"I found {app}, but I didn't force-close it: {reason}."
+
+        return "Confirmed. Done."
+
+    async def _handle_confirmed_action(self, message: ChatMessage) -> AssistantReply | None:
+        pending = self.pending_confirmed_actions.get(message.user_id)
+
+        if pending is not None and is_cancellation(message.content):
+            self.pending_confirmed_actions.cancel(message.user_id)
+            return AssistantReply(
+                text=f"Cancelled. I did not {pending.request.summary}.",
+                emotion="calm",
+                should_speak=True,
+            )
+
+        if pending is not None and is_confirmation(message.content):
+            pending = self.pending_confirmed_actions.pop(message.user_id)
+            if pending is None:
+                return AssistantReply(
+                    text="That confirmation expired. Please request the action again.",
+                    emotion="concerned",
+                    should_speak=True,
+                )
+
+            result = await agent_runtime.tools.invoke(
+                ToolInvocation(
+                    tool_name=pending.request.tool_name,
+                    arguments=pending.request.arguments,
+                    requested_by="confirmed_desktop_action_router",
+                ),
+                confirmed=True,
+            )
+            if not result.ok:
+                return AssistantReply(
+                    text=f"I didn't make the change: {self._clean_tool_error(result.error)}",
+                    emotion="concerned",
+                    should_speak=True,
+                )
+            return AssistantReply(
+                text=self._confirmed_action_success_text(pending.request, dict(result.data)),
+                emotion="calm",
+                should_speak=True,
+            )
+
+        request: ConfirmedActionRequest | None
+        try:
+            request = parse_confirmed_action(message.content)
+        except Exception as exc:
+            logger.info("Phase 4C request rejected during preview: %s", exc)
+            return AssistantReply(
+                text=f"I can't stage that change safely: {self._clean_tool_error(str(exc))}",
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        if request is not None:
+            self.pending_confirmed_actions.stage(message.user_id, request)
+            return AssistantReply(
+                text=(
+                    f"This will {request.summary}. Nothing has changed yet. "
+                    'Reply "confirm" within 3 minutes to proceed, or "cancel".'
+                ),
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        if pending is None and is_confirmation(message.content):
+            return AssistantReply(
+                text="There isn't a pending system change to confirm.",
+                emotion="calm",
+                should_speak=True,
+            )
+
+        if pending is None and is_cancellation(message.content):
+            return AssistantReply(
+                text="There isn't a pending system change to cancel.",
+                emotion="calm",
+                should_speak=True,
+            )
+
+        return None
+
     async def _handle_desktop_action(self, message: ChatMessage) -> AssistantReply | None:
         request = parse_desktop_action(message.content)
         if request is None:
@@ -131,6 +245,10 @@ class DialogueEngine:
         addressing_instruction: str | None = None,
     ) -> AssistantReply:
         self.last_web_context = None
+
+        confirmed_action_reply = await self._handle_confirmed_action(message)
+        if confirmed_action_reply is not None:
+            return confirmed_action_reply
 
         desktop_action_reply = await self._handle_desktop_action(message)
         if desktop_action_reply is not None:
