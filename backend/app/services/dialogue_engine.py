@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.llm.base import LLMClient
-from app.adapters.llm.mock import MockLLMClient
 from app.config.settings import settings
 from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.capability_router import CapabilityRoute, CapabilityRouter
@@ -83,7 +82,7 @@ class DialogueEngine:
 
             if search_results:
                 web_user_prompt = self.web_answer_synthesizer.build_web_prompt(message, self.last_web_context)
-                return await self._generate_with_fallback(
+                return await self._generate_with_provider_error(
                     message,
                     memory_summary,
                     recent_history,
@@ -96,10 +95,7 @@ class DialogueEngine:
                     user_prompt_override=web_user_prompt,
                 )
 
-        # Phase 2: when the legacy/local search provider is disabled, the real model
-        # may still use its own approved tools (including OpenAI web search). This
-        # avoids short-circuiting live questions into an 'unavailable' response.
-        return await self._generate_with_fallback(
+        return await self._generate_with_provider_error(
             message,
             memory_summary,
             recent_history,
@@ -107,7 +103,7 @@ class DialogueEngine:
             addressing_instruction=addressing_instruction,
         )
 
-    async def _generate_with_fallback(
+    async def _generate_with_provider_error(
         self,
         message: ChatMessage,
         memory_summary: str,
@@ -128,15 +124,14 @@ class DialogueEngine:
                 system_prompt_override=system_prompt_override,
                 user_prompt_override=user_prompt_override,
             )
-        except Exception:
-            logger.exception("Primary LLM client failed, using mock fallback")
-            return await MockLLMClient().generate_reply(
-                message=message,
-                memory_summary=memory_summary,
-                recent_history=recent_history,
-                persona=self.persona,
-                capability_route=capability_route,
-                system_prompt_override=system_prompt_override,
-                user_prompt_override=user_prompt_override,
-                addressing_instruction=addressing_instruction,
+        except Exception as exc:
+            logger.exception("Primary LLM client failed")
+            error_name = type(exc).__name__
+            return AssistantReply(
+                text=(
+                    "I reached the AI provider, but the request failed before I could answer. "
+                    f"Provider error: {error_name}. Check the SarahNode terminal for the full details."
+                ),
+                emotion="concerned",
+                should_speak=False,
             )
