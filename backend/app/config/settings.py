@@ -23,10 +23,19 @@ class Settings(BaseSettings):
     local_data_dir: str = "data"
     identity_store_path: str = "identity_memory.json"
 
-    llm_provider: str = "auto"
+    llm_provider: str = "local"
     tts_provider: str = "auto"
     stt_provider: str = "auto"
 
+    # Local-first model gateway. Defaults target Ollama's OpenAI-compatible API,
+    # but any compatible server (including llama.cpp) can be configured.
+    local_llm_base_url: str = "http://127.0.0.1:11434/v1"
+    local_llm_model: str = "llama3.2"
+    local_llm_api_key: str = "local"
+    local_llm_temperature: float = 0.4
+    local_llm_max_tool_rounds: int = 5
+
+    # Optional cloud fallback/provider.
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"
     openai_transcription_model: str = "whisper-1"
@@ -70,11 +79,8 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        # Always load SarahNode's backend/.env regardless of which directory
-        # launched Python (Tauri, PowerShell, tests, or a packaged sidecar).
         env_file=str(BACKEND_ENV_FILE),
         env_file_encoding="utf-8",
-        # Do not let inherited empty variables mask valid backend/.env values.
         env_ignore_empty=True,
         extra="ignore",
     )
