@@ -24,6 +24,7 @@ from app.services.dialogue_engine import DialogueEngine
 from app.services.identity_service import IdentityService
 from app.services.page_fetcher import PageFetcher
 from app.services.screen_awareness import ScreenAwarenessService
+from app.services.visual_interaction import VisualInteractionService
 from app.services.voice_service import VoiceService
 from app.services.web_search_service import WebSearchService
 
@@ -231,6 +232,10 @@ moderation_service = ModerationService()
 response_policy = ResponsePolicy()
 voice_service = VoiceService(stt_client=build_stt_client())
 screen_awareness_service = ScreenAwarenessService(permission_policy=agent_runtime.permissions)
+visual_interaction_service = VisualInteractionService(
+    screen=screen_awareness_service,
+    tools=agent_runtime.tools,
+)
 
 web_search_service = WebSearchService(
     provider=build_web_provider(),
@@ -259,4 +264,5 @@ stream_orchestrator = StreamOrchestrator(
     identity_service=identity_service,
     memory_learning_service=memory_learning_service,
     screen_awareness_service=screen_awareness_service,
+    visual_interaction_service=visual_interaction_service,
 )
