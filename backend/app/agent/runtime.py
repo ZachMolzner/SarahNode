@@ -10,6 +10,7 @@ from app.agent.desktop_action_tools import desktop_action_tools
 from app.agent.desktop_tools import desktop_read_tools
 from app.agent.event_bus import EventBus
 from app.agent.permissions import default_policy
+from app.agent.pointer_tools import pointer_tools
 from app.agent.screen_tools import screen_read_tools
 from app.agent.tool_registry import ToolRegistry
 from app.agent.web_launch_tools import safe_open_url_tool
@@ -54,12 +55,17 @@ class SarahAgentRuntime:
         self.tools.register(hardened_close_app_tool())
         self.tools.register(hardened_terminate_app_tool())
 
+        # Phase 5C pointer tools are deliberately narrow. move_pointer is LOW risk;
+        # click_pointer is MEDIUM risk and always requires confirmed=True. Neither
+        # grants broad desktop.control, keyboard injection, dragging, or scrolling.
+        self.tools.register_many(pointer_tools())
+
         self.events = EventBus()
         self.automations = AutomationRegistry()
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 9,
+            "architecture_version": 10,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -98,8 +104,13 @@ class SarahAgentRuntime:
                 "screen_awareness": "explicit_ephemeral_local_vision_active",
                 "screen_visual_reasoning": "describe_read_diagnose_locate_plan_active",
                 "screen_target_localization": "normalized_bbox_metadata_active",
+                "screen_pointer_preview": "explicit_visual_target_active",
+                "screen_click": "single_left_click_confirmed_revalidation_active",
+                "screen_click_verification": "fresh_post_click_visual_check_active",
+                "screen_keyboard": "not_available",
+                "screen_drag_drop": "not_available",
+                "screen_scroll": "not_available",
                 "screen_capture_persistence": "none",
-                "screen_control": "not_available",
                 "permanent_delete": "not_available",
                 "broad_desktop_control": "still_gated",
                 "web_tools": "provider_dependent",
