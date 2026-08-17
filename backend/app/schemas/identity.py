@@ -75,6 +75,13 @@ class MemoryCategory(str, Enum):
     preference = "preference"
     habit = "habit"
     routine = "routine"
+    project = "project"
+    experience = "experience"
+    knowledge = "knowledge"
+    relationship = "relationship"
+    goal = "goal"
+    device = "device"
+    place = "place"
 
 
 class MemorySource(str, Enum):
@@ -84,7 +91,7 @@ class MemorySource(str, Enum):
 
 class MemoryItem(BaseModel):
     id: str
-    scope: str = Field(description="zach, aleena, or household")
+    scope: str = Field(description="Person, household, project, or other logical memory scope")
     category: MemoryCategory
     source: MemorySource
     key: str
