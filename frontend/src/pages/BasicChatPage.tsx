@@ -8,6 +8,8 @@ type Message = {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const REPLY_POLL_INTERVAL_MS = 500;
+const REPLY_POLL_ATTEMPTS = 240; // Up to two minutes for cold local vision/model turns.
 
 export function BasicChatPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -62,8 +64,8 @@ export function BasicChatPage() {
       let reply = "";
       let lastState = "Thinking";
 
-      for (let attempt = 0; attempt < 60; attempt += 1) {
-        await sleep(500);
+      for (let attempt = 0; attempt < REPLY_POLL_ATTEMPTS; attempt += 1) {
+        await sleep(REPLY_POLL_INTERVAL_MS);
         const state = await fetchAssistantState();
         lastState = state.assistant_state || lastState;
         setStatus(lastState);
