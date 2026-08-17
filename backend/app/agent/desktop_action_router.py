@@ -34,11 +34,37 @@ _KNOWN_FOLDERS = {
     "sarah node repo",
 }
 
+_KNOWN_APPS = {
+    "chrome",
+    "google chrome",
+    "opera",
+    "edge",
+    "microsoft edge",
+    "code",
+    "vs code",
+    "visual studio code",
+    "steam",
+    "calculator",
+    "calc",
+    "notepad",
+    "explorer",
+    "file explorer",
+    "terminal",
+    "windows terminal",
+}
+
 
 def _clean_target(value: str) -> str:
     cleaned = value.strip().strip('"').strip("'").strip()
     cleaned = re.sub(r"\s+(?:please|for me)$", "", cleaned, flags=re.IGNORECASE).strip()
     return cleaned
+
+
+def _known_app(value: str) -> bool:
+    normalized = " ".join(value.lower().replace("_", " ").split())
+    if normalized.endswith(".exe"):
+        normalized = normalized[:-4].strip()
+    return normalized in _KNOWN_APPS
 
 
 def parse_desktop_action(text: str) -> DesktopActionRequest | None:
@@ -60,8 +86,9 @@ def parse_desktop_action(text: str) -> DesktopActionRequest | None:
         match = re.match(pattern, raw, re.IGNORECASE)
         if match:
             target = _clean_target(match.group(1))
-            if target:
+            if target and _known_app(target):
                 return DesktopActionRequest("focus_app", {"app": target}, target)
+            return None
 
     # Open/launch/start commands. Keep the parser conservative and hand anything
     # more complicated to the model/tool layer instead of guessing.
@@ -88,7 +115,10 @@ def parse_desktop_action(text: str) -> DesktopActionRequest | None:
         if re.search(r"\.[a-zA-Z0-9]{1,8}$", target):
             return DesktopActionRequest("open_path", {"path": target}, target)
 
-        return DesktopActionRequest("open_app", {"app": target}, target)
+        if _known_app(target):
+            return DesktopActionRequest("open_app", {"app": target}, target)
+
+        return None
 
     # "Go to" is reserved for clear web addresses so it cannot be confused with
     # focusing an app or navigating the file system.
