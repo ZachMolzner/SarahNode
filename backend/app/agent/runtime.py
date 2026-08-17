@@ -10,6 +10,7 @@ from app.agent.event_bus import EventBus
 from app.agent.permissions import default_policy
 from app.agent.tool_registry import ToolRegistry
 from app.agent.web_launch_tools import safe_open_url_tool
+from app.agent.windows_focus_tools import hardened_focus_app_tool
 
 
 class SarahAgentRuntime:
@@ -21,7 +22,7 @@ class SarahAgentRuntime:
 
         # Register the app/folder/file launch tools with a strict "explicit action"
         # description so model-driven calls cannot reinterpret informational questions
-        # as commands. URL opening is registered from the hardened HTTP/HTTPS-only tool.
+        # as commands. URL opening and Windows focus switching use hardened tools.
         action_tools = [
             replace(
                 tool,
@@ -32,9 +33,10 @@ class SarahAgentRuntime:
                 ),
             )
             for tool in desktop_action_tools()
-            if tool.name != "open_url"
+            if tool.name not in {"open_url", "focus_app"}
         ]
         self.tools.register_many(action_tools)
+        self.tools.register(hardened_focus_app_tool())
         self.tools.register(safe_open_url_tool())
 
         self.events = EventBus()
@@ -67,7 +69,7 @@ class SarahAgentRuntime:
                 "file_search": "read_only_active",
                 "safe_desktop_actions": "active",
                 "app_launch": "allowlisted_active",
-                "app_focus": "allowlisted_active",
+                "app_focus": "verified_foreground_active",
                 "file_open": "safe_types_active",
                 "url_launch": "http_https_active",
                 "desktop_control": "strong_actions_still_gated",
