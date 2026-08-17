@@ -4,8 +4,9 @@ import pytest
 
 from app.agent.contracts import PermissionScope
 from app.agent.desktop_action_router import parse_desktop_action
-from app.agent.desktop_action_tools import _BLOCKED_OPEN_SUFFIXES, _normalize_http_url
+from app.agent.desktop_action_tools import _BLOCKED_OPEN_SUFFIXES
 from app.agent.permissions import default_policy
+from app.agent.web_launch_tools import normalize_http_url
 
 
 def test_open_supported_app_routes_to_app_launcher() -> None:
@@ -54,12 +55,12 @@ def test_ambiguous_open_phrase_is_not_auto_routed() -> None:
 
 
 def test_safe_url_normalization_only_allows_http_https() -> None:
-    assert _normalize_http_url("example.com") == "https://example.com"
-    assert _normalize_http_url("https://example.com/a") == "https://example.com/a"
+    assert normalize_http_url("example.com") == "https://example.com"
+    assert normalize_http_url("https://example.com/a") == "https://example.com/a"
     with pytest.raises(ValueError):
-        _normalize_http_url("file:///C:/Windows/System32")
+        normalize_http_url("file:///C:/Windows/System32")
     with pytest.raises(ValueError):
-        _normalize_http_url("javascript:alert(1)")
+        normalize_http_url("javascript:alert(1)")
 
 
 def test_active_content_extensions_are_blocked() -> None:
