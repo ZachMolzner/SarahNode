@@ -51,7 +51,31 @@ def build_llm_client() -> LLMClient:
         logger.info("LLM provider selected: mock (configured explicitly)")
         return MockLLMClient()
 
+    if provider in {"local", "ollama", "llama.cpp", "llamacpp"}:
+        try:
+            from app.adapters.llm.local_openai_compatible import LocalOpenAICompatibleClient
+
+            client = LocalOpenAICompatibleClient(tool_registry=agent_runtime.tools)
+            llm_selection = ProviderSelection(
+                provider,
+                "local",
+                "real",
+                f"Local OpenAI-compatible server at {settings.local_llm_base_url}",
+            )
+            logger.info(
+                "LLM provider selected: local (model=%s, base_url=%s)",
+                settings.local_llm_model,
+                settings.local_llm_base_url,
+            )
+            return client
+        except (ImportError, ValueError) as exc:
+            reason = str(exc)
+            logger.warning("Local LLM client unavailable: %s", reason)
+            llm_selection = ProviderSelection(provider, "mock", "mock", reason)
+            return MockLLMClient()
+
     if provider in {"auto", "openai"}:
+        # Auto remains cloud-compatible for older configs. New installs default to local.
         try:
             from app.adapters.llm.openai_client import OpenAIClient
 
@@ -67,8 +91,6 @@ def build_llm_client() -> LLMClient:
                 logger.warning("OpenAI client unavailable. Falling back to mock LLM: %s", reason)
 
             llm_selection = ProviderSelection(provider, "mock", "mock", reason)
-            if provider == "openai":
-                logger.warning("OPENAI provider requested but unavailable; using mock mode.")
             return MockLLMClient()
 
     logger.warning("Unknown llm_provider '%s'. Falling back to local mock.", provider)
@@ -103,8 +125,6 @@ def build_tts_client() -> TTSClient:
 
             logger.warning("ElevenLabs unavailable; using mock TTS: %s", reason)
             tts_selection = ProviderSelection(provider, "mock", "mock", reason)
-            if provider == "elevenlabs":
-                logger.warning("ELEVENLABS provider requested but unavailable; using mock mode.")
             return MockTTSClient()
 
     logger.warning("Unknown tts_provider '%s'. Falling back to local mock.", provider)
@@ -196,9 +216,7 @@ def provider_status() -> dict[str, dict[str, str]]:
 
 assistant_intake_service = AssistantIntakeService()
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
-identity_service = IdentityService(
-    storage_path=str(resolve_identity_store_path())
-)
+identity_service = IdentityService(storage_path=str(resolve_identity_store_path()))
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
 voice_service = VoiceService(stt_client=build_stt_client())
