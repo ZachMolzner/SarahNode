@@ -43,13 +43,19 @@ class PermissionPolicy:
 
 
 def default_policy() -> PermissionPolicy:
-    # Local-first default: allow information reads and Sarah's own persistent memory.
-    # External side effects (files, desktop control, communications, etc.) remain gated.
+    # Local-first defaults allow read-only inspection, Sarah's own persistent
+    # memory, and a deliberately narrow set of low-risk desktop launch actions.
+    # Broad desktop control, file writes, process termination, system changes,
+    # communications, installs, and other stronger side effects remain gated.
     return PermissionPolicy(
         granted_scopes={
             PermissionScope.FILES_READ,
+            PermissionScope.FILES_OPEN,
             PermissionScope.DESKTOP_READ,
+            PermissionScope.APPS_LAUNCH,
+            PermissionScope.APPS_FOCUS,
             PermissionScope.WEB_READ,
+            PermissionScope.WEB_LAUNCH,
             PermissionScope.SYSTEM_READ,
             PermissionScope.MEMORY_READ,
             PermissionScope.MEMORY_WRITE,
