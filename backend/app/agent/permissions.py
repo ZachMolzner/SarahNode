@@ -43,13 +43,15 @@ class PermissionPolicy:
 
 
 def default_policy() -> PermissionPolicy:
-    # Start conservative: read-only information access only. Write/control scopes
-    # are granted explicitly by the user or settings layer later.
+    # Local-first default: allow information reads and Sarah's own persistent memory.
+    # External side effects (files, desktop control, communications, etc.) remain gated.
     return PermissionPolicy(
         granted_scopes={
             PermissionScope.FILES_READ,
             PermissionScope.DESKTOP_READ,
             PermissionScope.WEB_READ,
             PermissionScope.SYSTEM_READ,
+            PermissionScope.MEMORY_READ,
+            PermissionScope.MEMORY_WRITE,
         }
     )
