@@ -10,6 +10,7 @@ from app.agent.desktop_action_tools import desktop_action_tools
 from app.agent.desktop_tools import desktop_read_tools
 from app.agent.event_bus import EventBus
 from app.agent.permissions import default_policy
+from app.agent.screen_tools import screen_read_tools
 from app.agent.tool_registry import ToolRegistry
 from app.agent.web_launch_tools import safe_open_url_tool
 from app.agent.windows_focus_tools import hardened_focus_app_tool
@@ -21,6 +22,7 @@ class SarahAgentRuntime:
         self.tools = ToolRegistry(self.permissions)
         self.tools.register_many(builtin_tools())
         self.tools.register_many(desktop_read_tools())
+        self.tools.register_many(screen_read_tools())
 
         # Phase 4B low-risk actions can execute immediately when explicitly requested.
         action_tools = [
@@ -57,7 +59,7 @@ class SarahAgentRuntime:
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 7,
+            "architecture_version": 8,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -92,9 +94,12 @@ class SarahAgentRuntime:
                 "confirmed_force_app_terminate": "high_risk_launch_aware",
                 "multi_action_plans": "up_to_8_sequential_actions_active",
                 "batch_confirmation": "single_confirmation_for_mutating_plan",
+                "screen_metadata": "read_only_active",
+                "screen_awareness": "explicit_ephemeral_local_vision_active",
+                "screen_capture_persistence": "none",
+                "screen_control": "not_available",
                 "permanent_delete": "not_available",
                 "broad_desktop_control": "still_gated",
-                "screen_awareness": "planned",
                 "web_tools": "provider_dependent",
                 "personal_services": "planned",
                 "voice": "planned",
