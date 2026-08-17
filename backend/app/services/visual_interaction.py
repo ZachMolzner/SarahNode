@@ -303,6 +303,17 @@ class VisualInteractionService:
             raise ScreenAwarenessError(result.error or "Windows did not move the pointer to the visual target")
         return x, y
 
+    def _hide_sarah_for_click(self) -> int | None:
+        hide = getattr(self.screen, "_hide_sarah_if_foreground", None)
+        if callable(hide):
+            return hide()
+        return None
+
+    def _restore_sarah_after_click(self, hwnd: int | None) -> None:
+        restore = getattr(self.screen, "_restore_sarah_window", None)
+        if callable(restore):
+            restore(hwnd)
+
     async def handle(self, message: ChatMessage, *, other_system_change_pending: bool = False) -> AssistantReply | None:
         user_id = message.user_id
         pending = self.pending.get(user_id)
@@ -354,22 +365,36 @@ class VisualInteractionService:
                 )
 
             x, y = _physical_center(fresh_analysis, fresh_target)
-            click_result = await self.tools.invoke(
-                ToolInvocation(
-                    tool_name="click_pointer",
-                    arguments={"x": x, "y": y},
-                    requested_by="confirmed_visual_interaction_coordinator",
-                ),
-                confirmed=True,
-            )
-            if not click_result.ok:
+            hidden_hwnd: int | None = None
+            click_result: ToolResult | None = None
+            try:
+                # Fresh screen analysis restores SarahNode so the user can see the
+                # confirmation response. Hide it again for the physical click so its
+                # window cannot intercept a coordinate intended for the app beneath.
+                hidden_hwnd = self._hide_sarah_for_click()
+                if hidden_hwnd is not None:
+                    await asyncio.sleep(0.25)
+                click_result = await self.tools.invoke(
+                    ToolInvocation(
+                        tool_name="click_pointer",
+                        arguments={"x": x, "y": y},
+                        requested_by="confirmed_visual_interaction_coordinator",
+                    ),
+                    confirmed=True,
+                )
+                if click_result.ok:
+                    await asyncio.sleep(0.45)
+            finally:
+                self._restore_sarah_after_click(hidden_hwnd)
+
+            if click_result is None or not click_result.ok:
+                error = click_result.error if click_result is not None else "The click controller did not return a result."
                 return AssistantReply(
-                    text=f"I did not complete the click: {click_result.error or 'Windows rejected the click.'}",
+                    text=f"I did not complete the click: {error or 'Windows rejected the click.'}",
                     emotion="concerned",
                     should_speak=True,
                 )
 
-            await asyncio.sleep(0.45)
             verification_text = ""
             try:
                 verification = await self.screen.analyze(
