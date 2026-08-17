@@ -17,7 +17,7 @@ class SarahAgentRuntime:
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 2,
+            "architecture_version": 3,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -32,14 +32,14 @@ class SarahAgentRuntime:
             "granted_scopes": sorted(scope.value for scope in self.permissions.granted_scopes),
             "automation_count": len(self.automations.list()),
             "systems": {
-                "memory": "existing",
+                "memory": "persistent_learning_active",
                 "model_gateway": "active",
                 "tool_registry": "active",
                 "permissions": "active",
                 "event_bus": "ready",
                 "automations": "scaffolded",
                 "desktop_tools": "planned",
-                "web_tools": "openai_web_search_when_enabled",
+                "web_tools": "provider_dependent",
                 "personal_services": "planned",
                 "voice": "planned",
                 "screen_awareness": "planned",
