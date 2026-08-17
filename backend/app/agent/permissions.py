@@ -43,17 +43,22 @@ class PermissionPolicy:
 
 
 def default_policy() -> PermissionPolicy:
-    # Local-first defaults allow read-only inspection, Sarah's own persistent
-    # memory, and a deliberately narrow set of low-risk desktop launch actions.
-    # Broad desktop control, file writes, process termination, system changes,
-    # communications, installs, and other stronger side effects remain gated.
+    # Local-first defaults allow read-only inspection, Sarah's persistent memory,
+    # low-risk launch actions, and a deliberately narrow set of Phase 4C mutation
+    # scopes. Every Phase 4C tool is still MEDIUM risk and requires explicit
+    # confirmation at invocation time. Broad files.write, desktop.control, and
+    # system.control remain ungranted.
     return PermissionPolicy(
         granted_scopes={
             PermissionScope.FILES_READ,
             PermissionScope.FILES_OPEN,
+            PermissionScope.FILES_CREATE,
+            PermissionScope.FILES_MOVE,
+            PermissionScope.FILES_RECYCLE,
             PermissionScope.DESKTOP_READ,
             PermissionScope.APPS_LAUNCH,
             PermissionScope.APPS_FOCUS,
+            PermissionScope.APPS_CLOSE,
             PermissionScope.WEB_READ,
             PermissionScope.WEB_LAUNCH,
             PermissionScope.SYSTEM_READ,
