@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     # this model is loaded only when the user explicitly asks Sarah to inspect the screen.
     screen_awareness_enabled: bool = True
     local_vision_model: str = "qwen3-vl:4b"
-    screen_vision_timeout_seconds: float = 60.0
-    screen_capture_max_dimension: int = 2560
+    screen_vision_timeout_seconds: float = 90.0
+    screen_capture_max_dimension: int = 1920
     screen_capture_jpeg_quality: int = 88
     screen_hide_sarah_during_capture: bool = True
 
