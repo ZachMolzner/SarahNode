@@ -67,10 +67,7 @@ class DialogueEngine:
         self.last_web_context = None
         decision = self.web_browsing_policy.decide(message.content, capability_route)
 
-        if decision.should_browse:
-            if not self.web_search_service or not self.web_search_service.status.enabled:
-                return self.web_answer_synthesizer.unavailable_reply()
-
+        if decision.should_browse and self.web_search_service and self.web_search_service.status.enabled:
             search_results = await self.web_search_service.search(message.content)
             fetched_pages = []
             if self.page_fetcher:
@@ -84,30 +81,24 @@ class DialogueEngine:
                 decision_reason=decision.reason,
             )
 
-            if not search_results:
-                return AssistantReply(
-                    text=(
-                        "I checked the web, but I couldn’t find strong results for that query. "
-                        "If you want, I can try a narrower search phrase or focus on a specific source."
+            if search_results:
+                web_user_prompt = self.web_answer_synthesizer.build_web_prompt(message, self.last_web_context)
+                return await self._generate_with_fallback(
+                    message,
+                    memory_summary,
+                    recent_history,
+                    capability_route,
+                    addressing_instruction=addressing_instruction,
+                    system_prompt_override=(
+                        "You are Sarah. You perform web-grounded answers when web evidence is provided. "
+                        "Stay concise, distinguish current evidence from inference, and be honest about uncertainty."
                     ),
-                    emotion="concerned",
-                    should_speak=True,
+                    user_prompt_override=web_user_prompt,
                 )
 
-            web_user_prompt = self.web_answer_synthesizer.build_web_prompt(message, self.last_web_context)
-            return await self._generate_with_fallback(
-                message,
-                memory_summary,
-                recent_history,
-                capability_route,
-                addressing_instruction=addressing_instruction,
-                system_prompt_override=(
-                    "You are Sarah. You perform web-grounded answers when web evidence is provided. "
-                    "Be explicit that you checked the web, stay concise, and be honest about uncertainty."
-                ),
-                user_prompt_override=web_user_prompt,
-            )
-
+        # Phase 2: when the legacy/local search provider is disabled, the real model
+        # may still use its own approved tools (including OpenAI web search). This
+        # avoids short-circuiting live questions into an 'unavailable' response.
         return await self._generate_with_fallback(
             message,
             memory_summary,
