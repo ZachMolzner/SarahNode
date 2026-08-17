@@ -42,6 +42,26 @@ def test_safe_only_plan_runs_without_confirmation() -> None:
     assert [action.tool_name for action in plan.actions] == ["open_app", "open_path"]
 
 
+def test_shared_open_verb_expands_multiple_targets() -> None:
+    plan = parse_action_plan("Open Opera, Calculator, and Downloads")
+    assert plan is not None
+    assert len(plan.actions) == 3
+    assert not plan.requires_confirmation
+    assert [action.tool_name for action in plan.actions] == ["open_app", "open_app", "open_path"]
+
+
+def test_shared_close_verb_requires_one_confirmation() -> None:
+    plan = parse_action_plan("Close Calculator and Opera")
+    assert plan is not None
+    assert len(plan.actions) == 2
+    assert plan.requires_confirmation
+    assert [action.tool_name for action in plan.actions] == ["close_app", "close_app"]
+
+
+def test_filename_with_and_is_not_misread_as_batch() -> None:
+    assert parse_action_plan("Open Research and Development.docx") is None
+
+
 def test_mixed_plan_requires_one_confirmation(fake_home: Path) -> None:
     plan = parse_action_plan("Create folder BatchTest in Downloads, then open Opera")
     assert plan is not None
