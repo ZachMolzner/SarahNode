@@ -37,11 +37,44 @@ def test_wait_for_app_presence_handles_just_launched_app(monkeypatch) -> None:
     assert calls["count"] >= 3
 
 
-def test_sequenced_close_waits_before_invoking_close(monkeypatch) -> None:
+def test_window_required_wait_ignores_transient_launcher_process(monkeypatch) -> None:
+    calls = {"count": 0}
+
+    def fake_matching_pids(app: str) -> set[int]:
+        assert app == "Calculator"
+        calls["count"] += 1
+        # calc.exe/launcher is visible immediately on the first poll.
+        return {1111} if calls["count"] < 4 else {4242}
+
+    def fake_visible_windows(app: str, pids: set[int]) -> list[tuple[int, str]]:
+        assert app == "Calculator"
+        # The real Calculator window appears later than the launcher process.
+        if 4242 in pids:
+            return [(100, "Calculator")]
+        return []
+
+    monkeypatch.setattr(lifecycle, "_matching_pids_for_app", fake_matching_pids)
+    monkeypatch.setattr(lifecycle, "_visible_windows_for_app", fake_visible_windows)
+
+    pids, windows = asyncio.run(
+        lifecycle._wait_for_app_presence(
+            "Calculator",
+            timeout_seconds=0.5,
+            poll_seconds=0.01,
+            require_visible_window=True,
+        )
+    )
+
+    assert pids == {4242}
+    assert windows == [(100, "Calculator")]
+    assert calls["count"] >= 4
+
+
+def test_sequenced_close_requires_visible_window_before_invoking_close(monkeypatch) -> None:
     events: list[str] = []
 
-    async def fake_wait(app: str, **_kwargs):
-        events.append(f"wait:{app}")
+    async def fake_wait(app: str, **kwargs):
+        events.append(f"wait:{app}:{kwargs.get('require_visible_window')}")
         return {1}, [(10, app)]
 
     async def fake_close(arguments):
@@ -53,7 +86,7 @@ def test_sequenced_close_waits_before_invoking_close(monkeypatch) -> None:
 
     result = asyncio.run(lifecycle.sequenced_close_app_handler({"app": "Calculator"}))
 
-    assert events == ["wait:Calculator", "close:Calculator"]
+    assert events == ["wait:Calculator:True", "close:Calculator"]
     assert result["action"] == "closed"
 
 
