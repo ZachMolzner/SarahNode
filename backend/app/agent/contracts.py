@@ -14,10 +14,14 @@ class RiskLevel(str, Enum):
 
 class PermissionScope(str, Enum):
     FILES_READ = "files.read"
+    FILES_OPEN = "files.open"
     FILES_WRITE = "files.write"
     DESKTOP_READ = "desktop.read"
     DESKTOP_CONTROL = "desktop.control"
+    APPS_LAUNCH = "apps.launch"
+    APPS_FOCUS = "apps.focus"
     WEB_READ = "web.read"
+    WEB_LAUNCH = "web.launch"
     MEMORY_READ = "memory.read"
     MEMORY_WRITE = "memory.write"
     COMMUNICATIONS_READ = "communications.read"
