@@ -58,6 +58,10 @@ class ToolDefinition:
     scopes: frozenset[PermissionScope] = field(default_factory=frozenset)
     risk: RiskLevel = RiskLevel.READ_ONLY
     requires_confirmation: bool = False
+    # Internal deterministic tools can remain registered/permission-checked while
+    # being omitted from model tool schemas. This prevents models from selecting raw
+    # pointer coordinates or other controller-only primitives.
+    model_visible: bool = True
 
 
 @dataclass(frozen=True, slots=True)
