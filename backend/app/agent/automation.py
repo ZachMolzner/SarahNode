@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Mapping
 
@@ -14,7 +14,7 @@ class AutomationDefinition:
     action_tool: str
     action_arguments: Mapping[str, Any]
     enabled: bool = True
-    created_at: datetime = datetime.now()
+    created_at: datetime = field(default_factory=datetime.now)
 
 
 class AutomationRegistry:
