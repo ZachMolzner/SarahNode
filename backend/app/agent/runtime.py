@@ -38,9 +38,8 @@ class SarahAgentRuntime:
         self.tools.register(hardened_focus_app_tool())
         self.tools.register(safe_open_url_tool())
 
-        # Phase 4C mutation tools are MEDIUM risk and require confirmed=True at the
-        # ToolRegistry boundary. The dialogue layer stages these actions first, so a
-        # local model cannot execute them merely by producing a tool call.
+        # Phase 4C/4D mutation and termination tools require confirmed=True at the
+        # ToolRegistry boundary. Batch execution never bypasses this permission check.
         self.tools.register_many(confirmed_action_tools())
 
         self.events = EventBus()
@@ -48,7 +47,7 @@ class SarahAgentRuntime:
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 6,
+            "architecture_version": 7,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -79,9 +78,11 @@ class SarahAgentRuntime:
                 "confirmed_file_create": "active",
                 "confirmed_file_move_rename": "active",
                 "confirmed_recycle_bin": "active",
-                "confirmed_app_close": "active",
+                "confirmed_app_close": "verified_window_close_active",
+                "confirmed_force_app_terminate": "high_risk_active",
+                "multi_action_plans": "up_to_8_sequential_actions_active",
+                "batch_confirmation": "single_confirmation_for_mutating_plan",
                 "permanent_delete": "not_available",
-                "force_process_kill": "not_available",
                 "broad_desktop_control": "still_gated",
                 "screen_awareness": "planned",
                 "web_tools": "provider_dependent",
