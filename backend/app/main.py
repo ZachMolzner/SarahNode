@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 from app.config.settings import resolve_cors_origins, resolve_ws_allowed_origins, settings
 from app.core.container import stream_orchestrator
 from app.core.logging import setup_logging
+from app.routers.capabilities import router as capabilities_router
 from app.routers.control import router as control_router
 from app.routers.health import router as health_router
 
@@ -27,6 +28,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(control_router)
+app.include_router(capabilities_router)
 
 
 @app.exception_handler(Exception)
