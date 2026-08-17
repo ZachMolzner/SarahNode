@@ -11,8 +11,10 @@ from app.adapters.tts.mock import MockTTSClient
 from app.adapters.web_search.base import WebSearchProvider
 from app.adapters.web_search.brave_search import BraveSearchProvider
 from app.adapters.web_search.serpapi_search import SerpAPISearchProvider
+from app.agent.memory_tools import memory_tools
 from app.agent.runtime import agent_runtime
 from app.config.settings import resolve_identity_store_path, settings
+from app.memory.learning import MemoryLearningService
 from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
 from app.safety.moderation import ModerationService
@@ -75,7 +77,6 @@ def build_llm_client() -> LLMClient:
             return MockLLMClient()
 
     if provider in {"auto", "openai"}:
-        # Auto remains cloud-compatible for older configs. New installs default to local.
         try:
             from app.adapters.llm.openai_client import OpenAIClient
 
@@ -217,6 +218,8 @@ def provider_status() -> dict[str, dict[str, str]]:
 assistant_intake_service = AssistantIntakeService()
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
 identity_service = IdentityService(storage_path=str(resolve_identity_store_path()))
+memory_learning_service = MemoryLearningService(identity_service=identity_service)
+agent_runtime.tools.register_many(memory_tools(memory_learning_service))
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
 voice_service = VoiceService(stt_client=build_stt_client())
@@ -246,4 +249,5 @@ stream_orchestrator = StreamOrchestrator(
     memory_manager=memory_manager,
     response_policy=response_policy,
     identity_service=identity_service,
+    memory_learning_service=memory_learning_service,
 )
