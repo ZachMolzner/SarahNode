@@ -35,6 +35,15 @@ class Settings(BaseSettings):
     local_llm_temperature: float = 0.4
     local_llm_max_tool_rounds: int = 5
 
+    # Phase 5 local visual perception. The normal text/tool model remains separate;
+    # this model is loaded only when the user explicitly asks Sarah to inspect the screen.
+    screen_awareness_enabled: bool = True
+    local_vision_model: str = "qwen3-vl:4b"
+    screen_vision_timeout_seconds: float = 60.0
+    screen_capture_max_dimension: int = 2560
+    screen_capture_jpeg_quality: int = 88
+    screen_hide_sarah_during_capture: bool = True
+
     # Optional cloud fallback/provider.
     openai_api_key: str = ""
     openai_model: str = "gpt-5-mini"
