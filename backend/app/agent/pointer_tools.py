@@ -7,6 +7,7 @@ from ctypes import wintypes
 from typing import Any, Mapping
 
 from app.agent.contracts import PermissionScope, RiskLevel, ToolDefinition
+from app.agent.windows_display import enable_per_monitor_dpi_awareness
 
 
 class PointerControlError(RuntimeError):
@@ -24,6 +25,7 @@ _MOUSEEVENTF_LEFTUP = 0x0004
 def _require_windows() -> Any:
     if platform.system() != "Windows":
         raise PointerControlError("Visual pointer control is currently implemented for Windows only")
+    enable_per_monitor_dpi_awareness()
     return ctypes.windll.user32
 
 
