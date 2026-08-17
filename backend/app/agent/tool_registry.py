@@ -20,8 +20,11 @@ class ToolRegistry:
         for tool in tools:
             self.register(tool)
 
-    def list_tools(self) -> list[ToolDefinition]:
-        return sorted(self._tools.values(), key=lambda tool: tool.name)
+    def list_tools(self, *, include_internal: bool = False) -> list[ToolDefinition]:
+        tools = self._tools.values()
+        if not include_internal:
+            tools = (tool for tool in tools if tool.model_visible)
+        return sorted(tools, key=lambda tool: tool.name)
 
     async def invoke(self, invocation: ToolInvocation, *, confirmed: bool = False) -> ToolResult:
         tool = self._tools.get(invocation.tool_name)
