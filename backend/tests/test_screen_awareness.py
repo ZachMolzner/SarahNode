@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from types import SimpleNamespace
 
 import pytest
 from PIL import Image
@@ -73,40 +72,33 @@ def _fake_frame() -> screen._CapturedFrame:
     )
 
 
-def test_visual_description_sends_image_to_local_vision_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_request: dict = {}
-
-    class FakeCompletions:
-        async def create(self, **kwargs):
-            captured_request.update(kwargs)
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="A calculator window is visible."))]
-            )
-
-    class FakeChat:
-        completions = FakeCompletions()
-
-    class FakeClient:
-        chat = FakeChat()
-
+def test_visual_description_uses_native_ollama_without_thinking(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_body: dict = {}
     service = screen.ScreenAwarenessService(default_policy())
-    service.client = FakeClient()
 
     async def fake_capture() -> screen._CapturedFrame:
         return _fake_frame()
 
+    async def fake_post(body: dict) -> dict:
+        captured_body.update(body)
+        return {"message": {"role": "assistant", "content": "A calculator window is visible."}}
+
     monkeypatch.setattr(service, "_capture", fake_capture)
+    monkeypatch.setattr(service, "_post_ollama_chat", fake_post)
+
     result = asyncio.run(service.analyze("What is on my screen?"))
 
     assert result.text == "A calculator window is visible."
     assert result.reasoning_mode == "describe"
-    assert captured_request["model"] == settings.local_vision_model
-    user_content = captured_request["messages"][1]["content"]
-    assert user_content[1]["type"] == "image_url"
-    assert user_content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,")
+    assert captured_body["model"] == settings.local_vision_model
+    assert captured_body["stream"] is False
+    assert captured_body["think"] is False
+    assert captured_body["keep_alive"] == "10m"
+    assert captured_body["messages"][1]["images"] == ["ZmFrZQ=="]
+    assert "format" not in captured_body
 
 
-def test_visual_plan_parses_targets_steps_and_caution(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_visual_plan_uses_json_schema_and_parses_targets(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = {
         "answer": "The Continue button is the appropriate visible next step.",
         "observations": ["A setup dialog is visible."],
@@ -122,28 +114,23 @@ def test_visual_plan_parses_targets_steps_and_caution(monkeypatch: pytest.Monkey
         ],
         "caution": "Continuing may apply the options shown in the installer.",
     }
-
-    class FakeCompletions:
-        async def create(self, **_kwargs):
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content=json.dumps(payload)))]
-            )
-
-    class FakeChat:
-        completions = FakeCompletions()
-
-    class FakeClient:
-        chat = FakeChat()
-
+    captured_body: dict = {}
     service = screen.ScreenAwarenessService(default_policy())
-    service.client = FakeClient()
 
     async def fake_capture() -> screen._CapturedFrame:
         return _fake_frame()
 
+    async def fake_post(body: dict) -> dict:
+        captured_body.update(body)
+        return {"message": {"role": "assistant", "content": json.dumps(payload)}}
+
     monkeypatch.setattr(service, "_capture", fake_capture)
+    monkeypatch.setattr(service, "_post_ollama_chat", fake_post)
+
     result = asyncio.run(service.analyze("Which button should I click to continue?"))
 
+    assert isinstance(captured_body["format"], dict)
+    assert captured_body["think"] is False
     assert result.reasoning_mode == "plan"
     assert result.recommended_steps == (
         "Review the selected options.",
@@ -158,26 +145,43 @@ def test_visual_plan_parses_targets_steps_and_caution(monkeypatch: pytest.Monkey
     assert "Caution:" in result.text
 
 
-def test_structured_reasoning_falls_back_to_raw_text(monkeypatch: pytest.MonkeyPatch) -> None:
-    class FakeCompletions:
-        async def create(self, **_kwargs):
-            return SimpleNamespace(
-                choices=[SimpleNamespace(message=SimpleNamespace(content="I can see the error, but the button label is too small to read."))]
-            )
-
-    class FakeChat:
-        completions = FakeCompletions()
-
-    class FakeClient:
-        chat = FakeChat()
-
+def test_empty_vision_response_retries_once_with_plain_final_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict] = []
     service = screen.ScreenAwarenessService(default_policy())
-    service.client = FakeClient()
 
     async def fake_capture() -> screen._CapturedFrame:
         return _fake_frame()
 
+    async def fake_post(body: dict) -> dict:
+        calls.append(body)
+        if len(calls) == 1:
+            return {"message": {"role": "assistant", "content": "", "thinking": "hidden reasoning"}}
+        return {"message": {"role": "assistant", "content": "The search box is in the upper center."}}
+
     monkeypatch.setattr(service, "_capture", fake_capture)
+    monkeypatch.setattr(service, "_post_ollama_chat", fake_post)
+
+    result = asyncio.run(service.analyze("Where is the search box?"))
+
+    assert len(calls) == 2
+    assert "format" in calls[0]
+    assert "format" not in calls[1]
+    assert calls[0]["think"] is False
+    assert calls[1]["think"] is False
+    assert "upper center" in result.text
+
+
+def test_structured_reasoning_falls_back_to_raw_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = screen.ScreenAwarenessService(default_policy())
+
+    async def fake_capture() -> screen._CapturedFrame:
+        return _fake_frame()
+
+    async def fake_post(_body: dict) -> dict:
+        return {"message": {"role": "assistant", "content": "I can see the error, but the button label is too small to read."}}
+
+    monkeypatch.setattr(service, "_capture", fake_capture)
+    monkeypatch.setattr(service, "_post_ollama_chat", fake_post)
     result = asyncio.run(service.analyze("Find the button I should press"))
 
     assert result.reasoning_mode == "locate"
