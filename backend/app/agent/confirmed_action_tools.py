@@ -7,7 +7,6 @@ import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
-import psutil
 from send2trash import send2trash
 
 from app.agent.contracts import PermissionScope, RiskLevel, ToolDefinition
@@ -67,6 +66,14 @@ def _protected_roots() -> tuple[Path, ...]:
         (home / "SarahNode").resolve(),
         (home / "AppData").resolve(),
         (home / ".ssh").resolve(),
+    )
+
+
+def _protected_profile_roots() -> tuple[Path, ...]:
+    home = _home()
+    return tuple(
+        (home / name).resolve()
+        for name in ("Desktop", "Downloads", "Documents", "Pictures", "Music", "Videos")
     )
 
 
@@ -159,6 +166,8 @@ def resolve_existing_mutation_path(raw: str) -> Path:
             candidate = found
     if not candidate.exists():
         raise ValueError(f"Path does not exist: {raw}")
+    if candidate.resolve() in _protected_profile_roots():
+        raise ValueError(f"Phase 4C protects the top-level profile folder {candidate}")
     _assert_mutation_allowed(candidate)
     return candidate
 
