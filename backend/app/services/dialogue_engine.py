@@ -4,6 +4,9 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.llm.base import LLMClient
+from app.agent.contracts import ToolInvocation
+from app.agent.desktop_action_router import DesktopActionRequest, parse_desktop_action
+from app.agent.runtime import agent_runtime
 from app.config.settings import settings
 from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.capability_router import CapabilityRoute, CapabilityRouter
@@ -55,6 +58,68 @@ class DialogueEngine:
     def classify_capability(self, message: ChatMessage) -> CapabilityRoute:
         return self.capability_router.classify(message.content)
 
+    @staticmethod
+    def _clean_tool_error(error: str | None) -> str:
+        cleaned = (error or "The action could not be completed.").strip()
+        if cleaned.lower().startswith("tool failed:"):
+            cleaned = cleaned[len("tool failed:") :].strip()
+        return cleaned
+
+    @staticmethod
+    def _desktop_action_success_text(request: DesktopActionRequest, data: dict[str, Any]) -> str:
+        subject = request.subject.strip() or "that"
+
+        if request.tool_name == "open_app":
+            if data.get("action") == "focused_existing":
+                return f"{subject} was already open, so I brought it to the front."
+            return f"Opened {subject}."
+
+        if request.tool_name == "focus_app":
+            if data.get("focused"):
+                return f"Brought {subject} to the front."
+            reason = str(data.get("reason") or "Windows did not allow the foreground switch").strip()
+            if reason.lower() == "app is not running":
+                return f"{subject} isn't running, so I couldn't bring it to the front."
+            return f"I found {subject}, but I couldn't bring it to the front: {reason}."
+
+        if request.tool_name == "open_path":
+            kind = str(data.get("kind") or "item")
+            path = str(data.get("path") or subject)
+            if kind == "folder":
+                return f"Opened the {Path(path).name or subject} folder."
+            return f"Opened {Path(path).name or subject}."
+
+        if request.tool_name == "open_url":
+            return f"Opened {data.get('url') or subject} in your default browser."
+
+        return "Done."
+
+    async def _handle_desktop_action(self, message: ChatMessage) -> AssistantReply | None:
+        request = parse_desktop_action(message.content)
+        if request is None:
+            return None
+
+        result = await agent_runtime.tools.invoke(
+            ToolInvocation(
+                tool_name=request.tool_name,
+                arguments=request.arguments,
+                requested_by="deterministic_desktop_action_router",
+            )
+        )
+
+        if not result.ok:
+            return AssistantReply(
+                text=f"I couldn't complete that action: {self._clean_tool_error(result.error)}",
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        return AssistantReply(
+            text=self._desktop_action_success_text(request, dict(result.data)),
+            emotion="calm",
+            should_speak=True,
+        )
+
     async def generate(
         self,
         message: ChatMessage,
@@ -64,6 +129,11 @@ class DialogueEngine:
         addressing_instruction: str | None = None,
     ) -> AssistantReply:
         self.last_web_context = None
+
+        desktop_action_reply = await self._handle_desktop_action(message)
+        if desktop_action_reply is not None:
+            return desktop_action_reply
+
         decision = self.web_browsing_policy.decide(message.content, capability_route)
 
         if decision.should_browse and self.web_search_service and self.web_search_service.status.enabled:
