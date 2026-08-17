@@ -4,6 +4,10 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+BACKEND_ENV_FILE = BACKEND_DIR / ".env"
+
+
 def _parse_csv(raw: str) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
@@ -66,8 +70,12 @@ class Settings(BaseSettings):
     )
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        # Always load SarahNode's backend/.env regardless of which directory
+        # launched Python (Tauri, PowerShell, tests, or a packaged sidecar).
+        env_file=str(BACKEND_ENV_FILE),
         env_file_encoding="utf-8",
+        # Do not let inherited empty variables mask valid backend/.env values.
+        env_ignore_empty=True,
         extra="ignore",
     )
 
