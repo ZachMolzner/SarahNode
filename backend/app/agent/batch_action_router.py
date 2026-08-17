@@ -17,6 +17,10 @@ _SEPARATOR = re.compile(
     r"(?:,\s*(?:and\s+)?|\s+(?:and\s+then|then|and)\s+)(?=(?:open|launch|start|focus|switch\s+to|bring|go\s+to|create|make|rename|move|delete|remove|recycle|close|quit|exit|kill|terminate|force\s+close|force\s+quit)\b)",
     re.IGNORECASE,
 )
+_SHARED_VERB_RE = re.compile(
+    r"^(open|launch|start|close|quit|exit|kill|terminate|force\s+close|force\s+quit)\s+(.+?)\s*$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,7 +83,7 @@ def _strip_leading_assistant_name(text: str) -> str:
 
 
 def split_action_commands(text: str) -> list[str]:
-    """Split an explicit multi-action command without breaking separators inside quotes."""
+    """Split explicit multi-action commands without breaking separators inside quotes."""
     raw = _strip_leading_assistant_name(text)
     if not raw:
         return []
@@ -125,6 +129,80 @@ def split_action_commands(text: str) -> list[str]:
     return segments
 
 
+def _split_target_list(value: str) -> list[str]:
+    """Split `Opera, Calculator, and Downloads` while respecting quoted names."""
+    targets: list[str] = []
+    start = 0
+    index = 0
+    quote: str | None = None
+
+    while index < len(value):
+        char = value[index]
+        if char in {'"', "'"}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            index += 1
+            continue
+
+        if quote is None and char == ",":
+            target = value[start:index].strip()
+            if target:
+                targets.append(target)
+            index += 1
+            while index < len(value) and value[index].isspace():
+                index += 1
+            if value[index : index + 4].lower() == "and ":
+                index += 4
+            start = index
+            continue
+
+        if quote is None and value[index : index + 5].lower() == " and ":
+            target = value[start:index].strip()
+            if target:
+                targets.append(target)
+            index += 5
+            start = index
+            continue
+
+        index += 1
+
+    final = value[start:].strip()
+    if final:
+        targets.append(final)
+    return targets
+
+
+def _can_parse_action(segment: str) -> bool:
+    try:
+        if parse_confirmed_action(segment) is not None:
+            return True
+    except Exception:
+        return False
+    return parse_desktop_action(segment) is not None
+
+
+def _expand_shared_verb(text: str) -> list[str] | None:
+    raw = _strip_leading_assistant_name(text)
+    match = _SHARED_VERB_RE.match(raw)
+    if not match:
+        return None
+
+    verb = " ".join(match.group(1).split())
+    targets = _split_target_list(match.group(2))
+    if len(targets) < 2:
+        return None
+
+    expanded = [f"{verb} {target}" for target in targets]
+    # Only treat it as shorthand when every expanded action is independently safe
+    # to parse. Otherwise leave the original sentence alone so filenames containing
+    # words like "and" are not misinterpreted as a batch.
+    if not all(_can_parse_action(segment) for segment in expanded):
+        return None
+    return expanded
+
+
 def _desktop_summary(request: DesktopActionRequest) -> str:
     subject = request.subject.strip() or "that"
     if request.tool_name == "open_app":
@@ -141,7 +219,11 @@ def _desktop_summary(request: DesktopActionRequest) -> str:
 def parse_action_plan(text: str, *, max_actions: int = 8) -> ActionPlan | None:
     segments = split_action_commands(text)
     if len(segments) < 2:
-        return None
+        expanded = _expand_shared_verb(text)
+        if expanded is None:
+            return None
+        segments = expanded
+
     if len(segments) > max_actions:
         raise ValueError(f"A single request can contain at most {max_actions} actions")
 
