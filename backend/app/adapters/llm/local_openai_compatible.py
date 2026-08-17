@@ -235,6 +235,144 @@ class LocalOpenAICompatibleClient(LLMClient):
 
         return "\n".join(lines)
 
+    @staticmethod
+    def _direct_live_answer(user_text: str, context: list[dict[str, Any]]) -> str | None:
+        """Return deterministic answers for simple host-state questions.
+
+        These are factual read-only queries where routing through a language model adds
+        more failure modes than value. Broader computer questions still go through the
+        model with the same live context available.
+        """
+        if not context:
+            return None
+
+        lowered = user_text.lower().strip()
+
+        process_filter = LocalOpenAICompatibleClient._running_process_filter(user_text)
+        if process_filter:
+            for item in context:
+                if item.get("tool") != "running_processes" or not item.get("ok"):
+                    continue
+                arguments = item.get("arguments") or {}
+                if str(arguments.get("name_filter", "")).strip().lower() != process_filter.lower():
+                    continue
+                data = item.get("data") or {}
+                matched = int(data.get("matched", 0) or 0)
+                if matched <= 0:
+                    return f"{process_filter} is not running right now."
+                noun = "process" if matched == 1 else "processes"
+                return f"Yes. {process_filter} is running with {matched} matching {noun}."
+
+        if any(
+            phrase in lowered
+            for phrase in (
+                "processes are using the most memory",
+                "processes use the most memory",
+                "process using the most memory",
+                "processes are using the most ram",
+                "processes use the most ram",
+                "top processes",
+                "what processes",
+            )
+        ):
+            for item in context:
+                if item.get("tool") != "running_processes" or not item.get("ok"):
+                    continue
+                arguments = item.get("arguments") or {}
+                if arguments.get("name_filter"):
+                    continue
+                processes = (item.get("data") or {}).get("processes") or []
+                if not processes:
+                    return "I checked the running processes, but the process list came back empty."
+                rows = [
+                    f"{index}. {proc.get('name')} — {proc.get('memory_mb')} MB"
+                    for index, proc in enumerate(processes[:10], start=1)
+                ]
+                return "The processes using the most memory right now are:\n" + "\n".join(rows)
+
+        if any(
+            phrase in lowered
+            for phrase in (
+                "what window am i",
+                "which window am i",
+                "current window",
+                "active window",
+                "focused window",
+                "what app am i currently",
+                "which app am i currently",
+            )
+        ):
+            for item in context:
+                if item.get("tool") != "active_window" or not item.get("ok"):
+                    continue
+                data = item.get("data") or {}
+                if data.get("supported") is False:
+                    return "I can't read the active window on this operating system yet."
+                title = str(data.get("title") or "").strip()
+                process_name = str(data.get("process_name") or "").strip()
+                if title:
+                    return f"You're currently in the \"{title}\" window."
+                if process_name:
+                    return f"The active app is {process_name}."
+                return "I can see that a window is active, but Windows didn't return a title for it."
+
+        if any(
+            phrase in lowered
+            for phrase in (
+                "how much ram",
+                "memory am i using",
+                "memory usage",
+                "ram usage",
+                "cpu usage",
+                "how much cpu",
+                "disk usage",
+                "free disk",
+                "system resources",
+            )
+        ):
+            for item in context:
+                if item.get("tool") != "system_resources" or not item.get("ok"):
+                    continue
+                data = item.get("data") or {}
+                memory = data.get("memory") or {}
+                disk = data.get("disk") or {}
+
+                if any(phrase in lowered for phrase in ("ram", "memory")):
+                    total = float(memory.get("total_gb", 0) or 0)
+                    available = float(memory.get("available_gb", 0) or 0)
+                    used = max(0.0, total - available)
+                    percent = memory.get("used_percent")
+                    return f"You're using about {used:.1f} GB of {total:.1f} GB of RAM ({percent}% used)."
+
+                if "cpu" in lowered:
+                    return f"Your CPU is currently at about {data.get('cpu_percent')}% usage."
+
+                if any(phrase in lowered for phrase in ("disk", "free disk")):
+                    return (
+                        f"You have about {disk.get('free_gb')} GB free out of {disk.get('total_gb')} GB "
+                        f"on the main drive ({disk.get('used_percent')}% used)."
+                    )
+
+                return (
+                    f"CPU usage is {data.get('cpu_percent')}%. RAM is {memory.get('used_percent')}% used, "
+                    f"and the main drive is {disk.get('used_percent')}% used."
+                )
+
+        return None
+
+    @staticmethod
+    def _clean_internal_labels(text: str) -> str:
+        cleaned = text.strip()
+        cleaned = re.sub(
+            r"(?i)^(?:based on|according to)\s+(?:the\s+)?(?:fresh host facts|live host context|current memory context|memory context)[,:]?\s*",
+            "",
+            cleaned,
+        )
+        cleaned = re.sub(r"(?i)\bFRESH HOST FACTS\b", "current system information", cleaned)
+        cleaned = re.sub(r"(?i)\bLIVE HOST CONTEXT\b", "current system information", cleaned)
+        cleaned = re.sub(r"(?i)\bPROCESS CHECK\b", "process check", cleaned)
+        return cleaned.strip()
+
     async def generate_reply(
         self,
         message: ChatMessage,
@@ -252,6 +390,10 @@ class LocalOpenAICompatibleClient(LLMClient):
         history_text = "\n".join(recent_history[-8:]) if recent_history else "No prior turns recorded."
 
         live_context = await self._prefetch_live_context(message.content)
+        direct_live_answer = self._direct_live_answer(message.content, live_context)
+        if direct_live_answer:
+            return AssistantReply(text=direct_live_answer, emotion="calm", should_speak=True)
+
         live_context_text = self._render_live_context(live_context)
 
         # If a volatile host tool has already produced successful fresh evidence for
@@ -273,11 +415,11 @@ class LocalOpenAICompatibleClient(LLMClient):
                     "Use available tools when they improve accuracy or when the user asks for host-machine information. "
                     "For volatile computer state (running processes, active window, CPU/RAM/disk use, current files), live tool data always overrides memory and prior conversation. "
                     "Never claim a process is running/not running, name the active window, or give current resource usage from memory alone. "
-                    "If LIVE HOST CONTEXT is supplied, it was read from the host just before this answer; use it as authoritative current evidence. "
-                    "For a filtered PROCESS CHECK, match_count=0 means the requested process is not running; it does NOT mean the computer has no running processes. "
-                    "If TOP MEMORY PROCESSES are supplied, report those rows directly and do not say the process list is unavailable or empty. "
-                    "Do not say you lack real-time computer access when successful LIVE HOST CONTEXT is present. "
-                    "Answer live-host questions naturally; never mention the internal label 'LIVE HOST CONTEXT' to the user. "
+                    "If fresh host evidence is supplied, it was read from the host just before this answer; use it as authoritative current evidence. "
+                    "For a filtered process check, match_count=0 means the requested process is not running; it does NOT mean the computer has no running processes. "
+                    "If top-memory process rows are supplied, report those rows directly and do not say the process list is unavailable or empty. "
+                    "Do not say you lack real-time computer access when successful current host evidence is present. "
+                    "Answer live-host questions naturally and never reveal backend labels used to pass host evidence or memory context. "
                     "Persistent memory supplied in the request is durable SarahNode memory stored on disk and survives app restarts. "
                     "Treat explicit persistent memories as authoritative user facts unless the user corrects or updates them. "
                     "When a relevant persistent memory directly answers the user's non-volatile question, answer from it naturally and confidently. "
@@ -299,7 +441,7 @@ class LocalOpenAICompatibleClient(LLMClient):
                     "The following memory context may contain two different kinds of memory. "
                     "Anything labeled PERSISTENT is durable stored memory and should be treated as remembered fact for stable user information. "
                     "Do not use memory to infer volatile current host state.\n\n"
-                    f"FRESH HOST FACTS (current, authoritative for computer state):\n{live_context_text}\n\n"
+                    f"CURRENT HOST EVIDENCE:\n{live_context_text}\n\n"
                     f"Memory context:\n{memory_summary}\n\n"
                     f"Recent conversation:\n{history_text}\n\n"
                     f"User ({message.username}): {message.content}"
@@ -357,6 +499,7 @@ class LocalOpenAICompatibleClient(LLMClient):
         if not text:
             text = "I’m here. I wasn’t able to produce a useful local response to that request."
 
+        text = self._clean_internal_labels(text)
         lowered = text.lower()
         emotion = "calm"
         if any(keyword in lowered for keyword in ("great", "glad", "nice", "awesome")):
