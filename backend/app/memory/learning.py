@@ -13,6 +13,10 @@ _EXPLICIT_REMEMBER_RE = re.compile(
     r"^(?:sarah[,:]?\s+)?(?:please\s+)?(?:remember|save|learn)\s+(?:that\s+)?(.+?)\s*$",
     re.IGNORECASE,
 )
+_EXPLICIT_FORGET_RE = re.compile(
+    r"^(?:sarah[,:]?\s+)?(?:please\s+)?forget\s+(?:that\s+)?(.+?)\s*$",
+    re.IGNORECASE,
+)
 _STOPWORDS = {
     "the",
     "and",
@@ -47,9 +51,6 @@ class MemoryLearningService:
 
     @staticmethod
     def _tokens(text: str) -> set[str]:
-        # Memory keys are intentionally snake_case (for example favorite_color).
-        # Treat underscores and punctuation as word separators so natural-language
-        # questions such as "what is my favorite color" match those keys.
         normalized = text.replace("_", " ").replace("-", " ")
         return {
             token.lower()
@@ -66,6 +67,32 @@ class MemoryLearningService:
         ][:max_words]
         return "_".join(words) or "memory"
 
+    @staticmethod
+    def _favorite_parts(text: str) -> tuple[str, str] | None:
+        match = re.search(
+            r"\bmy\s+favorite\s+([a-zA-Z0-9 _-]+?)\s+is\s+(?:actually\s+)?(.+?)(?:\s+now)?(?:[.!?]|$)",
+            text,
+            re.IGNORECASE,
+        )
+        if not match:
+            return None
+        subject = match.group(1).strip()
+        value = match.group(2).strip().rstrip(".")
+        if not subject or not value:
+            return None
+        return subject, value
+
+    def _logical_key(self, item: MemoryItem) -> str:
+        key = item.key.strip().lower().replace(" ", "_")
+        if key.startswith("favorite_"):
+            return key
+
+        favorite = self._favorite_parts(item.value)
+        if favorite:
+            subject, _value = favorite
+            return f"favorite_{self._slug(subject, max_words=4)}"
+        return key
+
     def _parse_explicit_memory(self, text: str) -> tuple[MemoryCategory, str, str] | None:
         match = _EXPLICIT_REMEMBER_RE.match(text.strip())
         if not match:
@@ -75,22 +102,17 @@ class MemoryLearningService:
         if not value:
             return None
 
-        # Questions such as "remember what I said?" are retrieval requests, not writes.
         lowered = value.lower()
         if lowered.startswith(("what ", "when ", "where ", "which ", "who ", "why ", "how ", "whether ")):
             return None
 
-        favorite_match = re.search(
-            r"\bmy\s+favorite\s+([a-zA-Z0-9 _-]+?)\s+is\s+(.+)$",
-            value,
-            re.IGNORECASE,
-        )
-        if favorite_match:
-            subject = favorite_match.group(1).strip()
+        favorite = self._favorite_parts(value)
+        if favorite:
+            subject, favorite_value = favorite
             return (
                 MemoryCategory.preference,
                 f"favorite_{self._slug(subject, max_words=4)}",
-                value,
+                f"My favorite {subject} is {favorite_value}",
             )
 
         if re.search(r"\b(?:i\s+prefer|my\s+preference|i\s+like)\b", lowered):
@@ -125,6 +147,57 @@ class MemoryLearningService:
             sensitive=False,
         )
 
+    def capture_explicit_update(self, text: str, *, scope: str) -> MemoryItem | None:
+        lowered = text.lower()
+        favorite = self._favorite_parts(text)
+        if not favorite:
+            return None
+        if not any(marker in lowered for marker in ("actually", "changed", "change", "update", "now")):
+            return None
+
+        subject, favorite_value = favorite
+        key = f"favorite_{self._slug(subject, max_words=4)}"
+        return self.remember(
+            scope=scope,
+            category=MemoryCategory.preference,
+            key=key,
+            value=f"My favorite {subject} is {favorite_value}",
+            sensitive=False,
+        )
+
+    def capture_explicit_forget(self, text: str, *, scopes: Iterable[str]) -> list[str]:
+        match = _EXPLICIT_FORGET_RE.match(text.strip())
+        if not match:
+            return []
+
+        target = match.group(1).strip().rstrip(".")
+        if not target:
+            return []
+
+        favorite_match = re.search(r"\b(?:my\s+)?favorite\s+(.+)$", target, re.IGNORECASE)
+        logical_target: str | None = None
+        if favorite_match:
+            subject = favorite_match.group(1).strip()
+            logical_target = f"favorite_{self._slug(subject, max_words=4)}"
+
+        scope_set = {scope.strip().lower() for scope in scopes}
+        target_tokens = self._tokens(target)
+        removed: list[str] = []
+        for item in list(self.identity_service.list_memory_items()):
+            if item.scope not in scope_set:
+                continue
+
+            logical_key = self._logical_key(item)
+            is_match = bool(logical_target and logical_key == logical_target)
+            if not is_match and target_tokens:
+                searchable_tokens = self._tokens(f"{item.key} {item.value}")
+                is_match = target_tokens.issubset(searchable_tokens)
+
+            if is_match:
+                self.identity_service.delete_memory_item(item.id)
+                removed.append(item.id)
+        return removed
+
     def search(
         self,
         query: str,
@@ -144,8 +217,6 @@ class MemoryLearningService:
             searchable = f"{item.scope} {item.category.value} {key_words} {item.value}"
             item_tokens = self._tokens(searchable)
             overlap = len(query_tokens & item_tokens)
-
-            # Prefer memories whose stable key closely matches the user's wording.
             key_tokens = self._tokens(key_words)
             key_overlap = len(query_tokens & key_tokens)
             key_coverage = key_overlap / max(1, len(key_tokens))
@@ -184,17 +255,31 @@ class MemoryLearningService:
     ) -> MemoryItem:
         normalized_key = key.strip().lower().replace(" ", "_")
         normalized_scope = scope.strip().lower()
-        for existing in self.identity_service.list_memory_items(scope=normalized_scope):
-            if existing.key == normalized_key and existing.category == category:
-                return self.identity_service.update_memory_item(
-                    existing.id,
-                    {
-                        "value": value.strip(),
-                        "confidence": 1.0,
-                        "sensitive": sensitive,
-                        "source": MemorySource.explicit,
-                    },
-                )
+
+        # Treat a logical memory key as unique for a scope. Update the newest copy
+        # and delete any stale duplicates left by older model-driven writes.
+        matches = [
+            item
+            for item in self.identity_service.list_memory_items(scope=normalized_scope)
+            if self._logical_key(item) == normalized_key
+        ]
+        if matches:
+            matches.sort(key=lambda item: item.updated_at, reverse=True)
+            primary = matches[0]
+            updated = self.identity_service.update_memory_item(
+                primary.id,
+                {
+                    "category": category,
+                    "key": normalized_key,
+                    "value": value.strip(),
+                    "confidence": 1.0,
+                    "sensitive": sensitive,
+                    "source": MemorySource.explicit,
+                },
+            )
+            for duplicate in matches[1:]:
+                self.identity_service.delete_memory_item(duplicate.id)
+            return updated
 
         return self.identity_service.add_memory_item(
             scope=normalized_scope,
@@ -210,13 +295,14 @@ class MemoryLearningService:
         self.identity_service.delete_memory_item(item_id)
 
     def context_for(self, query: str, *, scopes: Iterable[str], limit: int = 8) -> str:
-        scope_set = set(scopes)
-
-        # Explicit memory commands are persisted by the backend before the model
-        # sees the turn. This guarantees that a small local model cannot merely
-        # claim it remembered something without actually writing it to disk.
+        scope_set = {scope.strip().lower() for scope in scopes}
         user_scopes = sorted(scope for scope in scope_set if scope != "household")
         write_scope = user_scopes[0] if user_scopes else "household"
+
+        # Deterministic memory mutations happen before retrieval so the model sees
+        # the new source of truth on the same turn.
+        self.capture_explicit_forget(query, scopes=scope_set)
+        self.capture_explicit_update(query, scope=write_scope)
         self.capture_explicit_memory(query, scope=write_scope)
 
         candidates: dict[str, MemoryItem] = {}
@@ -225,8 +311,6 @@ class MemoryLearningService:
                 if not item.sensitive:
                     candidates[item.id] = item
 
-        # If semantic overlap is weak, still include a few recent explicit
-        # preferences/projects/goals so a small local model has useful continuity.
         if not candidates:
             fallback = [
                 item
@@ -247,7 +331,20 @@ class MemoryLearningService:
         if not candidates:
             return "No relevant persistent memories."
 
-        ordered = sorted(candidates.values(), key=lambda item: item.updated_at, reverse=True)[:limit]
+        # Never present conflicting stale copies of the same logical memory to the
+        # model. The newest entry wins, with personal scope preferred over household.
+        logical: dict[str, MemoryItem] = {}
+        ordered_candidates = sorted(candidates.values(), key=lambda item: item.updated_at, reverse=True)
+        for item in ordered_candidates:
+            logical_key = self._logical_key(item)
+            existing = logical.get(logical_key)
+            if existing is None:
+                logical[logical_key] = item
+                continue
+            if existing.scope == "household" and item.scope != "household":
+                logical[logical_key] = item
+
+        ordered = sorted(logical.values(), key=lambda item: item.updated_at, reverse=True)[:limit]
         return "\n".join(
             (
                 f"- PERSISTENT [{item.category.value}/{item.scope}] "
