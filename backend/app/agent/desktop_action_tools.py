@@ -67,6 +67,17 @@ _BLOCKED_OPEN_SUFFIXES = {
     ".ppsm",
 }
 
+_SEARCH_SKIP_DIRS = {
+    "$recycle.bin",
+    ".git",
+    ".idea",
+    ".vscode",
+    "__pycache__",
+    "appdata",
+    "node_modules",
+    "target",
+}
+
 
 def _normalize_app_name(value: str) -> str:
     normalized = " ".join(value.strip().lower().replace("_", " ").split())
@@ -122,39 +133,53 @@ def _registry_app_path(executable: str) -> Path | None:
 
 
 def _common_app_candidates(executable: str) -> list[Path]:
-    local = Path(os.environ.get("LOCALAPPDATA", ""))
-    program_files = Path(os.environ.get("ProgramFiles", ""))
-    program_files_x86 = Path(os.environ.get("ProgramFiles(x86)", ""))
+    local_raw = os.environ.get("LOCALAPPDATA")
+    program_files_raw = os.environ.get("ProgramFiles")
+    program_files_x86_raw = os.environ.get("ProgramFiles(x86)")
     system_root = Path(os.environ.get("SystemRoot", r"C:\Windows"))
 
-    candidates: dict[str, list[Path]] = {
-        "chrome.exe": [
-            local / "Google" / "Chrome" / "Application" / executable,
-            program_files / "Google" / "Chrome" / "Application" / executable,
-            program_files_x86 / "Google" / "Chrome" / "Application" / executable,
-        ],
-        "opera.exe": [
-            local / "Programs" / "Opera" / executable,
-            program_files / "Opera" / executable,
-            program_files_x86 / "Opera" / executable,
-        ],
-        "msedge.exe": [
-            program_files_x86 / "Microsoft" / "Edge" / "Application" / executable,
-            program_files / "Microsoft" / "Edge" / "Application" / executable,
-        ],
-        "Code.exe": [
-            local / "Programs" / "Microsoft VS Code" / executable,
-            program_files / "Microsoft VS Code" / executable,
-        ],
-        "steam.exe": [
-            program_files_x86 / "Steam" / executable,
-            program_files / "Steam" / executable,
-        ],
-        "calc.exe": [system_root / "System32" / executable],
-        "notepad.exe": [system_root / "System32" / executable],
-        "explorer.exe": [system_root / executable],
-    }
-    return [path for path in candidates.get(executable, []) if str(path)]
+    local = Path(local_raw) if local_raw else None
+    program_files = Path(program_files_raw) if program_files_raw else None
+    program_files_x86 = Path(program_files_x86_raw) if program_files_x86_raw else None
+
+    candidates: list[Path] = []
+    if executable == "chrome.exe":
+        if local:
+            candidates.append(local / "Google" / "Chrome" / "Application" / executable)
+        if program_files:
+            candidates.append(program_files / "Google" / "Chrome" / "Application" / executable)
+        if program_files_x86:
+            candidates.append(program_files_x86 / "Google" / "Chrome" / "Application" / executable)
+    elif executable == "opera.exe":
+        if local:
+            candidates.append(local / "Programs" / "Opera" / executable)
+        if program_files:
+            candidates.append(program_files / "Opera" / executable)
+        if program_files_x86:
+            candidates.append(program_files_x86 / "Opera" / executable)
+    elif executable == "msedge.exe":
+        if program_files_x86:
+            candidates.append(program_files_x86 / "Microsoft" / "Edge" / "Application" / executable)
+        if program_files:
+            candidates.append(program_files / "Microsoft" / "Edge" / "Application" / executable)
+    elif executable == "Code.exe":
+        if local:
+            candidates.append(local / "Programs" / "Microsoft VS Code" / executable)
+        if program_files:
+            candidates.append(program_files / "Microsoft VS Code" / executable)
+    elif executable == "steam.exe":
+        if program_files_x86:
+            candidates.append(program_files_x86 / "Steam" / executable)
+        if program_files:
+            candidates.append(program_files / "Steam" / executable)
+    elif executable == "calc.exe":
+        candidates.append(system_root / "System32" / executable)
+    elif executable == "notepad.exe":
+        candidates.append(system_root / "System32" / executable)
+    elif executable == "explorer.exe":
+        candidates.append(system_root / executable)
+
+    return candidates
 
 
 def _resolve_executable(app_name: str) -> tuple[str, Path | None]:
@@ -236,7 +261,6 @@ def _focus_windows_process(executable: str) -> dict[str, Any]:
             "process_count": len(pids),
         }
 
-    # Restore a minimized window before asking Windows to foreground it.
     user32.ShowWindow(target_hwnd, 9)  # SW_RESTORE
     focused = bool(user32.SetForegroundWindow(target_hwnd))
     return {
@@ -278,6 +302,56 @@ def _resolve_open_path(raw_path: str) -> Path:
     if not expanded:
         raise ValueError("path is required")
     return Path(expanded).resolve()
+
+
+def _find_unique_file_by_name(raw_name: str) -> Path | None:
+    name = raw_name.strip().strip('"')
+    if not name or any(sep in name for sep in ("\\", "/")):
+        return None
+
+    # Only treat names with an extension as file-name lookup requests. This avoids
+    # accidentally turning an arbitrary phrase into an expensive home-folder scan.
+    if not Path(name).suffix:
+        return None
+
+    target = name.lower()
+    root = Path.home()
+    root_depth = len(root.parts)
+    visited = 0
+    matches: list[Path] = []
+
+    for current_dir, dirnames, filenames in os.walk(root):
+        current = Path(current_dir)
+        depth = len(current.parts) - root_depth
+        if depth >= 6:
+            dirnames[:] = []
+
+        dirnames[:] = [
+            dirname
+            for dirname in dirnames
+            if not dirname.startswith(".") and dirname.lower() not in _SEARCH_SKIP_DIRS
+        ]
+
+        for filename in filenames:
+            visited += 1
+            if visited > 30000:
+                break
+            if filename.lower() != target:
+                continue
+            matches.append(current / filename)
+            if len(matches) >= 4:
+                break
+
+        if visited > 30000 or len(matches) >= 4:
+            break
+
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return matches[0].resolve()
+
+    rendered = "; ".join(str(path) for path in matches[:3])
+    raise ValueError(f"Multiple files named '{name}' were found. Use an exact path. Matches: {rendered}")
 
 
 def _normalize_http_url(raw_url: str) -> str:
@@ -341,7 +415,12 @@ async def open_path_handler(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     path = _resolve_open_path(raw_path)
 
     if not path.exists():
-        raise ValueError(f"Path does not exist: {path}")
+        by_name = _find_unique_file_by_name(raw_path)
+        if by_name is not None:
+            path = by_name
+
+    if not path.exists():
+        raise ValueError(f"Path does not exist: {raw_path}")
 
     if path.is_file() and path.suffix.lower() in _BLOCKED_OPEN_SUFFIXES:
         raise ValueError(
@@ -392,9 +471,7 @@ def desktop_action_tools() -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="focus_app",
-            description=(
-                "Bring an already-running supported Windows app to the foreground without launching a new instance."
-            ),
+            description="Bring an already-running supported Windows app to the foreground without launching a new instance.",
             handler=focus_app_handler,
             parameters={
                 "type": "object",
@@ -410,6 +487,7 @@ def desktop_action_tools() -> list[ToolDefinition]:
             description=(
                 "Open an existing local folder or a non-executable file with its normal desktop application. "
                 "Known folder names such as Downloads, Documents, Desktop, Pictures, and SarahNode are accepted. "
+                "A unique file name such as budget.xlsx can also be resolved within the user's home folder. "
                 "Executable, script, shortcut, installer, registry, and macro-enabled file types are blocked."
             ),
             handler=open_path_handler,
@@ -418,7 +496,7 @@ def desktop_action_tools() -> list[ToolDefinition]:
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Existing path or known folder name such as Downloads, Documents, Desktop, or SarahNode.",
+                        "description": "Existing path, unique file name, or known folder name such as Downloads, Documents, Desktop, or SarahNode.",
                     }
                 },
                 "required": ["path"],
@@ -429,10 +507,7 @@ def desktop_action_tools() -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="open_url",
-            description=(
-                "Open an http:// or https:// web address in the user's default browser. "
-                "Other URL schemes are blocked."
-            ),
+            description="Open an http:// or https:// web address in the user's default browser. Other URL schemes are blocked.",
             handler=open_url_handler,
             parameters={
                 "type": "object",
