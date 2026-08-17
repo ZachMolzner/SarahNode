@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ctypes
 import os
 import platform
@@ -7,10 +8,11 @@ import shutil
 from pathlib import Path
 from typing import Any, Mapping
 
+import psutil
 from send2trash import send2trash
 
 from app.agent.contracts import PermissionScope, RiskLevel, ToolDefinition
-from app.agent.desktop_action_tools import _app_executable, _matching_pids
+from app.agent.desktop_action_tools import _app_executable, _normalize_app_name
 
 
 _BLOCKED_CREATE_SUFFIXES = {
@@ -53,6 +55,31 @@ _SEARCH_SKIP_DIRS = {
     "node_modules",
     "target",
 }
+
+# Launch aliases and running process names are not always the same on modern
+# Windows. Calculator is the clearest example: calc.exe is a launcher/alias while
+# the visible app commonly runs as CalculatorApp.exe. Keeping this mapping separate
+# makes close/terminate behavior reliable without changing the safe app launcher.
+_APP_PROCESS_NAMES: dict[str, tuple[str, ...]] = {
+    "chrome": ("chrome.exe",),
+    "google chrome": ("chrome.exe",),
+    "opera": ("opera.exe",),
+    "edge": ("msedge.exe",),
+    "microsoft edge": ("msedge.exe",),
+    "code": ("code.exe",),
+    "vs code": ("code.exe",),
+    "visual studio code": ("code.exe",),
+    "steam": ("steam.exe",),
+    "calculator": ("calculatorapp.exe", "calc.exe"),
+    "calc": ("calculatorapp.exe", "calc.exe"),
+    "notepad": ("notepad.exe",),
+    "explorer": ("explorer.exe",),
+    "file explorer": ("explorer.exe",),
+    "terminal": ("windowsterminal.exe", "wt.exe"),
+    "windows terminal": ("windowsterminal.exe", "wt.exe"),
+}
+
+_FORCE_TERMINATE_BLOCKED_APPS = {"explorer", "file explorer"}
 
 
 def _home() -> Path:
@@ -256,8 +283,31 @@ async def recycle_path_handler(arguments: Mapping[str, Any]) -> Mapping[str, Any
     return {"action": "recycled", "path": str(path)}
 
 
+def _process_names_for_app(app: str) -> tuple[str, ...]:
+    # Validate against the same app allowlist used for launching/focusing first.
+    executable = _app_executable(app)
+    normalized = _normalize_app_name(app)
+    names = _APP_PROCESS_NAMES.get(normalized)
+    if names:
+        return names
+    return (executable.lower(),)
+
+
+def _matching_pids_for_app(app: str) -> set[int]:
+    names = {name.lower() for name in _process_names_for_app(app)}
+    matches: set[int] = set()
+    for process in psutil.process_iter(["pid", "name"]):
+        try:
+            name = str(process.info.get("name") or "").lower()
+            if name in names:
+                matches.add(int(process.info["pid"]))
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            continue
+    return matches
+
+
 def _visible_windows_for_pids(pids: set[int]) -> list[tuple[int, str]]:
-    if platform.system() != "Windows":
+    if platform.system() != "Windows" or not pids:
         return []
 
     user32 = ctypes.windll.user32
@@ -285,6 +335,43 @@ def _visible_windows_for_pids(pids: set[int]) -> list[tuple[int, str]]:
     return windows
 
 
+def _calculator_window_fallback() -> list[tuple[int, str]]:
+    """Find the Calculator frame when Windows hosts it outside CalculatorApp.exe."""
+    if platform.system() != "Windows":
+        return []
+
+    user32 = ctypes.windll.user32
+    windows: list[tuple[int, str]] = []
+    enum_proc_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def enum_proc(hwnd: int, _lparam: int) -> bool:
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        title = buffer.value.strip()
+        if title.lower() == "calculator":
+            windows.append((int(hwnd), title))
+        return True
+
+    user32.EnumWindows(enum_proc_type(enum_proc), 0)
+    return windows
+
+
+def _visible_windows_for_app(app: str, pids: set[int] | None = None) -> list[tuple[int, str]]:
+    resolved_pids = pids if pids is not None else _matching_pids_for_app(app)
+    windows = _visible_windows_for_pids(resolved_pids)
+    if windows:
+        return windows
+
+    if _normalize_app_name(app) in {"calculator", "calc"}:
+        return _calculator_window_fallback()
+    return []
+
+
 async def close_app_handler(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     app = str(arguments.get("app", "")).strip()
     if not app:
@@ -292,32 +379,118 @@ async def close_app_handler(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
     if platform.system() != "Windows":
         raise ValueError("Phase 4C app closing is currently implemented for Windows")
 
-    executable = _app_executable(app)
-    pids = _matching_pids(executable)
-    if not pids:
+    pids_before = _matching_pids_for_app(app)
+    windows = _visible_windows_for_app(app, pids_before)
+    if not pids_before and not windows:
         return {"action": "already_closed", "app": app, "process_count": 0, "windows_signaled": 0}
 
-    windows = _visible_windows_for_pids(pids)
     if not windows:
+        # Background/helper processes do not mean a user-visible app is still open.
         return {
-            "action": "not_closed",
+            "action": "already_closed",
             "app": app,
-            "process_count": len(pids),
+            "process_count": len(pids_before),
             "windows_signaled": 0,
-            "reason": "The app is running but no visible window could be closed safely",
+            "background_processes": len(pids_before),
         }
 
     user32 = ctypes.windll.user32
     wm_close = 0x0010
+    signaled = 0
     for hwnd, _title in windows:
-        user32.PostMessageW(hwnd, wm_close, 0, 0)
+        if user32.PostMessageW(hwnd, wm_close, 0, 0):
+            signaled += 1
+
+    if signaled == 0:
+        return {
+            "action": "close_incomplete",
+            "app": app,
+            "process_count": len(pids_before),
+            "windows_signaled": 0,
+            "reason": "Windows did not accept a normal close request for the visible app window",
+        }
+
+    # Verify the visible windows actually disappear. Browser helper/background
+    # processes may remain, which is fine; the user-visible application is closed.
+    remaining_windows = windows
+    for _ in range(15):
+        await asyncio.sleep(0.2)
+        current_pids = _matching_pids_for_app(app)
+        remaining_windows = _visible_windows_for_app(app, current_pids)
+        if not remaining_windows:
+            return {
+                "action": "closed",
+                "app": app,
+                "process_count_before": len(pids_before),
+                "remaining_processes": len(current_pids),
+                "windows_signaled": signaled,
+            }
 
     return {
-        "action": "close_requested",
+        "action": "close_incomplete",
         "app": app,
-        "process_count": len(pids),
-        "windows_signaled": len(windows),
-        "window_titles": [title for _hwnd, title in windows[:5]],
+        "process_count": len(_matching_pids_for_app(app)),
+        "windows_signaled": signaled,
+        "remaining_windows": [title for _hwnd, title in remaining_windows[:5]],
+        "reason": "The app ignored the normal close request. You can ask me to force close it if needed.",
+    }
+
+
+async def terminate_app_handler(arguments: Mapping[str, Any]) -> Mapping[str, Any]:
+    app = str(arguments.get("app", "")).strip()
+    if not app:
+        raise ValueError("app is required")
+    if platform.system() != "Windows":
+        raise ValueError("Confirmed force app termination is currently implemented for Windows")
+
+    normalized = _normalize_app_name(app)
+    _app_executable(app)  # validate allowlist
+    if normalized in _FORCE_TERMINATE_BLOCKED_APPS:
+        raise ValueError("Force-closing File Explorer is blocked because explorer.exe also hosts the Windows shell")
+
+    pids = _matching_pids_for_app(app)
+    if not pids:
+        return {"action": "already_closed", "app": app, "terminated": 0, "remaining_processes": 0}
+
+    processes: list[psutil.Process] = []
+    failures: list[str] = []
+    current_pid = os.getpid()
+    for pid in sorted(pids):
+        if pid == current_pid:
+            failures.append(f"Skipped Sarah's own process PID {pid}")
+            continue
+        try:
+            process = psutil.Process(pid)
+            process.terminate()
+            processes.append(process)
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        except (psutil.AccessDenied, OSError) as exc:
+            failures.append(f"PID {pid}: {exc}")
+
+    _gone, alive = psutil.wait_procs(processes, timeout=2.0)
+    for process in alive:
+        try:
+            process.kill()
+        except (psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+        except (psutil.AccessDenied, OSError) as exc:
+            failures.append(f"PID {process.pid}: {exc}")
+
+    if alive:
+        psutil.wait_procs(alive, timeout=2.0)
+    await asyncio.sleep(0.2)
+
+    remaining = _matching_pids_for_app(app)
+    action = "terminated" if not remaining else "terminate_incomplete"
+    return {
+        "action": action,
+        "app": app,
+        "requested_processes": len(pids),
+        "terminated": max(0, len(pids) - len(remaining)),
+        "remaining_processes": len(remaining),
+        "failures": failures[:10],
+        "reason": None if not remaining else "Some matching processes are still running",
     }
 
 
@@ -387,7 +560,10 @@ def confirmed_action_tools() -> list[ToolDefinition]:
         ),
         ToolDefinition(
             name="close_app",
-            description="Ask the visible windows of one supported app to close normally. Does not force-kill processes. Requires explicit confirmation.",
+            description=(
+                "Close all visible windows of one supported app using the normal Windows close path and verify the windows disappear. "
+                "Does not force-terminate processes. Requires explicit confirmation."
+            ),
             handler=close_app_handler,
             parameters={
                 "type": "object",
@@ -397,6 +573,23 @@ def confirmed_action_tools() -> list[ToolDefinition]:
             },
             scopes=frozenset({PermissionScope.APPS_CLOSE}),
             risk=RiskLevel.MEDIUM,
+            requires_confirmation=True,
+        ),
+        ToolDefinition(
+            name="terminate_app",
+            description=(
+                "Force-close all matching processes for one supported app after an explicit user request such as kill, terminate, or force close. "
+                "This can discard unsaved work. File Explorer is blocked. Requires explicit confirmation."
+            ),
+            handler=terminate_app_handler,
+            parameters={
+                "type": "object",
+                "properties": {"app": {"type": "string"}},
+                "required": ["app"],
+                "additionalProperties": False,
+            },
+            scopes=frozenset({PermissionScope.APPS_TERMINATE}),
+            risk=RiskLevel.HIGH,
             requires_confirmation=True,
         ),
     ]
