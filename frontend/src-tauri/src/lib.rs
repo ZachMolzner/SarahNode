@@ -46,8 +46,9 @@ fn try_spawn_backend_sidecar(app: &AppHandle) -> Result<Option<Child>, String> {
         .env("LOCAL_DATA_DIR", &local_data_dir)
         .env("WEB_SEARCH_PROVIDER", "none")
         .env("BACKEND_BIND_ALL_INTERFACES", "0")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .env("SARAHNODE_TAURI", "1")
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
 
     command
         .spawn()
