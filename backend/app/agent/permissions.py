@@ -44,9 +44,9 @@ class PermissionPolicy:
 
 def default_policy() -> PermissionPolicy:
     # Local-first defaults allow read-only inspection, Sarah's persistent memory,
-    # low-risk launch actions, and a deliberately narrow set of Phase 4C mutation
-    # scopes. Every Phase 4C tool is still MEDIUM risk and requires explicit
-    # confirmation at invocation time. Broad files.write, desktop.control, and
+    # low-risk launch actions, and deliberately narrow confirmed mutation scopes.
+    # Force app termination has its own scope and is HIGH risk, so it still requires
+    # a confirmed=True invocation. Broad files.write, desktop.control, and
     # system.control remain ungranted.
     return PermissionPolicy(
         granted_scopes={
@@ -59,6 +59,7 @@ def default_policy() -> PermissionPolicy:
             PermissionScope.APPS_LAUNCH,
             PermissionScope.APPS_FOCUS,
             PermissionScope.APPS_CLOSE,
+            PermissionScope.APPS_TERMINATE,
             PermissionScope.WEB_READ,
             PermissionScope.WEB_LAUNCH,
             PermissionScope.SYSTEM_READ,
