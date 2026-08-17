@@ -11,6 +11,7 @@ from app.adapters.tts.mock import MockTTSClient
 from app.adapters.web_search.base import WebSearchProvider
 from app.adapters.web_search.brave_search import BraveSearchProvider
 from app.adapters.web_search.serpapi_search import SerpAPISearchProvider
+from app.agent.runtime import agent_runtime
 from app.config.settings import resolve_identity_store_path, settings
 from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
@@ -54,7 +55,7 @@ def build_llm_client() -> LLMClient:
         try:
             from app.adapters.llm.openai_client import OpenAIClient
 
-            client = OpenAIClient()
+            client = OpenAIClient(tool_registry=agent_runtime.tools)
             llm_selection = ProviderSelection(provider, "openai", "real", "API key available")
             logger.info("LLM provider selected: openai (model=%s)", settings.openai_model)
             return client
