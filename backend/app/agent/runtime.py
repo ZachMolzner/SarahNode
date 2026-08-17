@@ -59,7 +59,7 @@ class SarahAgentRuntime:
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 8,
+            "architecture_version": 9,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -96,6 +96,8 @@ class SarahAgentRuntime:
                 "batch_confirmation": "single_confirmation_for_mutating_plan",
                 "screen_metadata": "read_only_active",
                 "screen_awareness": "explicit_ephemeral_local_vision_active",
+                "screen_visual_reasoning": "describe_read_diagnose_locate_plan_active",
+                "screen_target_localization": "normalized_bbox_metadata_active",
                 "screen_capture_persistence": "none",
                 "screen_control": "not_available",
                 "permanent_delete": "not_available",
