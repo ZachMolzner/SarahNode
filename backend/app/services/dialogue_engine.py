@@ -4,6 +4,12 @@ from pathlib import Path
 from typing import Any
 
 from app.adapters.llm.base import LLMClient
+from app.agent.batch_action_router import (
+    ActionPlan,
+    PendingActionPlanStore,
+    PlannedAction,
+    parse_action_plan,
+)
 from app.agent.confirmed_action_router import (
     ConfirmedActionRequest,
     PendingConfirmedActionStore,
@@ -45,6 +51,7 @@ class DialogueEngine:
         self.web_answer_synthesizer = web_answer_synthesizer or WebAnswerSynthesizer()
         self.last_web_context: WebAnswerContext | None = None
         self.pending_confirmed_actions = PendingConfirmedActionStore(ttl_seconds=180)
+        self.pending_action_plans = PendingActionPlanStore(ttl_seconds=180)
 
     def _load_persona(self) -> dict[str, Any]:
         if not self.persona_path.exists():
@@ -123,14 +130,181 @@ class DialogueEngine:
             app = str(data.get("app") or request.arguments.get("app") or "the app")
             if action == "already_closed":
                 return f"{app} is already closed."
+            if action == "closed":
+                remaining = int(data.get("remaining_processes", 0) or 0)
+                if remaining:
+                    return f"Confirmed. Closed {app}. {remaining} background process(es) remain without a visible window."
+                return f"Confirmed. Closed {app}."
+            if action == "close_incomplete":
+                reason = str(data.get("reason") or "The app stayed open.")
+                return f"I sent {app} a normal close request, but it stayed open: {reason}"
             if action == "close_requested":
                 windows = int(data.get("windows_signaled", 0) or 0)
-                noun = "window" if windows == 1 else "windows"
-                return f"Confirmed. Asked {app} to close normally ({windows} {noun})."
+                return f"Confirmed. Asked {app} to close normally ({windows} window(s))."
             reason = str(data.get("reason") or "I couldn't close it safely.")
             return f"I found {app}, but I didn't force-close it: {reason}."
 
+        if request.tool_name == "terminate_app":
+            action = str(data.get("action") or "")
+            app = str(data.get("app") or request.arguments.get("app") or "the app")
+            if action == "already_closed":
+                return f"{app} is already closed."
+            if action == "terminated":
+                count = int(data.get("terminated", 0) or 0)
+                return f"Confirmed. Force-closed {app} and terminated {count} matching process(es)."
+            remaining = int(data.get("remaining_processes", 0) or 0)
+            reason = str(data.get("reason") or "Some processes could not be terminated.")
+            return f"I tried to force-close {app}, but {remaining} matching process(es) remain: {reason}."
+
         return "Confirmed. Done."
+
+    @staticmethod
+    def _short_summary(summary: str, limit: int = 120) -> str:
+        compact = " ".join(summary.split())
+        return compact if len(compact) <= limit else compact[: limit - 3] + "..."
+
+    def _planned_action_success_text(self, action: PlannedAction, data: dict[str, Any]) -> str:
+        if action.kind == "desktop":
+            request = DesktopActionRequest(
+                tool_name=action.tool_name,
+                arguments=action.arguments,
+                subject=action.subject,
+            )
+            return self._desktop_action_success_text(request, data)
+
+        request = ConfirmedActionRequest(
+            tool_name=action.tool_name,
+            arguments=action.arguments,
+            summary=action.summary,
+        )
+        text = self._confirmed_action_success_text(request, data)
+        if text.startswith("Confirmed. "):
+            text = text[len("Confirmed. ") :]
+        return text
+
+    @staticmethod
+    def _logical_action_failure(action: PlannedAction, data: dict[str, Any]) -> str | None:
+        state = str(data.get("action") or "")
+        if action.tool_name == "close_app" and state == "close_incomplete":
+            return str(data.get("reason") or "The app stayed open")
+        if action.tool_name == "terminate_app" and state == "terminate_incomplete":
+            return str(data.get("reason") or "Some app processes are still running")
+        return None
+
+    async def _execute_action_plan(self, plan: ActionPlan, *, confirmed: bool) -> AssistantReply:
+        completed: list[str] = []
+        total = len(plan.actions)
+
+        for index, action in enumerate(plan.actions, start=1):
+            result = await agent_runtime.tools.invoke(
+                ToolInvocation(
+                    tool_name=action.tool_name,
+                    arguments=action.arguments,
+                    requested_by="confirmed_batch_action_router" if confirmed else "batch_action_router",
+                ),
+                confirmed=confirmed,
+            )
+            if not result.ok:
+                error = self._clean_tool_error(result.error)
+                prefix = f"Completed {len(completed)} of {total} tasks. " if completed else ""
+                return AssistantReply(
+                    text=f"{prefix}Step {index} failed: {error}. Remaining steps were not run.",
+                    emotion="concerned",
+                    should_speak=True,
+                )
+
+            data = dict(result.data)
+            logical_failure = self._logical_action_failure(action, data)
+            if logical_failure:
+                prefix = f"Completed {len(completed)} of {total} tasks. " if completed else ""
+                return AssistantReply(
+                    text=f"{prefix}Step {index} did not complete: {logical_failure}. Remaining steps were not run.",
+                    emotion="concerned",
+                    should_speak=True,
+                )
+
+            completed.append(self._planned_action_success_text(action, data))
+
+        lines = [f"{index}. {text}" for index, text in enumerate(completed, start=1)]
+        return AssistantReply(
+            text=f"Completed all {total} tasks:\n" + "\n".join(lines),
+            emotion="calm",
+            should_speak=True,
+        )
+
+    async def _handle_batch_action(self, message: ChatMessage) -> AssistantReply | None:
+        pending_batch = self.pending_action_plans.get(message.user_id)
+
+        if pending_batch is not None and is_cancellation(message.content):
+            self.pending_action_plans.cancel(message.user_id)
+            return AssistantReply(
+                text=f"Cancelled the pending {len(pending_batch.plan.actions)}-task plan. Nothing from that plan was run.",
+                emotion="calm",
+                should_speak=True,
+            )
+
+        if pending_batch is not None and is_confirmation(message.content):
+            pending_batch = self.pending_action_plans.pop(message.user_id)
+            if pending_batch is None:
+                return AssistantReply(
+                    text="That batch confirmation expired. Please request the tasks again.",
+                    emotion="concerned",
+                    should_speak=True,
+                )
+            return await self._execute_action_plan(pending_batch.plan, confirmed=True)
+
+        try:
+            plan = parse_action_plan(message.content)
+        except Exception as exc:
+            logger.info("Multi-action request rejected during planning: %s", exc)
+            return AssistantReply(
+                text=f"I can't run that multi-task request safely: {self._clean_tool_error(str(exc))}",
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        if plan is None:
+            if pending_batch is not None:
+                try:
+                    new_confirmed = parse_confirmed_action(message.content)
+                except Exception:
+                    new_confirmed = None
+                if new_confirmed is not None:
+                    return AssistantReply(
+                        text=(
+                            f"You already have a pending {len(pending_batch.plan.actions)}-task plan. "
+                            'Reply "confirm" or "cancel" before staging another system change.'
+                        ),
+                        emotion="concerned",
+                        should_speak=True,
+                    )
+            return None
+
+        if plan.requires_confirmation:
+            existing_single = self.pending_confirmed_actions.get(message.user_id)
+            if existing_single is not None:
+                return AssistantReply(
+                    text='You already have a pending system change. Reply "confirm" or "cancel" before staging a multi-task plan.',
+                    emotion="concerned",
+                    should_speak=True,
+                )
+
+            self.pending_action_plans.stage(message.user_id, plan)
+            plan_lines = [
+                f"{index}. {self._short_summary(action.summary)}"
+                for index, action in enumerate(plan.actions, start=1)
+            ]
+            return AssistantReply(
+                text=(
+                    f"I staged {len(plan.actions)} tasks. Because at least one changes your system, none have run yet:\n"
+                    + "\n".join(plan_lines)
+                    + '\nReply "confirm" within 3 minutes to run the whole plan in order, or "cancel".'
+                ),
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        return await self._execute_action_plan(plan, confirmed=False)
 
     async def _handle_confirmed_action(self, message: ChatMessage) -> AssistantReply | None:
         pending = self.pending_confirmed_actions.get(message.user_id)
@@ -245,6 +419,10 @@ class DialogueEngine:
         addressing_instruction: str | None = None,
     ) -> AssistantReply:
         self.last_web_context = None
+
+        batch_action_reply = await self._handle_batch_action(message)
+        if batch_action_reply is not None:
+            return batch_action_reply
 
         confirmed_action_reply = await self._handle_confirmed_action(message)
         if confirmed_action_reply is not None:
