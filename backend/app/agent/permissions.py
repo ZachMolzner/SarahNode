@@ -43,11 +43,11 @@ class PermissionPolicy:
 
 
 def default_policy() -> PermissionPolicy:
-    # Local-first defaults allow read-only inspection, Sarah's persistent memory,
-    # low-risk launch actions, and deliberately narrow confirmed mutation scopes.
-    # Force app termination has its own scope and is HIGH risk, so it still requires
-    # a confirmed=True invocation. Broad files.write, desktop.control, and
-    # system.control remain ungranted.
+    # Local-first defaults allow read-only inspection (including explicit screen
+    # inspection), Sarah's persistent memory, low-risk launch actions, and
+    # deliberately narrow confirmed mutation scopes. Screen capture is never
+    # continuous/background in Phase 5; it is invoked only for an explicit visual
+    # request. Broad files.write, desktop.control, and system.control remain ungranted.
     return PermissionPolicy(
         granted_scopes={
             PermissionScope.FILES_READ,
@@ -56,6 +56,7 @@ def default_policy() -> PermissionPolicy:
             PermissionScope.FILES_MOVE,
             PermissionScope.FILES_RECYCLE,
             PermissionScope.DESKTOP_READ,
+            PermissionScope.SCREEN_READ,
             PermissionScope.APPS_LAUNCH,
             PermissionScope.APPS_FOCUS,
             PermissionScope.APPS_CLOSE,
