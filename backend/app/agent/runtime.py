@@ -4,6 +4,7 @@ from dataclasses import replace
 
 from app.agent.automation import AutomationRegistry
 from app.agent.builtin_tools import builtin_tools
+from app.agent.confirmed_action_tools import confirmed_action_tools
 from app.agent.desktop_action_tools import desktop_action_tools
 from app.agent.desktop_tools import desktop_read_tools
 from app.agent.event_bus import EventBus
@@ -20,9 +21,7 @@ class SarahAgentRuntime:
         self.tools.register_many(builtin_tools())
         self.tools.register_many(desktop_read_tools())
 
-        # Register the app/folder/file launch tools with a strict "explicit action"
-        # description so model-driven calls cannot reinterpret informational questions
-        # as commands. URL opening and Windows focus switching use hardened tools.
+        # Phase 4B low-risk actions can execute immediately when explicitly requested.
         action_tools = [
             replace(
                 tool,
@@ -39,12 +38,17 @@ class SarahAgentRuntime:
         self.tools.register(hardened_focus_app_tool())
         self.tools.register(safe_open_url_tool())
 
+        # Phase 4C mutation tools are MEDIUM risk and require confirmed=True at the
+        # ToolRegistry boundary. The dialogue layer stages these actions first, so a
+        # local model cannot execute them merely by producing a tool call.
+        self.tools.register_many(confirmed_action_tools())
+
         self.events = EventBus()
         self.automations = AutomationRegistry()
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 5,
+            "architecture_version": 6,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -72,7 +76,13 @@ class SarahAgentRuntime:
                 "app_focus": "verified_foreground_active",
                 "file_open": "safe_types_active",
                 "url_launch": "http_https_active",
-                "desktop_control": "strong_actions_still_gated",
+                "confirmed_file_create": "active",
+                "confirmed_file_move_rename": "active",
+                "confirmed_recycle_bin": "active",
+                "confirmed_app_close": "active",
+                "permanent_delete": "not_available",
+                "force_process_kill": "not_available",
+                "broad_desktop_control": "still_gated",
                 "screen_awareness": "planned",
                 "web_tools": "provider_dependent",
                 "personal_services": "planned",
