@@ -24,6 +24,7 @@ class PermissionScope(str, Enum):
     APPS_LAUNCH = "apps.launch"
     APPS_FOCUS = "apps.focus"
     APPS_CLOSE = "apps.close"
+    APPS_TERMINATE = "apps.terminate"
     WEB_READ = "web.read"
     WEB_LAUNCH = "web.launch"
     MEMORY_READ = "memory.read"
