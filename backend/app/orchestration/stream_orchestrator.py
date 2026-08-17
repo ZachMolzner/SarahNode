@@ -9,6 +9,7 @@ from app.adapters.avatar.base import AvatarClient
 from app.adapters.tts.base import TTSClient
 from app.adapters.tts.mock import MockTTSClient
 from app.config.settings import settings
+from app.memory.learning import MemoryLearningService
 from app.memory.state_manager import MemoryManager
 from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
@@ -30,6 +31,7 @@ class StreamOrchestrator:
         memory_manager: MemoryManager,
         response_policy: ResponsePolicy,
         identity_service: IdentityService,
+        memory_learning_service: MemoryLearningService,
     ) -> None:
         self.dialogue_engine = dialogue_engine
         self.tts_client = tts_client
@@ -38,6 +40,7 @@ class StreamOrchestrator:
         self.memory_manager = memory_manager
         self.response_policy = response_policy
         self.identity_service = identity_service
+        self.memory_learning_service = memory_learning_service
 
         self.queue: asyncio.PriorityQueue[tuple[int, int, ChatMessage]] | None = None
         self.events: asyncio.Queue[SystemEvent] | None = None
@@ -52,7 +55,6 @@ class StreamOrchestrator:
 
         self._cooldown_until = 0.0
         self._sequence = 0
-
 
     def _ensure_runtime_queues(self) -> None:
         loop = asyncio.get_running_loop()
@@ -70,7 +72,6 @@ class StreamOrchestrator:
 
         self._ensure_runtime_queues()
 
-        # Initialize avatar
         for event in await self.avatar_client.initialize():
             await self.emit_event("avatar_event", event)
 
@@ -193,11 +194,9 @@ class StreamOrchestrator:
 
         await self._set_assistant_state("thinking")
 
-        # Moderation
         moderation = self.moderation_service.evaluate(message)
         await self.emit_event("moderation_decision", moderation.model_dump())
 
-        # Dialogue
         speaker_identity = self.identity_service.resolve_speaker(username=message.username)
         addressing_context = self.identity_service.addressing_context(
             speaker=speaker_identity,
@@ -221,7 +220,29 @@ class StreamOrchestrator:
                 "rule": addressing_context.deterministic_rule,
             },
         )
-        memory_summary = self.memory_manager.summarize()
+
+        session_memory = self.memory_manager.summarize()
+        memory_scopes = {"household"}
+        if speaker_identity.speaker_id != "unknown":
+            memory_scopes.add(speaker_identity.speaker_id)
+        persistent_memory = self.memory_learning_service.context_for(
+            message.content,
+            scopes=memory_scopes,
+            limit=8,
+        )
+        memory_summary = (
+            f"Recent conversation memory:\n{session_memory}\n\n"
+            f"Relevant persistent memory:\n{persistent_memory}"
+        )
+        await self.emit_event(
+            "memory_retrieval",
+            {
+                "speaker_id": speaker_identity.speaker_id,
+                "scopes": sorted(memory_scopes),
+                "has_persistent_context": persistent_memory != "No relevant persistent memories.",
+            },
+        )
+
         recent_history = self.memory_manager.recent_history()
         capability_route = self.dialogue_engine.classify_capability(message)
         self.memory_manager.set_last_capability(capability_route.intent)
@@ -246,6 +267,8 @@ class StreamOrchestrator:
                     f"confidence={speaker_identity.confidence:.2f}, mode={addressing_context.mode}. "
                     f"Address as '{addressing_context.address_name}'. "
                     f"Tone directive: {addressing_context.tone_directive} "
+                    "Use persistent memory when relevant, but never claim a memory that was not supplied or retrieved. "
+                    "Only call memory_remember when the user explicitly asks you to remember/save/learn something. "
                     "If speaker is unknown, use neutral greetings like 'Hey there' or 'How can I help?'. "
                     "Do not invent nicknames. Never repeat 'Mama' more than once in a response."
                 ),
@@ -294,19 +317,16 @@ class StreamOrchestrator:
 
         await self.emit_event("reply_selected", reply.model_dump())
 
-        # Avatar emotion
         expression_event = await self.avatar_client.dispatch(
             "expression_change",
             {"expression": reply.emotion},
         )
         await self.emit_event("avatar_event", expression_event)
 
-        # Speaking + TTS
         if reply.should_speak:
             async with self._speech_lock:
                 await self._set_assistant_state("speaking")
 
-                # START speaking
                 await self.emit_event(
                     "speaking_status",
                     {"is_speaking": True, "emotion": reply.emotion},
@@ -341,7 +361,6 @@ class StreamOrchestrator:
                 avatar_stop = await self.avatar_client.dispatch("speaking_stop", {})
                 await self.emit_event("avatar_event", avatar_stop)
 
-                # STOP speaking
                 await self.emit_event(
                     "speaking_status",
                     {"is_speaking": False, "emotion": "idle"},
