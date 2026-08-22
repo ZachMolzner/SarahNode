@@ -9,6 +9,7 @@ from app.agent.confirmed_action_tools import confirmed_action_tools
 from app.agent.desktop_action_tools import desktop_action_tools
 from app.agent.desktop_tools import desktop_read_tools
 from app.agent.event_bus import EventBus
+from app.agent.keyboard_tools import keyboard_tools
 from app.agent.permissions import default_policy
 from app.agent.pointer_tools import pointer_tools
 from app.agent.screen_tools import screen_read_tools
@@ -54,16 +55,18 @@ class SarahAgentRuntime:
         self.tools.register(hardened_terminate_app_tool())
 
         # Phase 5C internal input tools remain invisible to both language models.
-        # Pointer movement and bounded scrolling are LOW risk; click and literal text
-        # typing are MEDIUM risk and require confirmed=True at ToolRegistry boundary.
+        # Pointer movement, bounded scrolling, and the five allowlisted navigation/edit
+        # keys are LOW risk. Click, literal text typing, and Enter are separate MEDIUM
+        # risk primitives and require confirmed=True at ToolRegistry boundary.
         self.tools.register_many(pointer_tools())
+        self.tools.register_many(keyboard_tools())
 
         self.events = EventBus()
         self.automations = AutomationRegistry()
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 11,
+            "architecture_version": 12,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -105,7 +108,11 @@ class SarahAgentRuntime:
                 "screen_pointer_preview": "explicit_visual_target_active",
                 "screen_click": "single_left_click_confirmed_revalidation_active",
                 "screen_click_verification": "fresh_post_click_visual_check_active",
-                "screen_keyboard": "literal_unicode_confirmed_no_special_keys_active",
+                "screen_keyboard": "literal_unicode_confirmed_plus_controlled_single_keys_active",
+                "screen_enter": "confirmed_single_press_receiving_window_revalidation_active",
+                "screen_safe_keys": "escape_tab_backspace_arrow_up_arrow_down_single_press_active",
+                "screen_hotkeys": "not_available",
+                "screen_key_modifiers": "not_available",
                 "screen_sensitive_typing": "blocked",
                 "screen_scroll": "bounded_vertical_wheel_active",
                 "screen_drag_drop": "not_available",
