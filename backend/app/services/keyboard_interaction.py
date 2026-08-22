@@ -45,6 +45,15 @@ _DISPLAY_NAMES = {
     "arrow_down": "Arrow Down",
 }
 
+_GW_HWNDNEXT = 2
+_GWL_EXSTYLE = -20
+_WS_EX_TOOLWINDOW = 0x00000080
+_SW_RESTORE = 9
+_SWP_NOSIZE = 0x0001
+_SWP_NOMOVE = 0x0002
+_SWP_SHOWWINDOW = 0x0040
+_HWND_TOP = 0
+
 
 @dataclass(frozen=True, slots=True)
 class KeyboardRequest:
@@ -119,27 +128,158 @@ def is_keyboard_cancellation(text: str) -> bool:
     return bool(_CANCEL_RE.match(text.strip()))
 
 
-def _foreground_window_context() -> WindowContext | None:
-    if platform.system() != "Windows":
-        return None
+def _configure_receiver_win32():
     user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+
     user32.GetForegroundWindow.argtypes = []
     user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetWindow.restype = wintypes.HWND
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.IsIconic.argtypes = [wintypes.HWND]
+    user32.IsIconic.restype = wintypes.BOOL
     user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
     user32.GetWindowTextLengthW.restype = ctypes.c_int
     user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
     user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.GetWindowLongW.restype = wintypes.LONG
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.ShowWindow.restype = wintypes.BOOL
+    user32.BringWindowToTop.argtypes = [wintypes.HWND]
+    user32.BringWindowToTop.restype = wintypes.BOOL
+    user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+    user32.SetForegroundWindow.restype = wintypes.BOOL
+    user32.SetActiveWindow.argtypes = [wintypes.HWND]
+    user32.SetActiveWindow.restype = wintypes.HWND
+    user32.SetFocus.argtypes = [wintypes.HWND]
+    user32.SetFocus.restype = wintypes.HWND
+    user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.BOOL]
+    user32.AttachThreadInput.restype = wintypes.BOOL
+    user32.SetWindowPos.argtypes = [
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
+    ]
+    user32.SetWindowPos.restype = wintypes.BOOL
+    kernel32.GetCurrentThreadId.argtypes = []
+    kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+    return user32, kernel32
 
-    hwnd_value = user32.GetForegroundWindow()
-    hwnd = int(hwnd_value or 0)
+
+def _hwnd_int(value) -> int:
+    if value is None:
+        return 0
+    raw = getattr(value, "value", value)
+    return int(raw or 0)
+
+
+def _window_context(user32, hwnd_value) -> WindowContext | None:
+    hwnd = _hwnd_int(hwnd_value)
     if hwnd <= 0:
         return None
-
     length = int(user32.GetWindowTextLengthW(hwnd_value))
-    buffer = ctypes.create_unicode_buffer(max(2, length + 1))
+    if length <= 0:
+        return None
+    buffer = ctypes.create_unicode_buffer(length + 1)
     user32.GetWindowTextW(hwnd_value, buffer, len(buffer))
-    title = buffer.value.strip() or f"Window 0x{hwnd:X}"
-    return WindowContext(hwnd=hwnd, title=title)
+    title = buffer.value.strip()
+    return WindowContext(hwnd=hwnd, title=title) if title else None
+
+
+def _foreground_window_context() -> WindowContext | None:
+    if platform.system() != "Windows":
+        return None
+    user32, _kernel32 = _configure_receiver_win32()
+    return _window_context(user32, user32.GetForegroundWindow())
+
+
+def _next_visible_window_under(sarah_hwnd: int) -> WindowContext | None:
+    if platform.system() != "Windows" or sarah_hwnd <= 0:
+        return None
+    user32, _kernel32 = _configure_receiver_win32()
+    candidate = user32.GetWindow(wintypes.HWND(sarah_hwnd), _GW_HWNDNEXT)
+    checked = 0
+    while candidate and checked < 100:
+        checked += 1
+        if user32.IsWindowVisible(candidate) and not user32.IsIconic(candidate):
+            ex_style = int(user32.GetWindowLongW(candidate, _GWL_EXSTYLE))
+            if not (ex_style & _WS_EX_TOOLWINDOW):
+                context = _window_context(user32, candidate)
+                if context is not None and context.hwnd != sarah_hwnd:
+                    return context
+        candidate = user32.GetWindow(candidate, _GW_HWNDNEXT)
+    return None
+
+
+def _attach_pair(user32, first: int, second: int, attached: list[tuple[int, int]]) -> None:
+    if not first or not second or first == second:
+        return
+    if user32.AttachThreadInput(first, second, True):
+        attached.append((first, second))
+
+
+def _activate_window(context: WindowContext) -> bool:
+    if platform.system() != "Windows" or context.hwnd <= 0:
+        return False
+    user32, kernel32 = _configure_receiver_win32()
+    hwnd = wintypes.HWND(context.hwnd)
+
+    user32.ShowWindow(hwnd, _SW_RESTORE)
+    user32.BringWindowToTop(hwnd)
+    user32.SetWindowPos(
+        hwnd,
+        wintypes.HWND(_HWND_TOP),
+        0,
+        0,
+        0,
+        0,
+        _SWP_NOMOVE | _SWP_NOSIZE | _SWP_SHOWWINDOW,
+    )
+    user32.SetForegroundWindow(hwnd)
+    if _hwnd_int(user32.GetForegroundWindow()) == context.hwnd:
+        return True
+
+    current_thread = int(kernel32.GetCurrentThreadId())
+    target_pid = wintypes.DWORD()
+    target_thread = int(user32.GetWindowThreadProcessId(hwnd, ctypes.byref(target_pid)))
+    foreground_hwnd = user32.GetForegroundWindow()
+    foreground_thread = 0
+    if foreground_hwnd:
+        foreground_pid = wintypes.DWORD()
+        foreground_thread = int(user32.GetWindowThreadProcessId(foreground_hwnd, ctypes.byref(foreground_pid)))
+
+    attached: list[tuple[int, int]] = []
+    try:
+        _attach_pair(user32, current_thread, foreground_thread, attached)
+        _attach_pair(user32, current_thread, target_thread, attached)
+        user32.ShowWindow(hwnd, _SW_RESTORE)
+        user32.BringWindowToTop(hwnd)
+        user32.SetWindowPos(
+            hwnd,
+            wintypes.HWND(_HWND_TOP),
+            0,
+            0,
+            0,
+            0,
+            _SWP_NOMOVE | _SWP_NOSIZE | _SWP_SHOWWINDOW,
+        )
+        user32.SetForegroundWindow(hwnd)
+        user32.SetActiveWindow(hwnd)
+        user32.SetFocus(hwnd)
+    finally:
+        for first, second in reversed(attached):
+            user32.AttachThreadInput(first, second, False)
+
+    return _hwnd_int(user32.GetForegroundWindow()) == context.hwnd
 
 
 def _verification_text(before_data_url: str | None, after_data_url: str | None) -> str:
@@ -170,10 +310,14 @@ class KeyboardInteractionService:
         tools: ToolRegistry,
         *,
         context_provider: Callable[[], WindowContext | None] = _foreground_window_context,
+        underlying_provider: Callable[[int], WindowContext | None] = _next_visible_window_under,
+        activator: Callable[[WindowContext], bool] = _activate_window,
     ) -> None:
         self.screen = screen
         self.tools = tools
         self.context_provider = context_provider
+        self.underlying_provider = underlying_provider
+        self.activator = activator
         self.pending = PendingEnterStore(ttl_seconds=120)
 
     def has_pending(self, user_id: str) -> bool:
@@ -208,13 +352,26 @@ class KeyboardInteractionService:
             return None
         return getattr(frame, "data_url", None)
 
+    def _resolve_receiver(self, hidden_sarah_hwnd: int | None) -> WindowContext | None:
+        if hidden_sarah_hwnd is not None:
+            context = self.underlying_provider(hidden_sarah_hwnd)
+            if context is None or context.hwnd == hidden_sarah_hwnd:
+                return None
+            if not self.activator(context):
+                return None
+            fresh = self.context_provider()
+            if fresh is None or fresh.hwnd != context.hwnd:
+                return None
+            return fresh
+        return self.context_provider()
+
     async def _peek_underlying_context(self) -> WindowContext | None:
         hidden_hwnd: int | None = None
         try:
             hidden_hwnd = self._hide_sarah()
             if hidden_hwnd is not None:
                 await asyncio.sleep(0.25)
-            return self.context_provider()
+            return self._resolve_receiver(hidden_hwnd)
         finally:
             self._restore_sarah(hidden_hwnd)
 
@@ -228,10 +385,10 @@ class KeyboardInteractionService:
             hidden_hwnd = self._hide_sarah()
             if hidden_hwnd is not None:
                 await asyncio.sleep(0.25)
-            context = self.context_provider()
+            context = self._resolve_receiver(hidden_hwnd)
             if context is None:
                 return AssistantReply(
-                    text="I did not press the key because I could not identify a foreground window underneath Sarah.",
+                    text="I did not press the key because I could not safely activate and verify the window underneath Sarah.",
                     emotion="concerned",
                     should_speak=True,
                 )
@@ -276,14 +433,15 @@ class KeyboardInteractionService:
             hidden_hwnd = self._hide_sarah()
             if hidden_hwnd is not None:
                 await asyncio.sleep(0.25)
-            fresh_context = self.context_provider()
+            fresh_context = self._resolve_receiver(hidden_hwnd)
             if fresh_context is None or fresh_context.hwnd != pending.hwnd:
                 self.pending.cancel(user_id)
-                actual = fresh_context.title if fresh_context is not None else "no identifiable foreground window"
+                actual = fresh_context.title if fresh_context is not None else "no safely activated underlying window"
                 return AssistantReply(
                     text=(
-                        f'I did not press Enter because the receiving window changed. It was staged for "{pending.title}", '
-                        f'but the current receiver is {actual!r}. Please request Enter again from the current screen.'
+                        f'I did not press Enter because the receiving window changed or could not be re-activated. '
+                        f'It was staged for "{pending.title}", but the current receiver is {actual!r}. '
+                        "Please request Enter again from the current screen."
                     ),
                     emotion="concerned",
                     should_speak=True,
@@ -361,7 +519,7 @@ class KeyboardInteractionService:
             context = await self._peek_underlying_context()
             if context is None:
                 return AssistantReply(
-                    text="I did not stage Enter because I could not identify which underlying window would receive it.",
+                    text="I did not stage Enter because I could not safely activate and verify which underlying window would receive it.",
                     emotion="concerned",
                     should_speak=True,
                 )
@@ -370,7 +528,7 @@ class KeyboardInteractionService:
                 text=(
                     f'Enter is staged for "{context.title}", but I have not pressed it. Enter can submit, send, search, '
                     'navigate, purchase, install, or confirm an action depending on focus. Reply "confirm enter" within '
-                    '2 minutes to re-verify that same receiving window and press Enter once, or "cancel".'
+                    '2 minutes to re-activate and re-verify that same receiving window and press Enter once, or "cancel".'
                 ),
                 emotion="concerned",
                 should_speak=True,
