@@ -1,6 +1,7 @@
 from collections import deque
 from dataclasses import dataclass, field
 
+from app.memory.secret_guard import redact_for_session_memory
 from app.schemas.chat import ChatMessage
 
 
@@ -24,16 +25,20 @@ class MemoryManager:
         self.state = MemoryState(rolling_messages=deque(maxlen=window_size))
 
     def add_message(self, message: ChatMessage) -> None:
-        self.state.rolling_messages.append(message)
+        # The live request still flows through the current turn unchanged, but the copy
+        # retained for later turns never keeps credential/secret text.
+        safe_content = redact_for_session_memory(message.content)
+        retained = message if safe_content == message.content else message.model_copy(update={"content": safe_content})
+        self.state.rolling_messages.append(retained)
 
     def add_note(self, note: str) -> None:
-        self.state.session_notes.append(note)
+        self.state.session_notes.append(redact_for_session_memory(note))
 
     def set_assistant_state(self, assistant_state: str) -> None:
         self.state.assistant_state = assistant_state
 
     def set_last_reply(self, reply: str) -> None:
-        self.state.last_reply = reply
+        self.state.last_reply = redact_for_session_memory(reply)
 
     def set_last_capability(self, intent: str) -> None:
         self.state.last_capability_intent = intent
