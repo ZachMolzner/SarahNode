@@ -13,24 +13,28 @@ class SecretMatch:
     kind: str
 
 
-# Explicit labels are deliberately the strongest signal. They let ordinary phrases such
-# as "I prefer token-based pagination" remain memorable while blocking "my access token
-# is ..." regardless of the token's exact format.
-_LABELED_SECRET_RE = re.compile(
-    r"\b(?:"
+_SECRET_LABEL = (
     r"password|passphrase|passcode|pin|"
     r"api[ _-]?key|secret[ _-]?key|client[ _-]?secret|"
     r"access[ _-]?token|refresh[ _-]?token|auth(?:entication)?[ _-]?token|bearer[ _-]?token|"
     r"recovery[ _-]?(?:code|key)|backup[ _-]?code|one[ _-]?time[ _-]?(?:code|password)|otp|"
     r"private[ _-]?key|ssh[ _-]?key|session[ _-]?(?:token|cookie)|cvv|cvc"
-    r")\b\s*(?:is|=|:|\bis\b)?\s*\S+",
+)
+
+# Require an assignment marker so ordinary sentences such as "I use a password manager"
+# or "I am learning API key security" are not treated as actual credentials.
+_LABELED_SECRET_RE = re.compile(
+    rf"\b(?:{_SECRET_LABEL})\b\s*(?:is|=|:)\s*\S+",
     re.IGNORECASE,
 )
 
+# Stable memory keys are normalized with underscores by MemoryLearningService. Match
+# complete key segments rather than substrings so a key such as "spinning_preference"
+# cannot be mistaken for a PIN.
 _KEY_NAME_SECRET_RE = re.compile(
-    r"(?:password|passphrase|passcode|pin|api_?key|secret_?key|client_?secret|"
-    r"access_?token|refresh_?token|auth_?token|recovery_?(?:code|key)|backup_?code|"
-    r"private_?key|session_?(?:token|cookie)|cvv|cvc)",
+    r"(?:^|_)(?:password|passphrase|passcode|pin|api_key|secret_key|client_secret|"
+    r"access_token|refresh_token|auth_token|recovery_code|recovery_key|backup_code|"
+    r"private_key|session_token|session_cookie|cvv|cvc)(?:_|$)",
     re.IGNORECASE,
 )
 
@@ -63,8 +67,8 @@ def detect_persistent_secret(*, key: str = "", value: str = "") -> SecretMatch |
     if not combined:
         return None
 
-    # A secret-shaped key name plus a non-empty value is enough to reject the write.
-    if key_text and value_text and _KEY_NAME_SECRET_RE.search(key_text.replace("-", "_")):
+    normalized_key = re.sub(r"[\s-]+", "_", key_text.lower()).strip("_")
+    if normalized_key and value_text and _KEY_NAME_SECRET_RE.search(normalized_key):
         return SecretMatch("credential_labeled_key")
 
     if _LABELED_SECRET_RE.search(combined):
