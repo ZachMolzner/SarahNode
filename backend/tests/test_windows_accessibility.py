@@ -5,13 +5,22 @@ from app.services.windows_accessibility import _normalize_rect, _parse_match
 
 def test_parse_accessibility_match_from_json() -> None:
     match = _parse_match(
-        '{"found":true,"name":"Search the web","control_type":"ControlType.Edit","left":400,"top":200,"right":900,"bottom":260,"exact":true}'
+        '{"found":true,"name":"Search the web","control_type":"ControlType.Edit","left":400,"top":200,"right":900,"bottom":260,"exact":true,"is_password":false}'
     )
     assert match is not None
     assert match.name == "Search the web"
     assert match.control_type == "Edit"
     assert (match.left, match.top, match.right, match.bottom) == (400, 200, 900, 260)
     assert match.exact is True
+    assert match.is_password is False
+
+
+def test_parse_accessibility_password_field_metadata() -> None:
+    match = _parse_match(
+        '{"found":true,"name":"Password","control_type":"ControlType.Edit","left":100,"top":100,"right":500,"bottom":140,"exact":true,"is_password":true}'
+    )
+    assert match is not None
+    assert match.is_password is True
 
 
 def test_parse_accessibility_not_found_returns_none() -> None:
