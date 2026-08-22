@@ -22,6 +22,7 @@ from app.services.visual_interaction import (
     _target_identity_matches,
 )
 from app.services.windows_accessibility import locate_control_with_windows_accessibility
+from app.services.windows_receiver import remember_verified_receiver, window_at_point
 
 
 _VERIFIED_TYPE_QUOTED_RE = re.compile(
@@ -65,8 +66,11 @@ class VerifiedVisualInteractionService(VisualInteractionService):
 
     Standard UIA text-entry controls are replaced through ValuePattern after confirmation,
     so existing browser URLs or field contents are not accidentally concatenated with the
-    requested literal text. Vision-only text targets are refused rather than using an
-    ambiguous append operation. Scroll verification stays model-free.
+    requested literal text. A successful UIA replacement also remembers the verified
+    owning top-level window briefly so a following controlled key can return to that app
+    after the user comes back to Sarah to type the next command. Vision-only text targets
+    are refused rather than using an ambiguous append operation. Scroll verification stays
+    model-free.
     """
 
     def can_handle(self, message: ChatMessage) -> bool:
@@ -78,9 +82,6 @@ class VerifiedVisualInteractionService(VisualInteractionService):
         if not isinstance(self.screen, ScreenAwarenessService):
             return await super()._locate(target_query)
 
-        # UIA is deterministic and already proved reliable on this Windows machine.
-        # Give transient browser accessibility-tree updates one short retry before
-        # falling back to local vision grounding.
         analysis = await locate_control_with_windows_accessibility(self.screen, target_query)
         if analysis is None:
             await asyncio.sleep(0.15)
@@ -202,16 +203,20 @@ class VerifiedVisualInteractionService(VisualInteractionService):
                 should_speak=True,
             )
 
-        # For standard Windows-accessible fields, replace the current value exactly.
-        # This prevents address-bar text from being inserted into an existing URL.
         if fresh_analysis.model == "windows-uia":
             x, y = _physical_center(fresh_analysis, fresh_target)
             hidden_hwnd: int | None = None
             replace_result: ToolResult | None = None
+            receiver_candidate: tuple[int, str] | None = None
             try:
                 hidden_hwnd = self._hide_sarah_for_input()
                 if hidden_hwnd is not None:
                     await asyncio.sleep(0.25)
+
+                # Resolve the owner from the freshly verified field coordinates while
+                # Sarah is hidden. This remains valid even after the user later moves
+                # their mouse back over Sarah's chat box to type a keyboard command.
+                receiver_candidate = window_at_point(x, y, exclude_hwnd=hidden_hwnd)
                 replace_result = await self.tools.invoke(
                     ToolInvocation(
                         tool_name="replace_text_value",
@@ -226,6 +231,13 @@ class VerifiedVisualInteractionService(VisualInteractionService):
                     confirmed=True,
                 )
                 if replace_result.ok:
+                    if receiver_candidate is not None:
+                        remember_verified_receiver(
+                            receiver_candidate[0],
+                            receiver_candidate[1],
+                            source="confirmed_uia_text_field",
+                            ttl_seconds=180,
+                        )
                     await asyncio.sleep(0.25)
             finally:
                 self._restore_sarah_after_input(hidden_hwnd)
@@ -242,14 +254,12 @@ class VerifiedVisualInteractionService(VisualInteractionService):
             return AssistantReply(
                 text=(
                     f'Replaced the current contents of "{label}" with the exact requested literal text after re-verifying the field. '
-                    "I did not press Enter, Tab, or any shortcut. Windows UI Automation accepted the replacement."
+                    "I did not press Enter, Tab, or any shortcut. Windows UI Automation accepted the replacement and retained the verified app receiver for a short continuation."
                 ),
                 emotion="calm",
                 should_speak=True,
             )
 
-        # A vision-only bounding box cannot tell us whether an existing value is selected,
-        # so do not risk concatenating the new text with unknown existing contents.
         return AssistantReply(
             text=(
                 f'I found "{fresh_target.visible_text or fresh_target.label or pending.target_query}" visually, but Windows does not expose '
