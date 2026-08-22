@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from app.agent.accessibility_text_tools import accessibility_text_tools
 from app.agent.app_lifecycle_tools import hardened_close_app_tool, hardened_terminate_app_tool
 from app.agent.automation import AutomationRegistry
 from app.agent.builtin_tools import builtin_tools
@@ -56,17 +57,18 @@ class SarahAgentRuntime:
 
         # Phase 5C internal input tools remain invisible to both language models.
         # Pointer movement, bounded scrolling, and the five allowlisted navigation/edit
-        # keys are LOW risk. Click, literal text typing, and Enter are separate MEDIUM
-        # risk primitives and require confirmed=True at ToolRegistry boundary.
+        # keys are LOW risk. Click, literal text replacement/typing, and Enter are
+        # separate MEDIUM-risk primitives and require confirmed=True.
         self.tools.register_many(pointer_tools())
         self.tools.register_many(keyboard_tools())
+        self.tools.register_many(accessibility_text_tools())
 
         self.events = EventBus()
         self.automations = AutomationRegistry()
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 12,
+            "architecture_version": 13,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -108,8 +110,9 @@ class SarahAgentRuntime:
                 "screen_pointer_preview": "explicit_visual_target_active",
                 "screen_click": "single_left_click_confirmed_revalidation_active",
                 "screen_click_verification": "fresh_post_click_visual_check_active",
-                "screen_keyboard": "literal_unicode_confirmed_plus_controlled_single_keys_active",
-                "screen_enter": "confirmed_single_press_receiving_window_revalidation_active",
+                "screen_keyboard": "confirmed_literal_text_plus_controlled_single_keys_active",
+                "screen_text_replacement": "uia_value_pattern_confirmed_exact_literal_active",
+                "screen_enter": "confirmed_single_press_underlying_window_revalidation_active",
                 "screen_safe_keys": "escape_tab_backspace_arrow_up_arrow_down_single_press_active",
                 "screen_hotkeys": "not_available",
                 "screen_key_modifiers": "not_available",
