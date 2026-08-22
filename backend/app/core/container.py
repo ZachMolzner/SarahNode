@@ -19,10 +19,10 @@ from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
 from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
-from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
 from app.services.identity_service import IdentityService
+from app.services.keyboard_interaction import KeyboardInteractionService
 from app.services.page_fetcher import PageFetcher
 from app.services.screen_awareness import ScreenAwarenessService
 from app.services.visual_interaction_verified import VerifiedVisualInteractionService
@@ -237,6 +237,10 @@ visual_interaction_service = VerifiedVisualInteractionService(
     screen=screen_awareness_service,
     tools=agent_runtime.tools,
 )
+keyboard_interaction_service = KeyboardInteractionService(
+    screen=screen_awareness_service,
+    tools=agent_runtime.tools,
+)
 
 web_search_service = WebSearchService(
     provider=build_web_provider(),
@@ -266,4 +270,5 @@ stream_orchestrator = StreamOrchestrator(
     memory_learning_service=memory_learning_service,
     screen_awareness_service=screen_awareness_service,
     visual_interaction_service=visual_interaction_service,
+    keyboard_interaction_service=keyboard_interaction_service,
 )
