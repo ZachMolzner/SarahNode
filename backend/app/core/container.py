@@ -14,16 +14,16 @@ from app.adapters.web_search.serpapi_search import SerpAPISearchProvider
 from app.agent.memory_tools import memory_tools
 from app.agent.runtime import agent_runtime
 from app.config.settings import resolve_identity_store_path, settings
-from app.memory.learning import MemoryLearningService
+from app.memory.safe_learning import SafeMemoryLearningService
 from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
 from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
 from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
-from app.services.identity_service import IdentityService
 from app.services.keyboard_interaction import KeyboardInteractionService
 from app.services.page_fetcher import PageFetcher
+from app.services.safe_identity_service import SafeIdentityService
 from app.services.screen_awareness import ScreenAwarenessService
 from app.services.visual_interaction_verified import VerifiedVisualInteractionService
 from app.services.voice_service import VoiceService
@@ -226,8 +226,8 @@ def provider_status() -> dict[str, dict[str, str]]:
 
 assistant_intake_service = AssistantIntakeService()
 memory_manager = MemoryManager(window_size=settings.assistant_memory_window)
-identity_service = IdentityService(storage_path=str(resolve_identity_store_path()))
-memory_learning_service = MemoryLearningService(identity_service=identity_service)
+identity_service = SafeIdentityService(storage_path=str(resolve_identity_store_path()))
+memory_learning_service = SafeMemoryLearningService(identity_service=identity_service)
 agent_runtime.tools.register_many(memory_tools(memory_learning_service))
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
