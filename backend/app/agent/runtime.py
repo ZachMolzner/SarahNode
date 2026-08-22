@@ -44,8 +44,6 @@ class SarahAgentRuntime:
 
         # Phase 4C/4D mutation and termination tools require confirmed=True at the
         # ToolRegistry boundary. Batch execution never bypasses this permission check.
-        # Close/terminate use launch-aware wrappers so an immediately-following step
-        # can wait for a just-launched app to become observable before acting on it.
         confirmed_tools = [
             tool
             for tool in confirmed_action_tools()
@@ -55,9 +53,9 @@ class SarahAgentRuntime:
         self.tools.register(hardened_close_app_tool())
         self.tools.register(hardened_terminate_app_tool())
 
-        # Phase 5C pointer tools are deliberately narrow. move_pointer is LOW risk;
-        # click_pointer is MEDIUM risk and always requires confirmed=True. Neither
-        # grants broad desktop.control, keyboard injection, dragging, or scrolling.
+        # Phase 5C internal input tools remain invisible to both language models.
+        # Pointer movement and bounded scrolling are LOW risk; click and literal text
+        # typing are MEDIUM risk and require confirmed=True at ToolRegistry boundary.
         self.tools.register_many(pointer_tools())
 
         self.events = EventBus()
@@ -65,7 +63,7 @@ class SarahAgentRuntime:
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 10,
+            "architecture_version": 11,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -103,13 +101,14 @@ class SarahAgentRuntime:
                 "screen_metadata": "read_only_active",
                 "screen_awareness": "explicit_ephemeral_local_vision_active",
                 "screen_visual_reasoning": "describe_read_diagnose_locate_plan_active",
-                "screen_target_localization": "normalized_bbox_metadata_active",
+                "screen_target_localization": "windows_uia_first_vision_fallback_active",
                 "screen_pointer_preview": "explicit_visual_target_active",
                 "screen_click": "single_left_click_confirmed_revalidation_active",
                 "screen_click_verification": "fresh_post_click_visual_check_active",
-                "screen_keyboard": "not_available",
+                "screen_keyboard": "literal_unicode_confirmed_no_special_keys_active",
+                "screen_sensitive_typing": "blocked",
+                "screen_scroll": "bounded_vertical_wheel_active",
                 "screen_drag_drop": "not_available",
-                "screen_scroll": "not_available",
                 "screen_capture_persistence": "none",
                 "permanent_delete": "not_available",
                 "broad_desktop_control": "still_gated",
