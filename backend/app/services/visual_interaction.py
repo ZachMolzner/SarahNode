@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
-from app.agent.contracts import ToolInvocation
+from app.agent.contracts import ToolInvocation, ToolResult
 from app.agent.tool_registry import ToolRegistry
 from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.screen_awareness import ScreenAnalysisResult, ScreenAwarenessError, ScreenAwarenessService, VisualTarget
+from app.services.visual_grounding import locate_control_with_plain_vision
 
 
 _CLICK_RE = re.compile(
@@ -253,8 +254,8 @@ class VisualInteractionService:
     """Coordinate Phase 5C visual pointer movement and confirmed single clicks.
 
     The service never accepts raw user coordinates. Every physical point comes from a
-    fresh ScreenAwarenessService localization result and is still executed through the
-    ToolRegistry permission boundary.
+    fresh visual localization result and is still executed through the ToolRegistry
+    permission boundary.
     """
 
     def __init__(self, screen: ScreenAwarenessService, tools: ToolRegistry) -> None:
@@ -276,11 +277,18 @@ class VisualInteractionService:
         return parse_visual_interaction_request(message.content) is not None
 
     async def _locate(self, target_query: str) -> tuple[ScreenAnalysisResult, VisualTarget, float]:
-        prompt = (
-            f'Find the button, field, link, tab, checkbox, menu item, icon, or other visible UI control labeled "{target_query}" on my screen. '
-            "Return a target only if you can identify it confidently from the screenshot."
-        )
-        analysis = await self.screen.analyze(prompt)
+        # The real Windows Phase 5C path deliberately avoids Ollama structured-output
+        # mode. Qwen3-VL has repeatedly returned empty content there on the target host,
+        # while its ordinary vision path works. Fake/test screens keep using analyze().
+        if isinstance(self.screen, ScreenAwarenessService):
+            analysis = await locate_control_with_plain_vision(self.screen, target_query)
+        else:
+            prompt = (
+                f'Find the button, field, link, tab, checkbox, menu item, icon, or other visible UI control labeled "{target_query}" on my screen. '
+                "Return a target only if you can identify it confidently from the screenshot."
+            )
+            analysis = await self.screen.analyze(prompt)
+
         target, score = _best_target(target_query, analysis.targets)
         if target is None or target.bbox_normalized is None or score < 0.55:
             detail = analysis.text.strip()
