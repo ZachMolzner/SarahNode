@@ -252,6 +252,11 @@ class StreamOrchestrator:
             },
         )
 
+        explicit_memory_decision = None
+        explicit_memory_classifier = getattr(self.memory_learning_service, "classify_explicit_memory_request", None)
+        if callable(explicit_memory_classifier):
+            explicit_memory_decision = explicit_memory_classifier(message.content)
+
         recent_history = self.memory_manager.recent_history()
         capability_route = self.dialogue_engine.classify_capability(message)
         self.memory_manager.set_last_capability(capability_route.intent)
@@ -295,7 +300,25 @@ class StreamOrchestrator:
                         },
                     )
 
-            if keyboard_interaction_requested:
+            explicit_status = getattr(explicit_memory_decision, "status", None)
+            if explicit_status == "blocked_secret":
+                self.dialogue_engine.last_web_context = None
+                generated_reply = AssistantReply(
+                    text=(
+                        "I won't store passwords, API keys, access tokens, recovery codes, private keys, "
+                        "or other credentials in persistent memory. The credential value was also omitted from my rolling session memory."
+                    ),
+                    emotion="calm",
+                    should_speak=True,
+                )
+            elif explicit_status == "safe_memory":
+                self.dialogue_engine.last_web_context = None
+                generated_reply = AssistantReply(
+                    text="Saved that to persistent memory.",
+                    emotion="calm",
+                    should_speak=True,
+                )
+            elif keyboard_interaction_requested:
                 self.dialogue_engine.last_web_context = None
                 other_pending = bool(
                     self.dialogue_engine.pending_confirmed_actions.get(message.user_id)
