@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
 
 import pytest
 
@@ -52,10 +51,11 @@ def _target(
     *,
     bbox: tuple[int, int, int, int] = (700, 100, 900, 200),
     confidence: float = 0.95,
+    role: str = "button",
 ) -> VisualTarget:
     return VisualTarget(
         label=label,
-        role="button",
+        role=role,
         visible_text=label,
         bbox_normalized=bbox,
         confidence=confidence,
@@ -79,6 +79,18 @@ def test_visual_action_parser_distinguishes_commands_from_guidance() -> None:
     assert move is not None
     assert move.action == "move"
     assert move.target == "search box"
+
+    typed = parse_visual_interaction_request('Type "hello from Sarah" into Address and search bar')
+    assert typed is not None
+    assert typed.action == "type"
+    assert typed.target == "Address and search bar"
+    assert typed.text == "hello from Sarah"
+
+    scroll = parse_visual_interaction_request("Scroll down 2 steps")
+    assert scroll is not None
+    assert scroll.action == "scroll"
+    assert scroll.direction == "down"
+    assert scroll.steps == 2
 
 
 def test_visual_target_center_maps_normalized_bbox_to_virtual_screen() -> None:
@@ -119,6 +131,12 @@ class FakeTools:
             if not confirmed:
                 return ToolResult(ok=False, tool_name="click_pointer", error="requires confirmation")
             return ToolResult(ok=True, tool_name="click_pointer", data={"action": "left_clicked"})
+        if invocation.tool_name == "type_text":
+            if not confirmed:
+                return ToolResult(ok=False, tool_name="type_text", error="requires confirmation")
+            return ToolResult(ok=True, tool_name="type_text", data={"action": "literal_text_typed"})
+        if invocation.tool_name == "scroll_pointer":
+            return ToolResult(ok=True, tool_name="scroll_pointer", data={"action": "wheel_scrolled"})
         return ToolResult(ok=False, tool_name=invocation.tool_name, error="unexpected tool")
 
 
@@ -163,7 +181,74 @@ def test_consequential_visual_click_requires_stronger_confirmation() -> None:
     assert [call[0].tool_name for call in tools.calls] == ["move_pointer"]
 
 
-def test_intervening_visual_pending_can_be_cancelled_without_click() -> None:
+def test_literal_typing_stages_and_requires_matching_confirmation() -> None:
+    initial = _analysis(targets=(_target("Address and search bar", role="Edit"),))
+    fresh = _analysis(targets=(_target("Address and search bar", role="Edit", bbox=(100, 50, 900, 110)),))
+    verification = _analysis(text="The address field visibly changed.")
+    screen = FakeScreen([initial, fresh, verification])
+    tools = FakeTools()
+    service = VisualInteractionService(screen=screen, tools=tools)  # type: ignore[arg-type]
+
+    staged = asyncio.run(service.handle(_message('Type "hello from Sarah" into Address and search bar')))
+    assert staged is not None
+    assert "I have not focused the field or typed anything" in staged.text
+    assert "confirm type" in staged.text
+    assert [call[0].tool_name for call in tools.calls] == ["move_pointer"]
+
+    wrong = asyncio.run(service.handle(_message("confirm click")))
+    assert wrong is not None
+    assert "confirm type" in wrong.text
+    assert service.has_pending("zach")
+    assert [call[0].tool_name for call in tools.calls] == ["move_pointer"]
+
+    confirmed = asyncio.run(service.handle(_message("confirm type")))
+    assert confirmed is not None
+    assert "Typed the exact requested literal text" in confirmed.text
+    assert "did not press Enter" in confirmed.text
+    assert not service.has_pending("zach")
+    assert [call[0].tool_name for call in tools.calls] == ["move_pointer", "click_pointer", "type_text"]
+    assert tools.calls[-2][1] is True
+    assert tools.calls[-1][1] is True
+    assert tools.calls[-1][0].arguments["text"] == "hello from Sarah"
+
+
+def test_sensitive_field_typing_is_blocked_before_input() -> None:
+    screen = FakeScreen([_analysis(targets=(_target("Password", role="PasswordEdit"),))])
+    tools = FakeTools()
+    service = VisualInteractionService(screen=screen, tools=tools)  # type: ignore[arg-type]
+
+    reply = asyncio.run(service.handle(_message('Type "secret" into Password')))
+    assert reply is not None
+    assert "will not type" in reply.text
+    assert not service.has_pending("zach")
+    assert [call[0].tool_name for call in tools.calls] == ["move_pointer"]
+
+
+def test_bounded_scroll_runs_without_confirmation_and_verifies() -> None:
+    screen = FakeScreen([_analysis(text="The page moved downward.")])
+    tools = FakeTools()
+    service = VisualInteractionService(screen=screen, tools=tools)  # type: ignore[arg-type]
+
+    reply = asyncio.run(service.handle(_message("Scroll down 2 steps")))
+    assert reply is not None
+    assert "Scrolled down 2 bounded steps" in reply.text
+    assert [call[0].tool_name for call in tools.calls] == ["scroll_pointer"]
+    assert tools.calls[0][1] is False
+    assert tools.calls[0][0].arguments == {"direction": "down", "steps": 2}
+
+
+def test_scroll_over_limit_is_rejected_before_tool_call() -> None:
+    screen = FakeScreen([])
+    tools = FakeTools()
+    service = VisualInteractionService(screen=screen, tools=tools)  # type: ignore[arg-type]
+
+    reply = asyncio.run(service.handle(_message("Scroll down 9 steps")))
+    assert reply is not None
+    assert "limited to 1-5 steps" in reply.text
+    assert tools.calls == []
+
+
+def test_intervening_visual_pending_can_be_cancelled_without_input() -> None:
     screen = FakeScreen([_analysis(targets=(_target(),))])
     tools = FakeTools()
     service = VisualInteractionService(screen=screen, tools=tools)  # type: ignore[arg-type]
@@ -173,19 +258,25 @@ def test_intervening_visual_pending_can_be_cancelled_without_click() -> None:
     assert cancelled is not None
     assert cancelled.target_query == "Not now"
     assert not service.has_pending("zach")
-    assert all(call[0].tool_name != "click_pointer" for call in tools.calls)
+    assert all(call[0].tool_name not in {"click_pointer", "type_text"} for call in tools.calls)
 
 
-def test_pointer_tools_are_internal_and_click_requires_confirmation() -> None:
+def test_input_tools_are_internal_and_mutating_input_requires_confirmation() -> None:
     registry = ToolRegistry(default_policy())
     registry.register_many(pointer_tools())
 
     assert registry.list_tools() == []
     internal_names = {tool.name for tool in registry.list_tools(include_internal=True)}
-    assert internal_names == {"move_pointer", "click_pointer"}
+    assert internal_names == {"move_pointer", "click_pointer", "type_text", "scroll_pointer"}
 
-    result = asyncio.run(
+    click = asyncio.run(
         registry.invoke(ToolInvocation(tool_name="click_pointer", arguments={"x": 0, "y": 0}))
     )
-    assert not result.ok
-    assert "requires user confirmation" in (result.error or "")
+    assert not click.ok
+    assert "requires user confirmation" in (click.error or "")
+
+    typed = asyncio.run(
+        registry.invoke(ToolInvocation(tool_name="type_text", arguments={"text": "hello"}))
+    )
+    assert not typed.ok
+    assert "requires user confirmation" in (typed.error or "")
