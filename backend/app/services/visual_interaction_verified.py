@@ -1,22 +1,63 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from app.agent.contracts import ToolInvocation, ToolResult
-from app.schemas.chat import AssistantReply
+from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.screen_awareness import ScreenAwarenessError, ScreenAwarenessService
 from app.services.screen_change_detection import verify_visible_screen_change
 from app.services.visual_grounding import locate_control_with_plain_vision
 from app.services.visual_interaction import (
+    VisualInteractionRequest,
     VisualInteractionService,
+    _GENERIC_TARGETS,
     _MAX_SCROLL_STEPS,
     _best_target,
+    _clean_literal_text,
+    _clean_target,
     _physical_center,
     _sensitive_input_target,
     _target_accepts_text,
     _target_identity_matches,
 )
 from app.services.windows_accessibility import locate_control_with_windows_accessibility
+
+
+_VERIFIED_TYPE_QUOTED_RE = re.compile(
+    r"^(?:sarah[,:]?\s+)?(?:please\s+)?type\s+(?P<quote>[\"'])(?P<text>.*?)(?P=quote)\s+"
+    r"(?:into|in)\s+(?:the\s+)?(?P<target>.+?)\s*$",
+    re.IGNORECASE,
+)
+_VERIFIED_TYPE_FALLBACK_RE = re.compile(
+    r"^(?:sarah[,:]?\s+)?(?:please\s+)?type\s+(?P<text>.+)\s+"
+    r"(?:into|in)\s+(?:the\s+)?(?P<target>.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def parse_verified_type_request(text: str) -> VisualInteractionRequest | None:
+    """Parse Phase 5C typing commands without splitting on words inside the literal.
+
+    Quoted text is treated as an atomic literal block. Unquoted text uses a greedy
+    text group so the final ``into``/``in`` separator is chosen instead of an earlier
+    word such as the ``in`` in ``weather in Phoenix``.
+    """
+    raw = text.strip()
+    if not raw or raw.endswith("?"):
+        return None
+
+    match = _VERIFIED_TYPE_QUOTED_RE.match(raw)
+    if match is None:
+        match = _VERIFIED_TYPE_FALLBACK_RE.match(raw)
+    if match is None:
+        return None
+
+    literal = _clean_literal_text(match.group("text"))
+    target = _clean_target(match.group("target"))
+    if not literal or not target or target.lower() in _GENERIC_TARGETS:
+        return None
+    return VisualInteractionRequest(action="type", target=target, text=literal)
 
 
 class VerifiedVisualInteractionService(VisualInteractionService):
@@ -27,6 +68,11 @@ class VerifiedVisualInteractionService(VisualInteractionService):
     requested literal text. Vision-only text targets are refused rather than using an
     ambiguous append operation. Scroll verification stays model-free.
     """
+
+    def can_handle(self, message: ChatMessage) -> bool:
+        if parse_verified_type_request(message.content) is not None:
+            return True
+        return super().can_handle(message)
 
     async def _locate(self, target_query: str):
         if not isinstance(self.screen, ScreenAwarenessService):
@@ -50,6 +96,79 @@ class VerifiedVisualInteractionService(VisualInteractionService):
                 + (f" Locator result: {detail}" if detail else "")
             )
         return analysis, target, score
+
+    async def _stage_verified_type(
+        self,
+        message: ChatMessage,
+        request: VisualInteractionRequest,
+        *,
+        other_system_change_pending: bool,
+    ) -> AssistantReply:
+        user_id = message.user_id
+        pending = self.pending.get(user_id)
+        if pending is not None:
+            expected = "confirm click" if pending.action == "click" else "confirm type"
+            return AssistantReply(
+                text=(
+                    f'You already have a pending visual {pending.action} action on "{pending.target_query}". '
+                    f'Reply "{expected}" or "cancel" before staging another visual action.'
+                ),
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        if other_system_change_pending:
+            return AssistantReply(
+                text="You already have another pending system change. Confirm or cancel that action before staging this visual input.",
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        try:
+            analysis, target, _score = await self._locate(request.target)
+            await self._move_to(analysis, target)
+        except ScreenAwarenessError as exc:
+            return AssistantReply(text=str(exc), emotion="concerned", should_speak=True)
+
+        label = target.visible_text or target.label or request.target
+        if _sensitive_input_target(request.target, target.label, target.visible_text, target.role):
+            return AssistantReply(
+                text="I found that field, but I will not type into password, PIN, verification-code, token, or other secret-entry fields in this phase.",
+                emotion="concerned",
+                should_speak=True,
+            )
+        if not _target_accepts_text(target):
+            return AssistantReply(
+                text=f'I found "{label}", but Windows does not expose it as a text-entry control, so I will not type into it.',
+                emotion="concerned",
+                should_speak=True,
+            )
+
+        self.pending.stage(
+            user_id,
+            action="type",
+            target_query=request.target,
+            target=target,
+            text=request.text,
+        )
+        return AssistantReply(
+            text=(
+                f'I found "{label}" and moved the pointer to it. I have not focused the field or typed anything. '
+                'Reply "confirm type" within 2 minutes to replace the field contents with only the exact literal text you supplied, or "cancel".'
+            ),
+            emotion="concerned",
+            should_speak=True,
+        )
+
+    async def handle(self, message: ChatMessage, *, other_system_change_pending: bool = False) -> AssistantReply | None:
+        request = parse_verified_type_request(message.content)
+        if request is not None:
+            return await self._stage_verified_type(
+                message,
+                request,
+                other_system_change_pending=other_system_change_pending,
+            )
+        return await super().handle(message, other_system_change_pending=other_system_change_pending)
 
     async def _execute_confirmed_type(self, pending) -> AssistantReply:
         try:
