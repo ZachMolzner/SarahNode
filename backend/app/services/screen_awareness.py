@@ -401,6 +401,37 @@ class ScreenAwarenessService:
         }
 
     @staticmethod
+    def _locator_schema() -> dict[str, Any]:
+        return {
+            "type": "object",
+            "properties": {
+                "found": {"type": "boolean"},
+                "label": {"type": "string"},
+                "role": {"type": "string"},
+                "visible_text": {"type": "string"},
+                "bbox": {
+                    "anyOf": [
+                        {
+                            "type": "array",
+                            "items": {"type": "number", "minimum": 0, "maximum": 1000},
+                            "minItems": 4,
+                            "maxItems": 4,
+                        },
+                        {"type": "null"},
+                    ]
+                },
+                "confidence": {
+                    "anyOf": [
+                        {"type": "number", "minimum": 0, "maximum": 1},
+                        {"type": "null"},
+                    ]
+                },
+                "answer": {"type": "string"},
+            },
+            "required": ["found", "label", "role", "visible_text", "bbox", "confidence", "answer"],
+        }
+
+    @staticmethod
     def _structured_user_prompt(question: str, mode: ScreenReasoningMode) -> str:
         schema = json.dumps(ScreenAwarenessService._structured_schema(), separators=(",", ":"))
         return (
@@ -410,6 +441,24 @@ class ScreenAwarenessService:
             "Target bbox coordinates use 0-1000 normalized screenshot coordinates. "
             "If a requested control is not clearly visible, return an empty targets list instead of guessing. "
             f"Follow this JSON schema exactly: {schema}"
+        )
+
+    @staticmethod
+    def _locator_user_prompt(question: str) -> str:
+        return (
+            f"User request: {question}\n"
+            "Locate the single best matching visible UI control. "
+            "Use bbox=[left,top,right,bottom] in 0-1000 normalized screenshot coordinates. "
+            "Set found=false and bbox=null if the requested control is not clearly visible. "
+            "Do not guess or return more than one target."
+        )
+
+    @staticmethod
+    def _locator_retry_prompt(question: str) -> str:
+        return (
+            f"Locate exactly one visible UI control for this request: {question}\n"
+            "Return the required structured result. Use normalized 0-1000 bbox coordinates. "
+            "If you cannot see the requested control clearly, set found=false."
         )
 
     @staticmethod
@@ -447,6 +496,9 @@ class ScreenAwarenessService:
         *,
         max_tokens: int,
         structured: bool = False,
+        format_schema: dict[str, Any] | None = None,
+        retry_user_text: str | None = None,
+        keep_format_on_retry: bool = False,
     ) -> str:
         model = settings.local_vision_model
         body: dict[str, Any] = {
@@ -463,12 +515,12 @@ class ScreenAwarenessService:
                 },
             ],
             "options": {
-                "temperature": 0.15,
+                "temperature": 0.0 if structured else 0.15,
                 "num_predict": max_tokens,
             },
         }
         if structured:
-            body["format"] = self._structured_schema()
+            body["format"] = format_schema or self._structured_schema()
 
         try:
             payload = await self._post_ollama_chat(body)
@@ -502,19 +554,24 @@ class ScreenAwarenessService:
             return text
 
         # A thinking-capable model can occasionally return no final content even when
-        # thinking is disabled. Retry once without the structured format and with a
-        # direct final-answer instruction rather than failing the user's whole turn.
+        # thinking is disabled. Rich reasoning falls back to plain text, while the
+        # control locator keeps its compact schema so coordinates remain machine-safe.
         retry_body = dict(body)
-        retry_body.pop("format", None)
+        if not keep_format_on_retry:
+            retry_body.pop("format", None)
         retry_body["messages"] = [
             {"role": "system", "content": self._base_system_prompt()},
             {
                 "role": "user",
-                "content": user_text + "\nReturn a concise final answer now. Do not return an empty response.",
+                "content": (retry_user_text or user_text)
+                + "\nReturn a concise final answer now. Do not return an empty response.",
                 "images": [self._frame_base64(frame)],
             },
         ]
-        retry_body["options"] = {"temperature": 0.1, "num_predict": min(max_tokens, 650)}
+        retry_body["options"] = {
+            "temperature": 0.0 if structured else 0.1,
+            "num_predict": min(max_tokens, 650),
+        }
         try:
             retry_payload = await self._post_ollama_chat(retry_body)
         except Exception as exc:
@@ -651,6 +708,30 @@ class ScreenAwarenessService:
                 max_tokens=650,
                 structured=False,
             )
+        elif mode is ScreenReasoningMode.LOCATE:
+            raw = await self._request_vision(
+                frame,
+                self._locator_user_prompt(question),
+                max_tokens=320,
+                structured=True,
+                format_schema=self._locator_schema(),
+                retry_user_text=self._locator_retry_prompt(question),
+                keep_format_on_retry=True,
+            )
+            payload = self._extract_json_object(raw)
+            if payload is None:
+                text = raw
+            else:
+                found = bool(payload.get("found"))
+                answer = str(payload.get("answer") or "").strip()
+                targets = self._parse_targets([payload]) if found else ()
+                text = self._render_structured_answer(answer, targets, (), None, mode)
+                if not text:
+                    text = (
+                        "I can see the screen, but I couldn't locate that control reliably."
+                        if not found
+                        else "I can see the requested control, but its location data was not reliable enough to use."
+                    )
         else:
             raw = await self._request_vision(
                 frame,
