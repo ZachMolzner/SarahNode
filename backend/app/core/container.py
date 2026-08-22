@@ -19,12 +19,13 @@ from app.memory.state_manager import MemoryManager
 from app.orchestration.stream_orchestrator import StreamOrchestrator
 from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
+from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
 from app.services.identity_service import IdentityService
 from app.services.page_fetcher import PageFetcher
 from app.services.screen_awareness import ScreenAwarenessService
-from app.services.visual_interaction import VisualInteractionService
+from app.services.visual_interaction_verified import VerifiedVisualInteractionService
 from app.services.voice_service import VoiceService
 from app.services.web_search_service import WebSearchService
 
@@ -232,7 +233,7 @@ moderation_service = ModerationService()
 response_policy = ResponsePolicy()
 voice_service = VoiceService(stt_client=build_stt_client())
 screen_awareness_service = ScreenAwarenessService(permission_policy=agent_runtime.permissions)
-visual_interaction_service = VisualInteractionService(
+visual_interaction_service = VerifiedVisualInteractionService(
     screen=screen_awareness_service,
     tools=agent_runtime.tools,
 )
