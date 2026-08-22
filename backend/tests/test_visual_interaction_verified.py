@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
+import app.services.visual_interaction_verified as verified_module
 from app.agent.contracts import ToolInvocation, ToolResult
 from app.schemas.chat import ChatMessage
 from app.services.screen_awareness import ScreenAnalysisResult, VisualTarget
@@ -66,9 +67,23 @@ class FakeTools:
         return ToolResult(ok=False, tool_name=invocation.tool_name, error="unexpected tool")
 
 
-def test_confirmed_uia_typing_replaces_current_contents_without_click_or_sendinput() -> None:
+def test_confirmed_uia_typing_replaces_current_contents_and_remembers_receiver(monkeypatch) -> None:
     screen = FakeScreen()
     tools = FakeTools()
+    remembered: list[tuple[int, str, str]] = []
+
+    monkeypatch.setattr(
+        verified_module,
+        "window_at_point",
+        lambda x, y, *, exclude_hwnd=None: (303, "Microsoft Edge"),
+    )
+
+    def remember(hwnd, title, *, source="visual_interaction", ttl_seconds=180):
+        remembered.append((hwnd, title, source))
+        return object()
+
+    monkeypatch.setattr(verified_module, "remember_verified_receiver", remember)
+
     service = VerifiedVisualInteractionService(screen=screen, tools=tools)  # type: ignore[arg-type]
 
     staged = asyncio.run(service.handle(_message('Type "weather in Phoenix" into Address and search bar')))
@@ -86,3 +101,4 @@ def test_confirmed_uia_typing_replaces_current_contents_without_click_or_sendinp
     assert replacement_call[0].arguments["text"] == "weather in Phoenix"
     assert "click_pointer" not in names
     assert "type_text" not in names
+    assert remembered == [(303, "Microsoft Edge", "confirmed_uia_text_field")]
