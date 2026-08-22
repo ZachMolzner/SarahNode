@@ -75,7 +75,10 @@ def _require_windows() -> Any:
     if platform.system() != "Windows":
         raise PointerControlError("Visual input control is currently implemented for Windows only")
     enable_per_monitor_dpi_awareness()
-    return ctypes.windll.user32
+    user32 = ctypes.windll.user32
+    user32.mouse_event.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, wintypes.DWORD, ctypes.c_size_t]
+    user32.mouse_event.restype = None
+    return user32
 
 
 def _virtual_desktop_bounds() -> tuple[int, int, int, int]:
@@ -154,8 +157,6 @@ async def click_pointer_handler(arguments: Mapping[str, Any]) -> Mapping[str, An
     user32 = _require_windows()
     x, y = _validated_point(arguments)
 
-    # Reposition immediately before the click so execution uses the frozen/freshly
-    # revalidated target coordinate rather than wherever the user moved the pointer.
     if not user32.SetCursorPos(x, y):
         raise PointerControlError("Windows did not move the pointer to the confirmed click location")
     await asyncio.sleep(0.08)
