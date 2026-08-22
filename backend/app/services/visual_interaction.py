@@ -11,6 +11,7 @@ from app.agent.tool_registry import ToolRegistry
 from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.screen_awareness import ScreenAnalysisResult, ScreenAwarenessError, ScreenAwarenessService, VisualTarget
 from app.services.visual_grounding import locate_control_with_plain_vision
+from app.services.windows_accessibility import locate_control_with_windows_accessibility
 
 
 _CLICK_RE = re.compile(
@@ -251,11 +252,12 @@ def _target_identity_matches(pending: PendingVisualClick, fresh: VisualTarget) -
 
 
 class VisualInteractionService:
-    """Coordinate Phase 5C visual pointer movement and confirmed single clicks.
+    """Coordinate Phase 5C pointer movement and confirmed single clicks.
 
-    The service never accepts raw user coordinates. Every physical point comes from a
-    fresh visual localization result and is still executed through the ToolRegistry
-    permission boundary.
+    Standard Windows controls are located through Windows UI Automation first. Vision
+    is a fallback for applications that do not expose a useful accessibility tree.
+    The service never accepts raw user coordinates, and physical input still executes
+    through the ToolRegistry permission boundary.
     """
 
     def __init__(self, screen: ScreenAwarenessService, tools: ToolRegistry) -> None:
@@ -277,12 +279,14 @@ class VisualInteractionService:
         return parse_visual_interaction_request(message.content) is not None
 
     async def _locate(self, target_query: str) -> tuple[ScreenAnalysisResult, VisualTarget, float]:
-        # The real Windows Phase 5C path deliberately avoids Ollama structured-output
-        # mode. Qwen3-VL has repeatedly returned empty content there on the target host,
-        # while its ordinary vision path works. Fake/test screens keep using analyze().
         if isinstance(self.screen, ScreenAwarenessService):
-            analysis = await locate_control_with_plain_vision(self.screen, target_query)
+            # Prefer Windows' own accessibility geometry. This path does not call the
+            # vision model and therefore cannot fail because Qwen returned empty text.
+            analysis = await locate_control_with_windows_accessibility(self.screen, target_query)
+            if analysis is None:
+                analysis = await locate_control_with_plain_vision(self.screen, target_query)
         else:
+            # Unit-test/fake screens retain the existing injected analysis behavior.
             prompt = (
                 f'Find the button, field, link, tab, checkbox, menu item, icon, or other visible UI control labeled "{target_query}" on my screen. '
                 "Return a target only if you can identify it confidently from the screenshot."
@@ -293,8 +297,8 @@ class VisualInteractionService:
         if target is None or target.bbox_normalized is None or score < 0.55:
             detail = analysis.text.strip()
             raise ScreenAwarenessError(
-                f'I can see the screen, but I cannot locate "{target_query}" confidently enough to control the pointer.'
-                + (f" Visual analysis: {detail}" if detail else "")
+                f'I can see the desktop, but I cannot locate "{target_query}" confidently enough to control the pointer.'
+                + (f" Locator result: {detail}" if detail else "")
             )
         return analysis, target, score
 
@@ -308,7 +312,7 @@ class VisualInteractionService:
             )
         )
         if not result.ok:
-            raise ScreenAwarenessError(result.error or "Windows did not move the pointer to the visual target")
+            raise ScreenAwarenessError(result.error or "Windows did not move the pointer to the target")
         return x, y
 
     def _hide_sarah_for_click(self) -> int | None:
@@ -357,7 +361,7 @@ class VisualInteractionService:
                 fresh_analysis, fresh_target, _score = await self._locate(pending.target_query)
             except ScreenAwarenessError as exc:
                 return AssistantReply(
-                    text=f"I did not click because I could not re-verify the target on a fresh screen capture: {exc}",
+                    text=f"I did not click because I could not re-verify the target from the current desktop: {exc}",
                     emotion="concerned",
                     should_speak=True,
                 )
@@ -376,9 +380,6 @@ class VisualInteractionService:
             hidden_hwnd: int | None = None
             click_result: ToolResult | None = None
             try:
-                # Fresh screen analysis restores SarahNode so the user can see the
-                # confirmation response. Hide it again for the physical click so its
-                # window cannot intercept a coordinate intended for the app beneath.
                 hidden_hwnd = self._hide_sarah_for_click()
                 if hidden_hwnd is not None:
                     await asyncio.sleep(0.25)
@@ -454,14 +455,11 @@ class VisualInteractionService:
         label = target.visible_text or target.label or request.target
         if request.action == "move":
             return AssistantReply(
-                text=f'I moved the pointer to the visually identified "{label}" control. I did not click it.',
+                text=f'I moved the pointer to the identified "{label}" control. I did not click it.',
                 emotion="calm",
                 should_speak=True,
             )
 
-        # Strong confirmation is driven by the requested/visible control identity,
-        # not by generic vision-model caution prose. Every click still requires at
-        # least ordinary confirmation through click_pointer's permission boundary.
         consequential = _consequential_from_text(
             request.target,
             target.label,
@@ -483,7 +481,7 @@ class VisualInteractionService:
 
         return AssistantReply(
             text=(
-                f'I found "{label}" and moved the pointer to its current visual location. I have not clicked anything.{caution} '
+                f'I found "{label}" and moved the pointer to its current location. I have not clicked anything.{caution} '
                 + confirmation
             ),
             emotion="concerned",
