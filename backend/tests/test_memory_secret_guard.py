@@ -16,6 +16,9 @@ def _safe_store(tmp_path) -> SafeIdentityService:
 def test_secret_detector_blocks_credentials_but_not_normal_preferences() -> None:
     assert detect_persistent_secret(value="I prefer dark mode") is None
     assert detect_persistent_secret(value="My goal is to learn API security") is None
+    assert detect_persistent_secret(value="I use a password manager") is None
+    assert detect_persistent_secret(value="I am learning API key security") is None
+    assert detect_persistent_secret(key="spinning_preference", value="I like spinning classes") is None
 
     assert detect_persistent_secret(value="my password is example-do-not-use-123") is not None
     assert detect_persistent_secret(key="api_key", value="example-value") is not None
