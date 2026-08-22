@@ -10,6 +10,7 @@ _SWP_NOMOVE = 0x0002
 _SWP_NOSIZE = 0x0001
 _SWP_SHOWWINDOW = 0x0040
 _HWND_TOP = 0
+_GA_ROOT = 2
 
 
 def _configure_win32():
@@ -27,6 +28,12 @@ def _configure_win32():
     user32.IsWindowVisible.restype = wintypes.BOOL
     user32.GetForegroundWindow.argtypes = []
     user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+    user32.GetCursorPos.restype = wintypes.BOOL
+    user32.WindowFromPoint.argtypes = [wintypes.POINT]
+    user32.WindowFromPoint.restype = wintypes.HWND
+    user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+    user32.GetAncestor.restype = wintypes.HWND
     user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
     user32.GetWindowTextLengthW.restype = ctypes.c_int
     user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
@@ -97,11 +104,46 @@ def foreground_window() -> tuple[int, str] | None:
     return hwnd, _window_title_with(user32, hwnd) or f"Window 0x{hwnd:X}"
 
 
+def window_at_cursor(*, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
+    """Return the visible top-level application window under the current pointer.
+
+    Visual interaction leaves the pointer on the freshly verified control. Resolving
+    the receiving window from that point is therefore more precise than generic z-order
+    when floating overlays such as Picture-in-Picture are present elsewhere on screen.
+    """
+    user32, _kernel32 = _configure_win32()
+    if user32 is None:
+        return None
+
+    point = wintypes.POINT()
+    if not user32.GetCursorPos(ctypes.byref(point)):
+        return None
+    child = user32.WindowFromPoint(point)
+    child_int = _as_int(child)
+    if child_int <= 0:
+        return None
+
+    root = user32.GetAncestor(child, _GA_ROOT)
+    hwnd = _as_int(root) or child_int
+    excluded = int(exclude_hwnd or 0)
+    if hwnd <= 0 or hwnd == excluded:
+        return None
+    handle = wintypes.HWND(hwnd)
+    if not user32.IsWindow(handle) or not user32.IsWindowVisible(handle):
+        return None
+
+    title = _window_title_with(user32, hwnd)
+    if not title:
+        return None
+    return hwnd, title
+
+
 def top_visible_window(*, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
     """Return the topmost visible titled top-level window in current z-order.
 
-    EnumWindows enumerates top-level windows in z-order. Sarah calls this only while
-    her own window is hidden; exclude_hwnd remains a second guard.
+    This is a fallback for keyboard receiver selection when the current pointer does not
+    resolve to a usable application window. Sarah calls it only while her own window is
+    hidden; exclude_hwnd remains a second guard.
     """
     user32, _kernel32 = _configure_win32()
     if user32 is None:
