@@ -4,6 +4,7 @@ import asyncio
 import ctypes
 import platform
 import re
+from ctypes import wintypes
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -122,13 +123,21 @@ def _foreground_window_context() -> WindowContext | None:
     if platform.system() != "Windows":
         return None
     user32 = ctypes.windll.user32
-    hwnd = int(user32.GetForegroundWindow())
+    user32.GetForegroundWindow.argtypes = []
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+
+    hwnd_value = user32.GetForegroundWindow()
+    hwnd = int(hwnd_value or 0)
     if hwnd <= 0:
         return None
 
-    length = int(user32.GetWindowTextLengthW(hwnd))
+    length = int(user32.GetWindowTextLengthW(hwnd_value))
     buffer = ctypes.create_unicode_buffer(max(2, length + 1))
-    user32.GetWindowTextW(hwnd, buffer, len(buffer))
+    user32.GetWindowTextW(hwnd_value, buffer, len(buffer))
     title = buffer.value.strip() or f"Window 0x{hwnd:X}"
     return WindowContext(hwnd=hwnd, title=title)
 
