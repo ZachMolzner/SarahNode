@@ -62,6 +62,15 @@ def _provider(*contexts: WindowContext):
     return lambda: next(values)
 
 
+def _underlying_provider(*contexts: WindowContext):
+    values = iter(contexts)
+    return lambda _sarah_hwnd: next(values)
+
+
+def _activator(_context: WindowContext) -> bool:
+    return True
+
+
 def test_keyboard_parser_allows_only_named_single_keys() -> None:
     expected = {
         "Press Enter": "enter",
@@ -95,16 +104,20 @@ def test_enter_stages_then_requires_confirmation_and_fresh_window() -> None:
         screen=screen,  # type: ignore[arg-type]
         tools=tools,  # type: ignore[arg-type]
         context_provider=_provider(context, context),
+        underlying_provider=_underlying_provider(context, context),
+        activator=_activator,
     )
 
     staged = asyncio.run(service.handle(_message("Press Enter")))
     assert staged is not None
+    assert "Microsoft Edge" in staged.text
     assert "confirm enter" in staged.text
     assert service.has_pending("zach")
     assert tools.calls == []
 
     confirmed = asyncio.run(service.handle(_message("confirm enter")))
     assert confirmed is not None
+    assert "Microsoft Edge" in confirmed.text
     assert "Pressed Enter once" in confirmed.text
     assert not service.has_pending("zach")
     assert len(tools.calls) == 1
@@ -115,40 +128,66 @@ def test_enter_stages_then_requires_confirmation_and_fresh_window() -> None:
 def test_enter_refuses_when_receiving_window_changes() -> None:
     screen = FakeScreen()
     tools = FakeTools()
+    edge = WindowContext(hwnd=101, title="Microsoft Edge")
+    notepad = WindowContext(hwnd=202, title="Notepad")
     service = KeyboardInteractionService(
         screen=screen,  # type: ignore[arg-type]
         tools=tools,  # type: ignore[arg-type]
-        context_provider=_provider(
-            WindowContext(hwnd=101, title="Microsoft Edge"),
-            WindowContext(hwnd=202, title="Notepad"),
-        ),
+        context_provider=_provider(edge, notepad),
+        underlying_provider=_underlying_provider(edge, notepad),
+        activator=_activator,
     )
 
     asyncio.run(service.handle(_message("Press Enter")))
     refused = asyncio.run(service.handle(_message("confirm enter")))
     assert refused is not None
     assert "receiving window changed" in refused.text
+    assert "Microsoft Edge" in refused.text
+    assert "Notepad" in refused.text
     assert tools.calls == []
     assert not service.has_pending("zach")
 
 
-def test_safe_key_executes_once_without_confirmation() -> None:
+def test_safe_key_activates_underlying_window_and_executes_once() -> None:
     screen = FakeScreen()
     tools = FakeTools()
+    edge = WindowContext(hwnd=303, title="Microsoft Edge")
+    activated: list[WindowContext] = []
     service = KeyboardInteractionService(
         screen=screen,  # type: ignore[arg-type]
         tools=tools,  # type: ignore[arg-type]
-        context_provider=_provider(WindowContext(hwnd=303, title="Notepad")),
+        context_provider=_provider(edge),
+        underlying_provider=_underlying_provider(edge),
+        activator=lambda context: activated.append(context) is None,
     )
 
     reply = asyncio.run(service.handle(_message("Press Arrow Down")))
     assert reply is not None
-    assert "Pressed Arrow Down once" in reply.text
+    assert 'Pressed Arrow Down once in "Microsoft Edge"' in reply.text
+    assert activated == [edge]
     assert len(tools.calls) == 1
     invocation, confirmed = tools.calls[0]
     assert invocation.tool_name == "press_safe_key"
     assert invocation.arguments == {"key": "arrow_down"}
     assert confirmed is False
+
+
+def test_safe_key_refuses_if_underlying_window_cannot_be_activated() -> None:
+    screen = FakeScreen()
+    tools = FakeTools()
+    edge = WindowContext(hwnd=404, title="Microsoft Edge")
+    service = KeyboardInteractionService(
+        screen=screen,  # type: ignore[arg-type]
+        tools=tools,  # type: ignore[arg-type]
+        context_provider=_provider(edge),
+        underlying_provider=_underlying_provider(edge),
+        activator=lambda _context: False,
+    )
+
+    reply = asyncio.run(service.handle(_message("Press Backspace")))
+    assert reply is not None
+    assert "could not safely activate and verify" in reply.text
+    assert tools.calls == []
 
 
 def test_keyboard_tools_are_model_hidden_and_enter_requires_confirmation() -> None:
