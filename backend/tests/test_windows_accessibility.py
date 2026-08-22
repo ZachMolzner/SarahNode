@@ -9,10 +9,21 @@ def test_parse_accessibility_match_from_json() -> None:
     )
     assert match is not None
     assert match.name == "Search the web"
+    assert match.label == "Search the web"
     assert match.control_type == "Edit"
     assert (match.left, match.top, match.right, match.bottom) == (400, 200, 900, 260)
     assert match.exact is True
     assert match.is_password is False
+
+
+def test_parse_accessibility_semantic_label_can_differ_from_current_name() -> None:
+    match = _parse_match(
+        '{"found":true,"name":"weather in Phoenix","label":"Address and search bar","control_type":"ControlType.Edit","left":300,"top":80,"right":1200,"bottom":130,"exact":false,"is_password":false}'
+    )
+    assert match is not None
+    assert match.name == "weather in Phoenix"
+    assert match.label == "Address and search bar"
+    assert match.control_type == "Edit"
 
 
 def test_parse_accessibility_password_field_metadata() -> None:
