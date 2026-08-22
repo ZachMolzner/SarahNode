@@ -21,6 +21,7 @@ _SHARED_VERB_RE = re.compile(
     r"^(open|launch|start|close|quit|exit|kill|terminate|force\s+close|force\s+quit)\s+(.+?)\s*$",
     re.IGNORECASE,
 )
+_TRAILING_CONJUNCTION_RE = re.compile(r"\s+(?:and\s+then|then|and)\s+", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -203,6 +204,42 @@ def _expand_shared_verb(text: str) -> list[str] | None:
     return expanded
 
 
+def _unsupported_tail_after_parseable_action(text: str) -> str | None:
+    """Detect a likely second command that our strict splitter could not recognize.
+
+    The main splitter only separates on conjunctions when the next token begins a
+    known action verb. That protects filenames such as ``Research and Development.docx``.
+    But it also means ``Open Opera and dance around`` would otherwise look like one
+    sentence and quietly fall out of batch routing. If the text before an unquoted
+    conjunction is independently parseable as an action, treat the remainder as an
+    attempted second step and reject the whole batch rather than silently ignoring it.
+    """
+    raw = _strip_leading_assistant_name(text)
+    quote: str | None = None
+    index = 0
+    while index < len(raw):
+        char = raw[index]
+        if char in {'"', "'"}:
+            if quote is None:
+                quote = char
+            elif quote == char:
+                quote = None
+            index += 1
+            continue
+
+        if quote is None:
+            match = _TRAILING_CONJUNCTION_RE.match(raw, index)
+            if match:
+                left = raw[:index].strip(" ,")
+                right = raw[match.end() :].strip(" ,")
+                if left and right and _can_parse_action(left):
+                    return right
+                index = match.end()
+                continue
+        index += 1
+    return None
+
+
 def _desktop_summary(request: DesktopActionRequest) -> str:
     subject = request.subject.strip() or "that"
     if request.tool_name == "open_app":
@@ -221,6 +258,9 @@ def parse_action_plan(text: str, *, max_actions: int = 8) -> ActionPlan | None:
     if len(segments) < 2:
         expanded = _expand_shared_verb(text)
         if expanded is None:
+            unsupported_tail = _unsupported_tail_after_parseable_action(text)
+            if unsupported_tail is not None:
+                raise ValueError(f"Step 2 is not a recognized desktop action: {unsupported_tail}")
             return None
         segments = expanded
 
