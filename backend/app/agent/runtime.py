@@ -68,7 +68,7 @@ class SarahAgentRuntime:
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 13,
+            "architecture_version": 14,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -84,6 +84,7 @@ class SarahAgentRuntime:
             "automation_count": len(self.automations.list()),
             "systems": {
                 "memory": "persistent_learning_active",
+                "memory_secret_guard": "credential_writes_blocked_legacy_secret_retrieval_filtered",
                 "model_gateway": "active",
                 "tool_registry": "active",
                 "permissions": "active",
@@ -120,6 +121,9 @@ class SarahAgentRuntime:
                 "screen_scroll": "bounded_vertical_wheel_active",
                 "screen_drag_drop": "not_available",
                 "screen_capture_persistence": "none",
+                "computer_workflow_edge_search": "open_locate_confirm_replace_enter_verify_stop_active",
+                "computer_workflow_result_clicking": "not_available",
+                "computer_workflow_autonomous_browsing": "not_available",
                 "permanent_delete": "not_available",
                 "broad_desktop_control": "still_gated",
                 "web_tools": "provider_dependent",
