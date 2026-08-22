@@ -5,7 +5,6 @@ import platform
 from ctypes import wintypes
 
 
-_GW_HWNDNEXT = 2
 _SW_RESTORE = 9
 _SWP_NOMOVE = 0x0002
 _SWP_NOSIZE = 0x0001
@@ -19,7 +18,8 @@ def _configure_win32():
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
 
-    user32.EnumWindows.argtypes = [ctypes.c_void_p, wintypes.LPARAM]
+    # Keep EnumWindows callback typing local to top_visible_window. ctypes can reject
+    # a WINFUNCTYPE callback when the DLL function is globally declared as c_void_p.
     user32.EnumWindows.restype = wintypes.BOOL
     user32.IsWindow.argtypes = [wintypes.HWND]
     user32.IsWindow.restype = wintypes.BOOL
@@ -68,9 +68,8 @@ def _as_int(hwnd) -> int:
     return int(value or 0)
 
 
-def window_title(hwnd: int) -> str:
-    user32, _kernel32 = _configure_win32()
-    if user32 is None or hwnd <= 0 or not user32.IsWindow(wintypes.HWND(hwnd)):
+def _window_title_with(user32, hwnd: int) -> str:
+    if hwnd <= 0 or not user32.IsWindow(wintypes.HWND(hwnd)):
         return ""
     handle = wintypes.HWND(hwnd)
     length = int(user32.GetWindowTextLengthW(handle))
@@ -81,6 +80,13 @@ def window_title(hwnd: int) -> str:
     return buffer.value.strip()
 
 
+def window_title(hwnd: int) -> str:
+    user32, _kernel32 = _configure_win32()
+    if user32 is None:
+        return ""
+    return _window_title_with(user32, hwnd)
+
+
 def foreground_window() -> tuple[int, str] | None:
     user32, _kernel32 = _configure_win32()
     if user32 is None:
@@ -88,14 +94,14 @@ def foreground_window() -> tuple[int, str] | None:
     hwnd = _as_int(user32.GetForegroundWindow())
     if hwnd <= 0:
         return None
-    return hwnd, window_title(hwnd) or f"Window 0x{hwnd:X}"
+    return hwnd, _window_title_with(user32, hwnd) or f"Window 0x{hwnd:X}"
 
 
 def top_visible_window(*, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
     """Return the topmost visible titled top-level window in current z-order.
 
     EnumWindows enumerates top-level windows in z-order. Sarah calls this only while
-    her own window is hidden; exclude_hwnd is still accepted as a second guard.
+    her own window is hidden; exclude_hwnd remains a second guard.
     """
     user32, _kernel32 = _configure_win32()
     if user32 is None:
@@ -112,7 +118,7 @@ def top_visible_window(*, exclude_hwnd: int | None = None) -> tuple[int, str] | 
             return True
         if not user32.IsWindowVisible(hwnd):
             return True
-        title = window_title(hwnd_int)
+        title = _window_title_with(user32, hwnd_int)
         if not title:
             return True
         found = (hwnd_int, title)
@@ -124,11 +130,7 @@ def top_visible_window(*, exclude_hwnd: int | None = None) -> tuple[int, str] | 
 
 
 def activate_window(hwnd: int) -> bool:
-    """Explicitly activate a known visible top-level window and verify foreground.
-
-    This is used only while Sarah is hidden and only for a window selected from the
-    current visible z-order or revalidated pending Enter receiver.
-    """
+    """Explicitly activate a known visible top-level window and verify foreground."""
     user32, kernel32 = _configure_win32()
     if user32 is None or kernel32 is None or hwnd <= 0:
         return False
