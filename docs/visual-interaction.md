@@ -1,98 +1,135 @@
-# Phase 5C — Controlled Visual Interaction (Experimental Foundation)
+# Phase 5C — Controlled Visual Interaction
 
-Phase 5C begins the transition from read-only screen reasoning to constrained visual control. This first slice intentionally supports only pointer preview and one confirmed left click on a freshly revalidated visual target.
+Phase 5C transitions Sarah from read-only screen reasoning to constrained desktop interaction. The Windows pointer/click loop is now manually validated. Phase 5C.2 adds experimental literal typing and bounded vertical scrolling while preserving the same deterministic permission boundary.
 
-## Current supported behavior
+## Target localization
 
-Sarah can distinguish guidance from an explicit action:
+For standard Windows controls Sarah now prefers **Windows UI Automation (UIA)** instead of asking the vision model to invent coordinates. UIA supplies an accessible name, control type, visible/off-screen state, and physical bounding rectangle. SarahNode is hidden briefly during lookup so its own chat UI cannot satisfy the target query.
+
+If UIA cannot find a useful named control, local vision grounding remains a fallback.
+
+Users and language models never supply raw coordinates to the input tools.
+
+## Pointer movement and confirmed click — validated
+
+Examples:
 
 ```text
-Which button should I click to continue?   # read-only reasoning
-Click Not now                              # visual action
-Move cursor to Search the web              # pointer preview only
+Move cursor to Seven
+Click Seven
+confirm click
 ```
 
-For an explicit pointer move, Sarah:
+For an explicit pointer move, Sarah locates the named control, validates the target match, converts its bounding rectangle to physical desktop coordinates, and moves the pointer without clicking.
 
-1. Captures a fresh screenshot.
-2. Uses the local vision model to locate the named control.
-3. Requires a usable normalized bounding box and target match confidence.
-4. Converts the normalized target center to the physical coordinates of the captured monitor.
-5. Moves the pointer without clicking.
+For a click request Sarah:
 
-For an explicit click request, Sarah:
+1. Locates and previews the target.
+2. Stages the click for at most two minutes.
+3. Does **not** click until the user confirms.
+4. Re-locates the same semantic target after confirmation.
+5. Refuses to click if the target moved, disappeared, or changed identity.
+6. Briefly hides SarahNode so it cannot intercept the click.
+7. Performs exactly one left click.
+8. Restores SarahNode and performs a fresh visual verification pass.
 
-1. Performs the same fresh visual localization.
-2. Moves the pointer to preview the target.
-3. Stages a pending click for at most two minutes.
-4. Does **not** click until the user confirms.
-5. On confirmation, captures the screen again and re-locates the same semantic target.
-6. Refuses the click if the target disappeared, changed identity, or cannot be located reliably.
-7. Briefly hides SarahNode so its own window cannot intercept the target coordinate.
-8. Performs one left click through the permission-checked internal pointer tool.
-9. Restores SarahNode and performs a fresh visual verification pass.
-
-Any intervening user request invalidates the pending visual click.
-
-## Confirmation levels
-
-Every click is a MEDIUM-risk action and requires confirmation through `screen.click`.
-
-Ordinary visible controls use:
+Ordinary clicks use:
 
 ```text
 confirm click
 ```
 
-Controls whose requested/visible identity contains obviously consequential terms such as Delete, Install, Buy, Submit, Send, Allow, Grant, Reset, Format, or Uninstall require:
+Obviously consequential controls such as Delete, Install, Buy, Submit, Send, Allow, Grant, Reset, Format, or Uninstall require:
 
 ```text
 confirm consequential click
 ```
 
-The stronger classification is intentionally conservative and does not replace future application-specific risk understanding.
+The locate → move → confirm → re-locate → click → verify loop was manually validated on Windows with the Calculator `Seven` control on 2026-08-22.
+
+## Phase 5C.2 literal typing — experimental
+
+Example:
+
+```text
+Type "hello from Sarah" into Address and search bar
+confirm type
+```
+
+Typing is intentionally narrower than general keyboard automation:
+
+1. Sarah must locate a named text-entry control first.
+2. The field is previewed without focusing or typing.
+3. The user must reply `confirm type` within two minutes.
+4. Sarah re-locates and re-validates the field.
+5. Password/PIN/verification-code/token/secret fields are rejected.
+6. Sarah performs one confirmed focus click.
+7. Sarah sends only the exact literal Unicode text supplied by the user.
+8. Sarah does **not** press Enter, Tab, Escape, or any shortcut afterward.
+9. Clipboard paste is not used.
+10. A fresh screen verification checks whether the field visibly changed without repeating the entered text.
+
+A single typing action is limited to 500 characters. Control characters, newlines, Enter, and Tab are rejected by the low-level tool even if a higher layer makes a mistake.
+
+## Phase 5C.2 bounded scrolling — experimental
+
+Examples:
+
+```text
+Scroll down
+Scroll up 2 steps
+```
+
+Scrolling is limited to vertical mouse-wheel input only. The default is three wheel steps and an explicit request is capped at five steps. Horizontal scrolling and unbounded repetition are not available.
+
+Sarah briefly hides her own window, performs the bounded scroll, restores herself, and then visually checks whether the visible content moved.
 
 ## Permission boundary
 
-Phase 5C adds the narrow scopes:
+Phase 5C uses four narrow scopes:
 
-- `screen.pointer`
-- `screen.click`
+- `screen.pointer` — LOW risk
+- `screen.click` — MEDIUM risk, confirmed
+- `screen.type` — MEDIUM risk, confirmed
+- `screen.scroll` — LOW risk, bounded
 
-`screen.pointer` is LOW risk and may execute only for an explicit deterministic pointer-move/visual-click preview request.
+The internal tools are:
 
-`screen.click` is MEDIUM risk and the click tool has `requires_confirmation=True`.
+- `move_pointer`
+- `click_pointer`
+- `type_text`
+- `scroll_pointer`
 
-The raw `move_pointer` and `click_pointer` tools are registered so they still pass through ToolRegistry authorization, but they are marked `model_visible=False`. Neither the local conversation model nor a cloud model receives their raw coordinate schemas.
+All four are registered with ToolRegistry but marked `model_visible=False`. Neither the local conversation model nor a cloud model receives their raw coordinate, text-input, or wheel schemas.
 
 Broad `desktop.control` and `system.control` remain ungranted.
 
-## Coordinate safety
+## Coordinate and input safety
 
-- Users do not provide raw screen coordinates through this visual flow.
-- Physical coordinates are derived from a fresh visual target bounding box.
-- Coordinates are checked against the Windows virtual desktop bounds.
-- SarahNode enables per-monitor DPI awareness before backend startup so screenshot and pointer coordinates stay aligned on scaled displays.
-- Multi-monitor origins, including negative X/Y coordinates, are supported by the normalized-to-physical translation.
+- Physical coordinates come from a fresh UIA/vision target, never conversational coordinates.
+- Coordinates are checked against Windows virtual desktop bounds.
+- Per-monitor DPI awareness is enabled so screenshot/UIA and pointer coordinates remain aligned on scaled displays.
+- Multi-monitor origins, including negative X/Y positions, are supported.
+- Typing uses Windows `SendInput` Unicode events rather than shell commands or clipboard paste.
+- Arbitrary key sequences are not implemented.
+- Password-style UIA fields are marked and blocked from typing.
 
-## Deliberately not implemented yet
+## Still deliberately unavailable
 
-This foundation does **not** provide:
+Phase 5C.2 does **not** provide:
 
-- keyboard typing
-- hotkeys
-- Enter/Escape injection
-- scrolling
+- Enter/Escape/Tab injection
+- Ctrl/Alt/Win shortcuts or arbitrary hotkeys
 - right-click
 - double-click
 - drag and drop
-- arbitrary raw coordinate clicking from conversation
+- horizontal scrolling
+- raw coordinate clicking from conversation
 - continuous screen monitoring
-- autonomous click chains
+- autonomous multi-step visual action chains
 - unattended visual automation
-
-Those should be added only after pointer/click accuracy is validated on the user's Windows machine.
 
 ## Status
 
-The Phase 5C foundation is **experimental and not yet accepted by Windows manual testing**. The next manual validation should begin with pointer movement only, then a harmless click such as dismissing a non-consequential browser notification. Do not test Delete, Install, purchase, submission, account/security, or permission controls first.
+- Phase 5C.1 pointer + confirmed single-click loop: **Windows user-verified**.
+- Phase 5C.2 literal typing + bounded scrolling: **implemented, awaiting Windows manual acceptance testing**.
