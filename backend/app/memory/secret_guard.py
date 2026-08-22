@@ -28,13 +28,13 @@ _LABELED_SECRET_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Stable memory keys are normalized with underscores by MemoryLearningService. Match
-# complete key segments rather than substrings so a key such as "spinning_preference"
-# cannot be mistaken for a PIN.
+# Treat the key itself as secret-bearing only when it ends as a credential field. This
+# blocks password, work_password, openai_api_key, etc. while allowing descriptive keys
+# such as password_manager and api_key_security.
 _KEY_NAME_SECRET_RE = re.compile(
     r"(?:^|_)(?:password|passphrase|passcode|pin|api_key|secret_key|client_secret|"
     r"access_token|refresh_token|auth_token|recovery_code|recovery_key|backup_code|"
-    r"private_key|session_token|session_cookie|cvv|cvc)(?:_|$)",
+    r"private_key|session_token|session_cookie|cvv|cvc)$",
     re.IGNORECASE,
 )
 
