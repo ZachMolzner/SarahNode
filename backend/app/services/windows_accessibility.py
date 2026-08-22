@@ -22,6 +22,7 @@ class AccessibilityMatch:
     right: int
     bottom: int
     exact: bool
+    is_password: bool = False
 
 
 # The PowerShell program is static. The requested control name is passed only through
@@ -82,6 +83,7 @@ function Consider-Element($element, $allowPartial) {
                 right = [int][Math]::Round($rect.Right)
                 bottom = [int][Math]::Round($rect.Bottom)
                 exact = $exact
+                is_password = [bool]$current.IsPassword
                 score = $score
             }
         }
@@ -205,6 +207,7 @@ def _parse_match(stdout: str) -> AccessibilityMatch | None:
         right=right,
         bottom=bottom,
         exact=bool(payload.get("exact")),
+        is_password=bool(payload.get("is_password")),
     )
 
 
@@ -271,9 +274,10 @@ async def locate_control_with_windows_accessibility(
 
     desk_left, desk_top, desk_width, desk_height = desktop
     confidence = 0.99 if match.exact else 0.82
+    role = f"Password{match.control_type}" if match.is_password else (match.control_type or "control")
     target = VisualTarget(
         label=match.name,
-        role=match.control_type or "control",
+        role=role,
         visible_text=match.name,
         bbox_normalized=bbox,
         confidence=confidence,
