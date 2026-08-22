@@ -44,10 +44,10 @@ class PermissionPolicy:
 
 def default_policy() -> PermissionPolicy:
     # Local-first defaults allow read-only inspection (including explicit screen
-    # inspection), Sarah's persistent memory, low-risk launch/pointer actions, and
-    # deliberately narrow confirmed mutation/click scopes. screen.click is granted
-    # but its tool is MEDIUM risk and explicitly requires confirmed=True. Broad
-    # files.write, desktop.control, and system.control remain ungranted.
+    # inspection), Sarah's persistent memory, low-risk launch/pointer/scroll actions,
+    # and deliberately narrow confirmed mutation/click/type scopes. screen.click and
+    # screen.type are granted but their tools are MEDIUM risk and require confirmed=True.
+    # Broad files.write, desktop.control, and system.control remain ungranted.
     return PermissionPolicy(
         granted_scopes={
             PermissionScope.FILES_READ,
@@ -59,6 +59,8 @@ def default_policy() -> PermissionPolicy:
             PermissionScope.SCREEN_READ,
             PermissionScope.SCREEN_POINTER,
             PermissionScope.SCREEN_CLICK,
+            PermissionScope.SCREEN_TYPE,
+            PermissionScope.SCREEN_SCROLL,
             PermissionScope.APPS_LAUNCH,
             PermissionScope.APPS_FOCUS,
             PermissionScope.APPS_CLOSE,
