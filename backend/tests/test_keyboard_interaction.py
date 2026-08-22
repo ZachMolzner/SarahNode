@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+import pytest
+
 import app.services.keyboard_interaction as keyboard_module
 from app.agent.contracts import ToolInvocation, ToolResult
 from app.agent.keyboard_tools import keyboard_tools
@@ -10,9 +12,17 @@ from app.agent.permissions import default_policy
 from app.agent.tool_registry import ToolRegistry
 from app.schemas.chat import ChatMessage
 from app.services.keyboard_interaction import KeyboardInteractionService, WindowContext, parse_keyboard_request
+from app.services.windows_receiver import clear_verified_receiver, remember_verified_receiver
 
 
 _DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zkz8AAAAASUVORK5CYII="
+
+
+@pytest.fixture(autouse=True)
+def _reset_verified_receiver():
+    clear_verified_receiver()
+    yield
+    clear_verified_receiver()
 
 
 @dataclass
@@ -155,6 +165,52 @@ def test_safe_key_executes_once_for_injected_receiver() -> None:
     assert invocation.tool_name == "press_safe_key"
     assert invocation.arguments == {"key": "arrow_down"}
     assert confirmed is False
+
+
+def test_recent_verified_receiver_beats_mouse_and_program_manager(monkeypatch) -> None:
+    screen = FakeScreen()
+    tools = FakeTools()
+    remembered = remember_verified_receiver(
+        303,
+        "Microsoft Edge",
+        source="confirmed_uia_text_field",
+        ttl_seconds=180,
+    )
+    assert remembered is not None
+
+    pointer_calls: list[bool] = []
+    fallback_calls: list[bool] = []
+
+    def pointer(*, exclude_hwnd=None):
+        pointer_calls.append(True)
+        return (505, "Program Manager")
+
+    def fallback(*, exclude_hwnd=None):
+        fallback_calls.append(True)
+        return (404, "Picture in Picture")
+
+    monkeypatch.setattr(keyboard_module, "window_at_cursor", pointer)
+    monkeypatch.setattr(keyboard_module, "top_visible_window", fallback)
+    monkeypatch.setattr(keyboard_module, "activate_window", lambda hwnd: hwnd == 303)
+
+    service = KeyboardInteractionService(
+        screen=screen,  # type: ignore[arg-type]
+        tools=tools,  # type: ignore[arg-type]
+    )
+    reply = asyncio.run(service.handle(_message("Press Backspace")))
+
+    assert reply is not None
+    assert "Microsoft Edge" in reply.text
+    assert "Program Manager" not in reply.text
+    assert "Picture in Picture" not in reply.text
+    assert pointer_calls == []
+    assert fallback_calls == []
+    assert len(tools.calls) == 1
+    assert tools.calls[0][0].tool_name == "press_safe_key"
+
+
+def test_program_manager_cannot_be_remembered_as_receiver() -> None:
+    assert remember_verified_receiver(505, "Program Manager") is None
 
 
 def test_pointer_target_beats_picture_in_picture_z_order(monkeypatch) -> None:
