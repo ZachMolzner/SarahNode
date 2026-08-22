@@ -58,6 +58,8 @@ _FORMAT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("google_api_key", _GOOGLE_API_KEY_RE),
 )
 
+_SESSION_SECRET_PLACEHOLDER = "[credential or secret omitted from session memory]"
+
 
 def detect_persistent_secret(*, key: str = "", value: str = "") -> SecretMatch | None:
     """Return a coarse secret classification without ever returning the secret value."""
@@ -78,6 +80,14 @@ def detect_persistent_secret(*, key: str = "", value: str = "") -> SecretMatch |
         if pattern.search(combined):
             return SecretMatch(kind)
     return None
+
+
+def redact_for_session_memory(text: str) -> str:
+    """Return a safe rolling-memory copy without preserving credential text."""
+    raw = str(text or "")
+    if detect_persistent_secret(value=raw) is not None:
+        return _SESSION_SECRET_PLACEHOLDER
+    return raw
 
 
 def ensure_memory_safe(*, key: str = "", value: str = "") -> None:
