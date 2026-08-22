@@ -16,6 +16,7 @@ from app.services.screen_awareness import ScreenAnalysisResult, ScreenAwarenessE
 @dataclass(frozen=True, slots=True)
 class AccessibilityMatch:
     name: str
+    label: str
     control_type: str
     left: int
     top: int
@@ -48,20 +49,39 @@ function Consider-Element($element, $allowPartial) {
         $current = $element.Current
         if ($current.IsOffscreen) { return }
         $name = [string]$current.Name
-        if ([string]::IsNullOrWhiteSpace($name)) { return }
+        $helpText = [string]$current.HelpText
+        $automationId = [string]$current.AutomationId
         $rect = $current.BoundingRectangle
         if ($rect.Width -lt 2 -or $rect.Height -lt 2) { return }
 
-        $nameNorm = $name.Trim().ToLowerInvariant()
+        $nameNorm = if ([string]::IsNullOrWhiteSpace($name)) { '' } else { $name.Trim().ToLowerInvariant() }
+        $helpNorm = if ([string]::IsNullOrWhiteSpace($helpText)) { '' } else { $helpText.Trim().ToLowerInvariant() }
+        $automationNorm = if ([string]::IsNullOrWhiteSpace($automationId)) { '' } else { $automationId.Trim().ToLowerInvariant() }
         $score = 0
         $exact = $false
-        if ($nameNorm -eq $queryNorm) {
+        $semanticLabel = $name
+
+        if ($nameNorm -eq $queryNorm -and $nameNorm.Length -gt 0) {
             $score = 1000
             $exact = $true
-        } elseif ($allowPartial -and $nameNorm.Contains($queryNorm)) {
+            $semanticLabel = $name
+        } elseif ($helpNorm -eq $queryNorm -and $helpNorm.Length -gt 0) {
+            $score = 950
+            $semanticLabel = $query
+        } elseif (($queryNorm -eq 'address and search bar' -or $queryNorm -eq 'address bar' -or $queryNorm -eq 'search bar') -and $automationNorm.Contains('omnibox')) {
+            # Chromium/Edge exposes a stable omnibox AutomationId even when the
+            # accessible Name/value changes after text has been entered.
+            $score = 900
+            $semanticLabel = $query
+        } elseif ($allowPartial -and $nameNorm.Length -gt 0 -and $nameNorm.Contains($queryNorm)) {
             $score = 700 - [Math]::Min(200, [Math]::Abs($nameNorm.Length - $queryNorm.Length))
+            $semanticLabel = $name
+        } elseif ($allowPartial -and $helpNorm.Length -gt 0 -and $helpNorm.Contains($queryNorm)) {
+            $score = 680 - [Math]::Min(200, [Math]::Abs($helpNorm.Length - $queryNorm.Length))
+            $semanticLabel = $query
         } elseif ($allowPartial -and $queryNorm.Contains($nameNorm) -and $nameNorm.Length -ge 3) {
             $score = 500 - [Math]::Min(200, [Math]::Abs($nameNorm.Length - $queryNorm.Length))
+            $semanticLabel = $name
         } else {
             return
         }
@@ -72,11 +92,15 @@ function Consider-Element($element, $allowPartial) {
         }
         if ($rect.Width -gt 1600 -or $rect.Height -gt 1000) { $score -= 100 }
 
+        if ([string]::IsNullOrWhiteSpace($semanticLabel)) { $semanticLabel = $query }
+        if ([string]::IsNullOrWhiteSpace($name)) { $name = $semanticLabel }
+
         if ($score -gt $script:bestScore) {
             $script:bestScore = $score
             $script:best = [ordered]@{
                 found = $true
                 name = $name
+                label = $semanticLabel
                 control_type = $controlType
                 left = [int][Math]::Round($rect.Left)
                 top = [int][Math]::Round($rect.Top)
@@ -107,7 +131,7 @@ try {
         Consider-Element $exactElements.Item($i) $false
     }
 } catch {
-    # Continue to the bounded partial-name fallback below.
+    # Continue to the bounded metadata fallback below.
 }
 
 if ($null -eq $best) {
@@ -135,7 +159,6 @@ def _virtual_screen_bounds() -> tuple[int, int, int, int]:
     if platform.system() != "Windows":
         raise ScreenAwarenessError("Windows accessibility control lookup is available only on Windows.")
     user32 = ctypes.windll.user32
-    # SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN
     left = int(user32.GetSystemMetrics(76))
     top = int(user32.GetSystemMetrics(77))
     width = int(user32.GetSystemMetrics(78))
@@ -179,7 +202,6 @@ def _parse_match(stdout: str) -> AccessibilityMatch | None:
     text = stdout.strip()
     if not text:
         return None
-    # PowerShell can emit benign assembly/runtime lines before JSON on some hosts.
     line = next((candidate.strip() for candidate in reversed(text.splitlines()) if candidate.strip().startswith("{")), "")
     if not line:
         return None
@@ -197,10 +219,12 @@ def _parse_match(stdout: str) -> AccessibilityMatch | None:
     except (KeyError, TypeError, ValueError):
         return None
     name = str(payload.get("name") or "").strip()
-    if not name or right <= left or bottom <= top:
+    label = str(payload.get("label") or name).strip()
+    if not name or not label or right <= left or bottom <= top:
         return None
     return AccessibilityMatch(
         name=name,
+        label=label,
         control_type=str(payload.get("control_type") or "Control").replace("ControlType.", ""),
         left=left,
         top=top,
@@ -250,7 +274,9 @@ async def locate_control_with_windows_accessibility(
     """Locate a visible named UI control through Windows UI Automation.
 
     SarahNode is hidden during the lookup so the accessibility tree from Sarah's own
-    chat cannot satisfy a query such as "Search the web" or "Not now".
+    chat cannot satisfy the target query. Name is preferred, but stable HelpText and
+    AutomationId metadata can preserve semantic identity when a populated control's
+    accessible Name changes.
     """
     if platform.system() != "Windows":
         return None
@@ -273,17 +299,17 @@ async def locate_control_with_windows_accessibility(
         return None
 
     desk_left, desk_top, desk_width, desk_height = desktop
-    confidence = 0.99 if match.exact else 0.82
+    confidence = 0.99 if match.exact else 0.88
     role = f"Password{match.control_type}" if match.is_password else (match.control_type or "control")
     target = VisualTarget(
-        label=match.name,
+        label=match.label,
         role=role,
         visible_text=match.name,
         bbox_normalized=bbox,
         confidence=confidence,
     )
     return ScreenAnalysisResult(
-        text=f'Windows accessibility identified "{match.name}" as a visible {target.role}.',
+        text=f'Windows accessibility identified "{match.label}" as a visible {target.role}.',
         model="windows-uia",
         reasoning_mode="locate",
         source_width=desk_width,
