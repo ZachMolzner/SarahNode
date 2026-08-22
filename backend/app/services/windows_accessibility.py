@@ -37,23 +37,19 @@ if ([string]::IsNullOrWhiteSpace($query)) {
 }
 
 $root = [System.Windows.Automation.AutomationElement]::RootElement
-$trueCondition = [System.Windows.Automation.Condition]::TrueCondition
-$elements = $root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $trueCondition)
-
+$scope = [System.Windows.Automation.TreeScope]::Descendants
+$queryNorm = $query.Trim().ToLowerInvariant()
 $best = $null
 $bestScore = -1
-$limit = [Math]::Min($elements.Count, 12000)
-$queryNorm = $query.Trim().ToLowerInvariant()
 
-for ($i = 0; $i -lt $limit; $i++) {
-    $element = $elements.Item($i)
+function Consider-Element($element, $allowPartial) {
     try {
         $current = $element.Current
-        if ($current.IsOffscreen) { continue }
+        if ($current.IsOffscreen) { return }
         $name = [string]$current.Name
-        if ([string]::IsNullOrWhiteSpace($name)) { continue }
+        if ([string]::IsNullOrWhiteSpace($name)) { return }
         $rect = $current.BoundingRectangle
-        if ($rect.Width -lt 2 -or $rect.Height -lt 2) { continue }
+        if ($rect.Width -lt 2 -or $rect.Height -lt 2) { return }
 
         $nameNorm = $name.Trim().ToLowerInvariant()
         $score = 0
@@ -61,25 +57,23 @@ for ($i = 0; $i -lt $limit; $i++) {
         if ($nameNorm -eq $queryNorm) {
             $score = 1000
             $exact = $true
-        } elseif ($nameNorm.Contains($queryNorm)) {
+        } elseif ($allowPartial -and $nameNorm.Contains($queryNorm)) {
             $score = 700 - [Math]::Min(200, [Math]::Abs($nameNorm.Length - $queryNorm.Length))
-        } elseif ($queryNorm.Contains($nameNorm) -and $nameNorm.Length -ge 3) {
+        } elseif ($allowPartial -and $queryNorm.Contains($nameNorm) -and $nameNorm.Length -ge 3) {
             $score = 500 - [Math]::Min(200, [Math]::Abs($nameNorm.Length - $queryNorm.Length))
         } else {
-            continue
+            return
         }
 
-        # Prefer interactive-looking controls over large containers/text nodes when
-        # names are otherwise equally good.
         $controlType = [string]$current.ControlType.ProgrammaticName
         if ($controlType -match 'Button|Edit|Hyperlink|TabItem|MenuItem|CheckBox|RadioButton|ComboBox|ListItem') {
             $score += 80
         }
         if ($rect.Width -gt 1600 -or $rect.Height -gt 1000) { $score -= 100 }
 
-        if ($score -gt $bestScore) {
-            $bestScore = $score
-            $best = [ordered]@{
+        if ($score -gt $script:bestScore) {
+            $script:bestScore = $score
+            $script:best = [ordered]@{
                 found = $true
                 name = $name
                 control_type = $controlType
@@ -92,7 +86,34 @@ for ($i = 0; $i -lt $limit; $i++) {
             }
         }
     } catch {
-        continue
+        return
+    }
+}
+
+# Fast path: ask UI Automation for exact accessible-name matches first. Most browser
+# chrome and standard Windows controls are found here without walking the full tree.
+try {
+    $flags = [System.Windows.Automation.PropertyConditionFlags]::IgnoreCase
+    $nameCondition = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::NameProperty,
+        $query,
+        $flags
+    )
+    $exactElements = $root.FindAll($scope, $nameCondition)
+    $exactLimit = [Math]::Min($exactElements.Count, 100)
+    for ($i = 0; $i -lt $exactLimit; $i++) {
+        Consider-Element $exactElements.Item($i) $false
+    }
+} catch {
+    # Continue to the bounded partial-name fallback below.
+}
+
+if ($null -eq $best) {
+    $trueCondition = [System.Windows.Automation.Condition]::TrueCondition
+    $elements = $root.FindAll($scope, $trueCondition)
+    $limit = [Math]::Min($elements.Count, 7000)
+    for ($i = 0; $i -lt $limit; $i++) {
+        Consider-Element $elements.Item($i) $true
     }
 }
 
