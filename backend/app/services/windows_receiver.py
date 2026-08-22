@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import ctypes
 import platform
+import threading
 from ctypes import wintypes
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 
 _SW_RESTORE = 9
@@ -11,6 +14,73 @@ _SWP_NOSIZE = 0x0001
 _SWP_SHOWWINDOW = 0x0040
 _HWND_TOP = 0
 _GA_ROOT = 2
+_IGNORED_RECEIVER_TITLES = {"program manager"}
+
+
+@dataclass(frozen=True, slots=True)
+class VerifiedReceiver:
+    hwnd: int
+    title: str
+    source: str
+    verified_at: datetime
+    expires_at: datetime
+
+
+_verified_receiver_lock = threading.Lock()
+_verified_receiver: VerifiedReceiver | None = None
+
+
+def remember_verified_receiver(
+    hwnd: int,
+    title: str,
+    *,
+    source: str = "visual_interaction",
+    ttl_seconds: int = 180,
+) -> VerifiedReceiver | None:
+    """Remember one recently verified top-level receiver for a short continuation.
+
+    This is deliberately ephemeral process memory. It lets a controlled keyboard request
+    continue operating on a field/window that Sarah just revalidated visually even after
+    the user returns to Sarah's chat box to type the next command. It is not persisted and
+    never grants broad keyboard control.
+    """
+    global _verified_receiver
+    hwnd = int(hwnd or 0)
+    clean_title = str(title or "").strip()
+    if hwnd <= 0 or not clean_title or clean_title.lower() in _IGNORED_RECEIVER_TITLES:
+        return None
+
+    now = datetime.now(timezone.utc)
+    remembered = VerifiedReceiver(
+        hwnd=hwnd,
+        title=clean_title,
+        source=str(source or "visual_interaction"),
+        verified_at=now,
+        expires_at=now + timedelta(seconds=max(30, int(ttl_seconds))),
+    )
+    with _verified_receiver_lock:
+        _verified_receiver = remembered
+    return remembered
+
+
+def get_verified_receiver() -> VerifiedReceiver | None:
+    global _verified_receiver
+    with _verified_receiver_lock:
+        remembered = _verified_receiver
+        if remembered is None:
+            return None
+        if remembered.expires_at <= datetime.now(timezone.utc):
+            _verified_receiver = None
+            return None
+        return remembered
+
+
+def clear_verified_receiver() -> VerifiedReceiver | None:
+    global _verified_receiver
+    with _verified_receiver_lock:
+        previous = _verified_receiver
+        _verified_receiver = None
+        return previous
 
 
 def _configure_win32():
@@ -87,6 +157,11 @@ def _window_title_with(user32, hwnd: int) -> str:
     return buffer.value.strip()
 
 
+def _usable_receiver_title(title: str) -> bool:
+    clean = str(title or "").strip()
+    return bool(clean) and clean.lower() not in _IGNORED_RECEIVER_TITLES
+
+
 def window_title(hwnd: int) -> str:
     user32, _kernel32 = _configure_win32()
     if user32 is None:
@@ -101,23 +176,19 @@ def foreground_window() -> tuple[int, str] | None:
     hwnd = _as_int(user32.GetForegroundWindow())
     if hwnd <= 0:
         return None
-    return hwnd, _window_title_with(user32, hwnd) or f"Window 0x{hwnd:X}"
+    title = _window_title_with(user32, hwnd)
+    if not _usable_receiver_title(title):
+        return None
+    return hwnd, title
 
 
-def window_at_cursor(*, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
-    """Return the visible top-level application window under the current pointer.
-
-    Visual interaction leaves the pointer on the freshly verified control. Resolving
-    the receiving window from that point is therefore more precise than generic z-order
-    when floating overlays such as Picture-in-Picture are present elsewhere on screen.
-    """
+def window_at_point(x: int, y: int, *, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
+    """Return the visible top-level application window at a physical screen point."""
     user32, _kernel32 = _configure_win32()
     if user32 is None:
         return None
 
-    point = wintypes.POINT()
-    if not user32.GetCursorPos(ctypes.byref(point)):
-        return None
+    point = wintypes.POINT(int(x), int(y))
     child = user32.WindowFromPoint(point)
     child_int = _as_int(child)
     if child_int <= 0:
@@ -133,18 +204,25 @@ def window_at_cursor(*, exclude_hwnd: int | None = None) -> tuple[int, str] | No
         return None
 
     title = _window_title_with(user32, hwnd)
-    if not title:
+    if not _usable_receiver_title(title):
         return None
     return hwnd, title
 
 
-def top_visible_window(*, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
-    """Return the topmost visible titled top-level window in current z-order.
+def window_at_cursor(*, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
+    """Return the visible top-level application window under the current pointer."""
+    user32, _kernel32 = _configure_win32()
+    if user32 is None:
+        return None
 
-    This is a fallback for keyboard receiver selection when the current pointer does not
-    resolve to a usable application window. Sarah calls it only while her own window is
-    hidden; exclude_hwnd remains a second guard.
-    """
+    point = wintypes.POINT()
+    if not user32.GetCursorPos(ctypes.byref(point)):
+        return None
+    return window_at_point(int(point.x), int(point.y), exclude_hwnd=exclude_hwnd)
+
+
+def top_visible_window(*, exclude_hwnd: int | None = None) -> tuple[int, str] | None:
+    """Return the topmost usable visible titled top-level window in current z-order."""
     user32, _kernel32 = _configure_win32()
     if user32 is None:
         return None
@@ -161,7 +239,7 @@ def top_visible_window(*, exclude_hwnd: int | None = None) -> tuple[int, str] | 
         if not user32.IsWindowVisible(hwnd):
             return True
         title = _window_title_with(user32, hwnd_int)
-        if not title:
+        if not _usable_receiver_title(title):
             return True
         found = (hwnd_int, title)
         return False
@@ -179,6 +257,8 @@ def activate_window(hwnd: int) -> bool:
 
     target = wintypes.HWND(hwnd)
     if not user32.IsWindow(target) or not user32.IsWindowVisible(target):
+        return False
+    if not _usable_receiver_title(_window_title_with(user32, hwnd)):
         return False
 
     user32.ShowWindow(target, _SW_RESTORE)
