@@ -145,7 +145,7 @@ def test_visual_plan_uses_json_schema_and_parses_targets(monkeypatch: pytest.Mon
     assert "Caution:" in result.text
 
 
-def test_empty_vision_response_retries_once_with_plain_final_answer(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_empty_rich_vision_response_retries_once_with_plain_final_answer(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[dict] = []
     service = screen.ScreenAwarenessService(default_policy())
 
@@ -156,18 +156,60 @@ def test_empty_vision_response_retries_once_with_plain_final_answer(monkeypatch:
         calls.append(body)
         if len(calls) == 1:
             return {"message": {"role": "assistant", "content": "", "thinking": "hidden reasoning"}}
-        return {"message": {"role": "assistant", "content": "The search box is in the upper center."}}
+        return {"message": {"role": "assistant", "content": "The visible error says the connection failed."}}
 
     monkeypatch.setattr(service, "_capture", fake_capture)
     monkeypatch.setattr(service, "_post_ollama_chat", fake_post)
 
-    result = asyncio.run(service.analyze("Where is the search box?"))
+    result = asyncio.run(service.analyze("What error is on my screen and how do I fix it?"))
 
     assert len(calls) == 2
     assert "format" in calls[0]
     assert "format" not in calls[1]
     assert calls[0]["think"] is False
     assert calls[1]["think"] is False
+    assert "connection failed" in result.text
+
+
+def test_empty_locator_response_retries_with_compact_schema(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[dict] = []
+    locator_payload = {
+        "found": True,
+        "label": "Search the web",
+        "role": "textbox",
+        "visible_text": "Search the web",
+        "bbox": [250, 120, 750, 220],
+        "confidence": 0.96,
+        "answer": "The search box is visible near the upper center.",
+    }
+    service = screen.ScreenAwarenessService(default_policy())
+
+    async def fake_capture() -> screen._CapturedFrame:
+        return _fake_frame()
+
+    async def fake_post(body: dict) -> dict:
+        calls.append(body)
+        if len(calls) == 1:
+            return {"message": {"role": "assistant", "content": "", "thinking": "hidden reasoning"}}
+        return {"message": {"role": "assistant", "content": json.dumps(locator_payload)}}
+
+    monkeypatch.setattr(service, "_capture", fake_capture)
+    monkeypatch.setattr(service, "_post_ollama_chat", fake_post)
+
+    result = asyncio.run(service.analyze('Find the button, field, link, tab, checkbox, menu item, icon, or other visible UI control labeled "Search the web" on my screen.'))
+
+    assert len(calls) == 2
+    assert "format" in calls[0]
+    assert "format" in calls[1]
+    assert "found" in calls[0]["format"]["properties"]
+    assert "targets" not in calls[0]["format"]["properties"]
+    assert calls[0]["options"]["temperature"] == 0.0
+    assert calls[1]["options"]["temperature"] == 0.0
+    assert result.reasoning_mode == "locate"
+    assert len(result.targets) == 1
+    assert result.targets[0].label == "Search the web"
+    assert result.targets[0].bbox_normalized == (250, 120, 750, 220)
+    assert result.targets[0].confidence == pytest.approx(0.96)
     assert "upper center" in result.text
 
 
