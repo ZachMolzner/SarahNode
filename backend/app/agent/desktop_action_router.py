@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 
@@ -17,6 +18,54 @@ _URLISH_RE = re.compile(
     re.IGNORECASE,
 )
 _WINDOWS_PATH_RE = re.compile(r"^(?:[a-zA-Z]:[\\/]|~[\\/]|\\\\)")
+
+# A bare filename such as ``budget.xlsx`` can look exactly like a hostname to a
+# permissive URL regex. Prefer common local file suffixes before URL routing while
+# leaving genuine domains such as ``example.com`` on the web-launch path.
+_COMMON_FILE_SUFFIXES = {
+    ".txt",
+    ".md",
+    ".pdf",
+    ".csv",
+    ".tsv",
+    ".rtf",
+    ".doc",
+    ".docx",
+    ".xls",
+    ".xlsx",
+    ".ppt",
+    ".pptx",
+    ".odt",
+    ".ods",
+    ".odp",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".log",
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".gif",
+    ".webp",
+    ".bmp",
+    ".svg",
+    ".zip",
+    ".7z",
+    ".rar",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".html",
+    ".htm",
+    ".css",
+}
 
 _KNOWN_FOLDERS = {
     "home",
@@ -74,6 +123,13 @@ def _known_folder_key(value: str) -> str | None:
     return None
 
 
+def _looks_like_common_file(value: str) -> bool:
+    # URLs with paths/query strings are never treated as bare local filenames here.
+    if value.lower().startswith(("http://", "https://")) or any(char in value for char in ("/", "?", "#")):
+        return False
+    return Path(value).suffix.lower() in _COMMON_FILE_SUFFIXES
+
+
 def parse_desktop_action(text: str) -> DesktopActionRequest | None:
     """Parse only clear, low-risk desktop launch commands.
 
@@ -104,15 +160,18 @@ def parse_desktop_action(text: str) -> DesktopActionRequest | None:
     if match:
         target = _clean_target(match.group(1))
 
-        if _URLISH_RE.match(target) or target.lower().startswith(("http://", "https://")):
-            return DesktopActionRequest("open_url", {"url": target}, target)
-
         folder_key = _known_folder_key(target)
         if folder_key is not None:
             return DesktopActionRequest("open_path", {"path": folder_key}, target)
 
         if _WINDOWS_PATH_RE.match(target) or any(sep in target for sep in ("\\", "/")):
             return DesktopActionRequest("open_path", {"path": target}, target)
+
+        if _looks_like_common_file(target):
+            return DesktopActionRequest("open_path", {"path": target}, target)
+
+        if _URLISH_RE.match(target) or target.lower().startswith(("http://", "https://")):
+            return DesktopActionRequest("open_url", {"url": target}, target)
 
         if re.search(r"\.[a-zA-Z0-9]{1,8}$", target):
             return DesktopActionRequest("open_path", {"path": target}, target)
