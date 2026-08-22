@@ -11,7 +11,7 @@ from app.agent.tool_registry import ToolRegistry
 from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.screen_awareness import ScreenAwarenessService
 from app.services.screen_change_detection import compare_captured_frames
-from app.services.windows_receiver import activate_window, top_visible_window
+from app.services.windows_receiver import activate_window, top_visible_window, window_at_cursor
 
 
 _KEY_RE = re.compile(
@@ -134,8 +134,9 @@ class KeyboardInteractionService:
 
     Only six named keys are recognized. Enter is always staged and confirmed because it
     can submit, send, navigate, purchase, install, or otherwise commit an action depending
-    on focus. In production Sarah hides herself, selects the topmost visible underlying
-    window, explicitly activates that HWND, verifies focus, and only then emits one key.
+    on focus. In production Sarah hides herself, prefers the top-level window under the
+    current pointer (which visual interaction leaves on the verified target), activates and
+    verifies that HWND, and only then emits one key. Generic z-order is only a fallback.
     Raw virtual-key codes, modifiers, hotkeys, repeats, and arbitrary key names are never
     accepted from the user or language model.
     """
@@ -150,7 +151,7 @@ class KeyboardInteractionService:
         self.screen = screen
         self.tools = tools
         # Tests may inject a deterministic receiver sequence. Production leaves this
-        # unset and uses the actual Windows z-order/activation path.
+        # unset and uses the actual Windows pointer/z-order activation path.
         self.context_provider = context_provider
         self.pending = PendingEnterStore(ttl_seconds=120)
 
@@ -179,7 +180,13 @@ class KeyboardInteractionService:
     def _resolve_receiver(self, hidden_sarah_hwnd: int | None) -> WindowContext | None:
         if self.context_provider is not None:
             return self.context_provider()
-        candidate = top_visible_window(exclude_hwnd=hidden_sarah_hwnd)
+
+        # Visual targeting leaves the pointer on the verified control. Prefer the app
+        # underneath that point so unrelated topmost overlays (for example Picture in
+        # Picture) do not steal a subsequent Backspace/arrow/Enter request.
+        candidate = window_at_cursor(exclude_hwnd=hidden_sarah_hwnd)
+        if candidate is None:
+            candidate = top_visible_window(exclude_hwnd=hidden_sarah_hwnd)
         if candidate is None:
             return None
         hwnd, title = candidate
@@ -228,7 +235,7 @@ class KeyboardInteractionService:
             context = self._resolve_receiver(hidden_hwnd)
             if context is None:
                 return AssistantReply(
-                    text="I did not press the key because I could not identify a visible window underneath Sarah.",
+                    text="I did not press the key because I could not identify a usable window at the verified pointer location or underneath Sarah.",
                     emotion="concerned",
                     should_speak=True,
                 )
@@ -265,7 +272,7 @@ class KeyboardInteractionService:
         target = context.title if context is not None else "the underlying window"
         verification = _verification_text(before_data_url, after_data_url)
         return AssistantReply(
-            text=f'Pressed {display} once in the verified underlying window "{target}". No modifiers or hotkeys were used. Verification: {verification}',
+            text=f'Pressed {display} once in the verified pointer-target window "{target}". No modifiers or hotkeys were used. Verification: {verification}',
             emotion="calm",
             should_speak=True,
         )
@@ -283,11 +290,11 @@ class KeyboardInteractionService:
             fresh_context = self._resolve_receiver(hidden_hwnd)
             if fresh_context is None or fresh_context.hwnd != pending.hwnd:
                 self.pending.cancel(user_id)
-                actual = fresh_context.title if fresh_context is not None else "no identifiable underlying window"
+                actual = fresh_context.title if fresh_context is not None else "no identifiable receiver"
                 return AssistantReply(
                     text=(
                         f'I did not press Enter because the receiving window changed. It was staged for "{pending.title}", '
-                        f'but the current underlying receiver is {actual!r}. Please request Enter again from the current screen.'
+                        f'but the current pointer-target receiver is {actual!r}. Please request Enter again from the current screen.'
                     ),
                     emotion="concerned",
                     should_speak=True,
@@ -327,7 +334,7 @@ class KeyboardInteractionService:
         target = fresh_context.title if fresh_context is not None else pending.title
         verification = _verification_text(before_data_url, after_data_url)
         return AssistantReply(
-            text=f'Pressed Enter once in the freshly re-verified underlying window "{target}". Verification: {verification}',
+            text=f'Pressed Enter once in the freshly re-verified pointer-target window "{target}". Verification: {verification}',
             emotion="calm",
             should_speak=True,
         )
@@ -372,16 +379,16 @@ class KeyboardInteractionService:
             context = await self._peek_underlying_context()
             if context is None:
                 return AssistantReply(
-                    text="I did not stage Enter because I could not identify and focus the underlying window that would receive it.",
+                    text="I did not stage Enter because I could not identify and focus the pointer-target window that would receive it.",
                     emotion="concerned",
                     should_speak=True,
                 )
             self.pending.stage(user_id, context)
             return AssistantReply(
                 text=(
-                    f'Enter is staged for the underlying window "{context.title}", but I have not pressed it. Enter can submit, send, search, '
+                    f'Enter is staged for the pointer-target window "{context.title}", but I have not pressed it. Enter can submit, send, search, '
                     'navigate, purchase, install, or confirm an action depending on focus. Reply "confirm enter" within '
-                    '2 minutes to re-verify that same underlying receiver and press Enter once, or "cancel".'
+                    '2 minutes to re-verify that same receiver and press Enter once, or "cancel".'
                 ),
                 emotion="concerned",
                 should_speak=True,
