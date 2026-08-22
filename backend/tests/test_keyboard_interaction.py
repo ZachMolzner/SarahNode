@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+import app.services.keyboard_interaction as keyboard_module
 from app.agent.contracts import ToolInvocation, ToolResult
 from app.agent.keyboard_tools import keyboard_tools
 from app.agent.permissions import default_policy
@@ -62,15 +63,6 @@ def _provider(*contexts: WindowContext):
     return lambda: next(values)
 
 
-def _underlying_provider(*contexts: WindowContext):
-    values = iter(contexts)
-    return lambda _sarah_hwnd: next(values)
-
-
-def _activator(_context: WindowContext) -> bool:
-    return True
-
-
 def test_keyboard_parser_allows_only_named_single_keys() -> None:
     expected = {
         "Press Enter": "enter",
@@ -104,8 +96,6 @@ def test_enter_stages_then_requires_confirmation_and_fresh_window() -> None:
         screen=screen,  # type: ignore[arg-type]
         tools=tools,  # type: ignore[arg-type]
         context_provider=_provider(context, context),
-        underlying_provider=_underlying_provider(context, context),
-        activator=_activator,
     )
 
     staged = asyncio.run(service.handle(_message("Press Enter")))
@@ -134,8 +124,6 @@ def test_enter_refuses_when_receiving_window_changes() -> None:
         screen=screen,  # type: ignore[arg-type]
         tools=tools,  # type: ignore[arg-type]
         context_provider=_provider(edge, notepad),
-        underlying_provider=_underlying_provider(edge, notepad),
-        activator=_activator,
     )
 
     asyncio.run(service.handle(_message("Press Enter")))
@@ -148,23 +136,20 @@ def test_enter_refuses_when_receiving_window_changes() -> None:
     assert not service.has_pending("zach")
 
 
-def test_safe_key_activates_underlying_window_and_executes_once() -> None:
+def test_safe_key_executes_once_for_injected_receiver() -> None:
     screen = FakeScreen()
     tools = FakeTools()
     edge = WindowContext(hwnd=303, title="Microsoft Edge")
-    activated: list[WindowContext] = []
     service = KeyboardInteractionService(
         screen=screen,  # type: ignore[arg-type]
         tools=tools,  # type: ignore[arg-type]
         context_provider=_provider(edge),
-        underlying_provider=_underlying_provider(edge),
-        activator=lambda context: activated.append(context) is None,
     )
 
     reply = asyncio.run(service.handle(_message("Press Arrow Down")))
     assert reply is not None
-    assert 'Pressed Arrow Down once in "Microsoft Edge"' in reply.text
-    assert activated == [edge]
+    assert "Pressed Arrow Down once" in reply.text
+    assert "Microsoft Edge" in reply.text
     assert len(tools.calls) == 1
     invocation, confirmed = tools.calls[0]
     assert invocation.tool_name == "press_safe_key"
@@ -172,21 +157,56 @@ def test_safe_key_activates_underlying_window_and_executes_once() -> None:
     assert confirmed is False
 
 
-def test_safe_key_refuses_if_underlying_window_cannot_be_activated() -> None:
+def test_pointer_target_beats_picture_in_picture_z_order(monkeypatch) -> None:
     screen = FakeScreen()
     tools = FakeTools()
-    edge = WindowContext(hwnd=404, title="Microsoft Edge")
+    fallback_calls: list[bool] = []
+
+    monkeypatch.setattr(
+        keyboard_module,
+        "window_at_cursor",
+        lambda *, exclude_hwnd=None: (303, "Microsoft Edge"),
+    )
+
+    def fallback(*, exclude_hwnd=None):
+        fallback_calls.append(True)
+        return (404, "Picture in Picture")
+
+    monkeypatch.setattr(keyboard_module, "top_visible_window", fallback)
+    monkeypatch.setattr(keyboard_module, "activate_window", lambda hwnd: hwnd == 303)
+
     service = KeyboardInteractionService(
         screen=screen,  # type: ignore[arg-type]
         tools=tools,  # type: ignore[arg-type]
-        context_provider=_provider(edge),
-        underlying_provider=_underlying_provider(edge),
-        activator=lambda _context: False,
     )
-
     reply = asyncio.run(service.handle(_message("Press Backspace")))
+
     assert reply is not None
-    assert "could not safely activate and verify" in reply.text
+    assert "Microsoft Edge" in reply.text
+    assert "Picture in Picture" not in reply.text
+    assert fallback_calls == []
+    assert len(tools.calls) == 1
+    assert tools.calls[0][0].tool_name == "press_safe_key"
+
+
+def test_safe_key_refuses_if_pointer_target_cannot_be_activated(monkeypatch) -> None:
+    screen = FakeScreen()
+    tools = FakeTools()
+    monkeypatch.setattr(
+        keyboard_module,
+        "window_at_cursor",
+        lambda *, exclude_hwnd=None: (303, "Microsoft Edge"),
+    )
+    monkeypatch.setattr(keyboard_module, "activate_window", lambda hwnd: False)
+
+    service = KeyboardInteractionService(
+        screen=screen,  # type: ignore[arg-type]
+        tools=tools,  # type: ignore[arg-type]
+    )
+    reply = asyncio.run(service.handle(_message("Press Backspace")))
+
+    assert reply is not None
+    assert "would not give keyboard focus" in reply.text
     assert tools.calls == []
 
 
