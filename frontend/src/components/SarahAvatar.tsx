@@ -532,7 +532,7 @@ export function SarahAvatar({
           THREE.MathUtils.lerp(-0.48, 0.48, travel01) * walkBlend;
 
         const walkBob =
-          Math.abs(Math.sin(walkPhase)) * 0.006 * walkBlend;
+          Math.abs(Math.sin(walkPhase)) * 0.004 * walkBlend;
         const breathingBob =
           Math.sin(elapsed * (speaking ? 2.0 : 1.05)) *
           (speaking ? 0.008 : 0.0035);
@@ -545,11 +545,11 @@ export function SarahAvatar({
           baseX + walkTravelX + 0.055 * floorSitBlend;
         avatarRoot.position.y =
           baseY -
-          0.40 * floorSitBlend +
+          0.67 * floorSitBlend +
           walkBob +
           breathingBob;
         avatarRoot.position.z =
-          baseZ - 0.025 * floorSitBlend;
+          baseZ - 0.055 * floorSitBlend;
         avatarRoot.rotation.y =
           baseYaw +
           idleYaw +
@@ -558,13 +558,13 @@ export function SarahAvatar({
         if (hipsBone) {
           hipsBone.rotation.x =
             hipsBaseRotation.x +
-            0.12 * floorSitBlend -
+            0.22 * floorSitBlend -
             0.025 * stretchBlend;
           hipsBone.rotation.y =
-            hipsBaseRotation.y - 0.10 * floorSitBlend;
+            hipsBaseRotation.y - 0.16 * floorSitBlend;
           hipsBone.rotation.z =
             hipsBaseRotation.z +
-            0.10 * floorSitBlend +
+            0.16 * floorSitBlend +
             Math.sin(elapsed * 0.48) *
               0.004 *
               (0.25 + 0.75 * (1 - attentionBlend));
@@ -574,13 +574,13 @@ export function SarahAvatar({
           chestBone.rotation.x =
             chestBaseRotation.x +
             Math.sin(elapsed * 1.45) * 0.010 -
-            0.025 * floorSitBlend -
+            0.015 * floorSitBlend -
             0.10 * stretchBlend;
           chestBone.rotation.y =
-            chestBaseRotation.y + 0.08 * floorSitBlend;
+            chestBaseRotation.y + 0.12 * floorSitBlend;
           chestBone.rotation.z =
             chestBaseRotation.z -
-            0.055 * floorSitBlend +
+            0.085 * floorSitBlend +
             Math.sin(elapsed * 0.55) *
               0.0045 *
               (0.30 + 0.70 * (1 - attentionBlend));
@@ -591,52 +591,52 @@ export function SarahAvatar({
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
-            legSwing * 0.20 * walkBlend +
-            0.82 * floorSitBlend;
+            legSwing * 0.15 * walkBlend +
+            1.08 * floorSitBlend;
           leftUpperLegBone.rotation.z =
             leftUpperLegBaseRotation.z -
-            0.48 * floorSitBlend;
+            0.78 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
-            oppositeLegSwing * 0.20 * walkBlend +
-            1.00 * floorSitBlend;
+            oppositeLegSwing * 0.15 * walkBlend +
+            0.86 * floorSitBlend;
           rightUpperLegBone.rotation.z =
             rightUpperLegBaseRotation.z -
-            0.28 * floorSitBlend;
+            0.58 * floorSitBlend;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
-            Math.max(0, -legSwing) * 0.20 * walkBlend -
-            1.18 * floorSitBlend;
+            Math.max(0, -legSwing) * 0.16 * walkBlend -
+            1.42 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z - 0.16 * floorSitBlend;
+            leftLowerLegBaseRotation.z - 0.34 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
-            Math.max(0, -oppositeLegSwing) * 0.20 * walkBlend -
-            1.30 * floorSitBlend;
+            Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend -
+            1.50 * floorSitBlend;
           rightLowerLegBone.rotation.z =
-            rightLowerLegBaseRotation.z - 0.22 * floorSitBlend;
+            rightLowerLegBaseRotation.z - 0.42 * floorSitBlend;
         }
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
-            legSwing * 0.05 * walkBlend +
-            0.48 * floorSitBlend;
+            legSwing * 0.04 * walkBlend +
+            0.72 * floorSitBlend;
           leftFootBone.rotation.z =
-            leftFootBaseRotation.z - 0.12 * floorSitBlend;
+            leftFootBaseRotation.z - 0.26 * floorSitBlend;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
-            oppositeLegSwing * 0.05 * walkBlend +
-            0.42 * floorSitBlend;
+            oppositeLegSwing * 0.04 * walkBlend +
+            0.66 * floorSitBlend;
           rightFootBone.rotation.z =
-            rightFootBaseRotation.z - 0.14 * floorSitBlend;
+            rightFootBaseRotation.z - 0.30 * floorSitBlend;
         }
 
         // Arms counter-swing while walking. In the side-sit, elbows bend and
@@ -644,8 +644,8 @@ export function SarahAvatar({
         if (leftUpperArmBone) {
           leftUpperArmBone.rotation.x =
             leftUpperArmBaseRotation.x +
-            oppositeLegSwing * 0.32 * walkBlend -
-            0.34 * floorSitBlend;
+            oppositeLegSwing * 0.42 * walkBlend -
+            0.46 * floorSitBlend;
           leftUpperArmBone.rotation.z =
             leftUpperArmBaseRotation.z -
             1.82 * stretchBlend -
@@ -654,8 +654,8 @@ export function SarahAvatar({
         if (rightUpperArmBone) {
           rightUpperArmBone.rotation.x =
             rightUpperArmBaseRotation.x +
-            legSwing * 0.32 * walkBlend -
-            0.34 * floorSitBlend;
+            legSwing * 0.42 * walkBlend -
+            0.46 * floorSitBlend;
           rightUpperArmBone.rotation.z =
             rightUpperArmBaseRotation.z +
             1.82 * stretchBlend +
@@ -664,7 +664,7 @@ export function SarahAvatar({
         if (leftLowerArmBone) {
           leftLowerArmBone.rotation.x =
             leftLowerArmBaseRotation.x -
-            0.78 * floorSitBlend -
+            0.92 * floorSitBlend -
             0.20 * stretchBlend;
           leftLowerArmBone.rotation.z =
             leftLowerArmBaseRotation.z +
@@ -674,7 +674,7 @@ export function SarahAvatar({
         if (rightLowerArmBone) {
           rightLowerArmBone.rotation.x =
             rightLowerArmBaseRotation.x -
-            0.78 * floorSitBlend -
+            0.92 * floorSitBlend -
             0.20 * stretchBlend;
           rightLowerArmBone.rotation.z =
             rightLowerArmBaseRotation.z -
