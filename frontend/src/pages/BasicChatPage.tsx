@@ -1,4 +1,5 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
+import { MarkdownMessage } from "../components/MarkdownMessage";
 import { SarahAvatar } from "../components/SarahAvatar";
 import { fetchAssistantState, sendAssistantMessage } from "../lib/api";
 
@@ -171,7 +172,13 @@ export function BasicChatPage() {
                       ? "Sarah"
                       : "System"}
                 </strong>
-                <div style={styles.messageText}>{message.content}</div>
+                <div style={styles.messageText}>
+                  {message.role === "assistant" ? (
+                    <MarkdownMessage content={message.content} />
+                  ) : (
+                    message.content
+                  )}
+                </div>
               </article>
             ))}
             <div ref={endRef} />
