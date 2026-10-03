@@ -8,10 +8,12 @@ type SarahAvatarProps = {
   mood?: string;
   replySignal?: number;
   faceTestSignal?: number;
+  attentionSignal?: number;
 };
 
 type LoadState = "loading" | "ready" | "missing" | "error";
 type AvatarViewMode = "full" | "face";
+type IdleActivity = "stand" | "walk" | "sit";
 
 const MIN_AVATAR_ZOOM = 1;
 const MAX_AVATAR_ZOOM = 3.2;
@@ -58,11 +60,13 @@ export function SarahAvatar({
   mood = "neutral",
   replySignal = 0,
   faceTestSignal = 0,
+  attentionSignal = 0,
 }: SarahAvatarProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const statusRef = useRef(status);
   const moodRef = useRef(mood);
   const replyPulseStartedAtRef = useRef<number | null>(null);
+  const attentionUntilRef = useRef(0);
   const zoomRef = useRef(1);
   const viewModeRef = useRef<AvatarViewMode>("full");
   const frameAvatarRef = useRef<(() => void) | null>(null);
@@ -83,6 +87,12 @@ export function SarahAvatar({
       replyPulseStartedAtRef.current = performance.now();
     }
   }, [replySignal]);
+
+  useEffect(() => {
+    if (attentionSignal > 0) {
+      attentionUntilRef.current = performance.now() + 6500;
+    }
+  }, [attentionSignal]);
 
   const applyZoom = (nextZoom: number) => {
     const clamped = THREE.MathUtils.clamp(
@@ -109,6 +119,7 @@ export function SarahAvatar({
 
   useEffect(() => {
     if (faceTestSignal <= 0) return;
+    attentionUntilRef.current = performance.now() + 20000;
     viewModeRef.current = "face";
     zoomRef.current = 1;
     setViewMode("face");
@@ -160,20 +171,73 @@ export function SarahAvatar({
     floor.receiveShadow = true;
     scene.add(floor);
 
+    const stoolMaterial = new THREE.MeshStandardMaterial({
+      color: 0x1c2533,
+      roughness: 0.78,
+      metalness: 0.12,
+    });
+    const stoolGroup = new THREE.Group();
+    const stoolSeat = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.28, 0.28, 0.07, 32),
+      stoolMaterial,
+    );
+    stoolSeat.position.set(0, 0.50, -0.02);
+    stoolSeat.castShadow = true;
+    stoolSeat.receiveShadow = true;
+    stoolGroup.add(stoolSeat);
+    for (const x of [-0.18, 0.18]) {
+      for (const z of [-0.14, 0.14]) {
+        const leg = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.018, 0.022, 0.48, 12),
+          stoolMaterial,
+        );
+        leg.position.set(x, 0.25, z - 0.02);
+        leg.castShadow = true;
+        leg.receiveShadow = true;
+        stoolGroup.add(leg);
+      }
+    }
+    stoolGroup.visible = false;
+    scene.add(stoolGroup);
+
     const clock = new THREE.Clock();
     let vrm: VRM | null = null;
     let avatarRoot: THREE.Object3D | null = null;
+    let baseX = 0;
     let baseY = 0;
+    let baseZ = 0;
     const baseYaw = Math.PI;
     let animationFrame = 0;
     let headBone: THREE.Object3D | null = null;
     let neckBone: THREE.Object3D | null = null;
     let chestBone: THREE.Object3D | null = null;
     let hipsBone: THREE.Object3D | null = null;
+    let leftUpperArmBone: THREE.Object3D | null = null;
+    let rightUpperArmBone: THREE.Object3D | null = null;
+    let leftLowerArmBone: THREE.Object3D | null = null;
+    let rightLowerArmBone: THREE.Object3D | null = null;
+    let leftUpperLegBone: THREE.Object3D | null = null;
+    let rightUpperLegBone: THREE.Object3D | null = null;
+    let leftLowerLegBone: THREE.Object3D | null = null;
+    let rightLowerLegBone: THREE.Object3D | null = null;
     let headBaseRotation = new THREE.Euler();
     let neckBaseRotation = new THREE.Euler();
     let chestBaseRotation = new THREE.Euler();
     let hipsBaseRotation = new THREE.Euler();
+    let leftUpperArmBaseRotation = new THREE.Euler();
+    let rightUpperArmBaseRotation = new THREE.Euler();
+    let leftLowerArmBaseRotation = new THREE.Euler();
+    let rightLowerArmBaseRotation = new THREE.Euler();
+    let leftUpperLegBaseRotation = new THREE.Euler();
+    let rightUpperLegBaseRotation = new THREE.Euler();
+    let leftLowerLegBaseRotation = new THREE.Euler();
+    let rightLowerLegBaseRotation = new THREE.Euler();
+
+    let idleActivity: IdleActivity = "stand";
+    let nextIdleActivityAt = 7.5;
+    let walkBlend = 0;
+    let sitBlend = 0;
+    let attentionBlend = 1;
 
     let nextBlinkAt = 2.5;
     let blinkStartedAt = -1;
@@ -243,6 +307,14 @@ export function SarahAvatar({
           normalizedBone(vrm, "upperChest") ??
           normalizedBone(vrm, "chest");
         hipsBone = normalizedBone(vrm, "hips");
+        leftUpperArmBone = normalizedBone(vrm, "leftUpperArm");
+        rightUpperArmBone = normalizedBone(vrm, "rightUpperArm");
+        leftLowerArmBone = normalizedBone(vrm, "leftLowerArm");
+        rightLowerArmBone = normalizedBone(vrm, "rightLowerArm");
+        leftUpperLegBone = normalizedBone(vrm, "leftUpperLeg");
+        rightUpperLegBone = normalizedBone(vrm, "rightUpperLeg");
+        leftLowerLegBone = normalizedBone(vrm, "leftLowerLeg");
+        rightLowerLegBone = normalizedBone(vrm, "rightLowerLeg");
 
         if (headBone) {
           headBaseRotation = headBone.rotation.clone();
@@ -255,6 +327,30 @@ export function SarahAvatar({
         }
         if (hipsBone) {
           hipsBaseRotation = hipsBone.rotation.clone();
+        }
+        if (leftUpperArmBone) {
+          leftUpperArmBaseRotation = leftUpperArmBone.rotation.clone();
+        }
+        if (rightUpperArmBone) {
+          rightUpperArmBaseRotation = rightUpperArmBone.rotation.clone();
+        }
+        if (leftLowerArmBone) {
+          leftLowerArmBaseRotation = leftLowerArmBone.rotation.clone();
+        }
+        if (rightLowerArmBone) {
+          rightLowerArmBaseRotation = rightLowerArmBone.rotation.clone();
+        }
+        if (leftUpperLegBone) {
+          leftUpperLegBaseRotation = leftUpperLegBone.rotation.clone();
+        }
+        if (rightUpperLegBone) {
+          rightUpperLegBaseRotation = rightUpperLegBone.rotation.clone();
+        }
+        if (leftLowerLegBone) {
+          leftLowerLegBaseRotation = leftLowerLegBone.rotation.clone();
+        }
+        if (rightLowerLegBone) {
+          rightLowerLegBaseRotation = rightLowerLegBone.rotation.clone();
         }
 
         nextBlinkAt = 2.2 + Math.random() * 1.8;
@@ -280,7 +376,9 @@ export function SarahAvatar({
         avatarRoot.position.x -= center.x;
         avatarRoot.position.z -= center.z;
         avatarRoot.position.y -= fittedBox.min.y;
+        baseX = avatarRoot.position.x;
         baseY = avatarRoot.position.y;
+        baseZ = avatarRoot.position.z;
 
         scene.add(avatarRoot);
         frameAvatar();
@@ -345,6 +443,57 @@ export function SarahAvatar({
           normalizedMood.includes("relax") ||
           normalizedMood.includes("calm");
 
+        const interactionActive =
+          thinking ||
+          speaking ||
+          performance.now() < attentionUntilRef.current;
+
+        if (interactionActive) {
+          idleActivity = "stand";
+          nextIdleActivityAt = elapsed + 7.0;
+        } else if (elapsed >= nextIdleActivityAt) {
+          if (idleActivity === "stand") {
+            idleActivity = Math.random() < 0.56 ? "walk" : "sit";
+          } else {
+            idleActivity = "stand";
+          }
+
+          const duration =
+            idleActivity === "walk"
+              ? 7 + Math.random() * 4
+              : idleActivity === "sit"
+                ? 10 + Math.random() * 6
+                : 6 + Math.random() * 5;
+          nextIdleActivityAt = elapsed + duration;
+        }
+
+        const smoothValue = (
+          current: number,
+          target: number,
+          speed: number,
+        ) =>
+          THREE.MathUtils.lerp(
+            current,
+            target,
+            1 - Math.exp(-speed * delta),
+          );
+
+        attentionBlend = smoothValue(
+          attentionBlend,
+          interactionActive ? 1 : 0,
+          5.5,
+        );
+        walkBlend = smoothValue(
+          walkBlend,
+          !interactionActive && idleActivity === "walk" ? 1 : 0,
+          2.8,
+        );
+        sitBlend = smoothValue(
+          sitBlend,
+          !interactionActive && idleActivity === "sit" ? 1 : 0,
+          2.5,
+        );
+
         const pulseStarted = replyPulseStartedAtRef.current;
         const replyAge =
           pulseStarted == null
@@ -354,25 +503,98 @@ export function SarahAvatar({
         const replyFalloff = replySettling ? Math.max(0, 1 - replyAge / 2.2) : 0;
 
         // Display-only procedural presence. This never reads or controls the desktop.
+        const walkPhase = elapsed * 4.4;
+        const paceOffsetX = Math.sin(elapsed * 0.72) * 0.16 * walkBlend;
+        const walkBob =
+          Math.abs(Math.sin(walkPhase)) * 0.012 * walkBlend;
+        const breathingBob =
+          Math.sin(elapsed * (speaking ? 2.0 : 1.05)) *
+          (speaking ? 0.008 : 0.0035);
+        const idleYaw =
+          Math.sin(elapsed * (thinking ? 0.55 : 0.3)) *
+          (thinking ? 0.045 : 0.018) *
+          (0.20 + 0.80 * (1 - attentionBlend));
+
+        avatarRoot.position.x = baseX + paceOffsetX;
+        avatarRoot.position.y =
+          baseY -
+          0.34 * sitBlend +
+          walkBob +
+          breathingBob;
+        avatarRoot.position.z = baseZ;
         avatarRoot.rotation.y =
           baseYaw +
-          Math.sin(elapsed * (thinking ? 0.55 : 0.3)) *
-            (thinking ? 0.045 : 0.018);
-        avatarRoot.position.y =
-          baseY +
-          Math.sin(elapsed * (speaking ? 2.0 : 1.05)) *
-            (speaking ? 0.008 : 0.0035);
+          idleYaw +
+          Math.sin(elapsed * 0.72) * 0.06 * walkBlend;
+
+        stoolGroup.visible = sitBlend > 0.08;
 
         if (hipsBone) {
+          hipsBone.rotation.x =
+            hipsBaseRotation.x + 0.08 * sitBlend;
           hipsBone.rotation.z =
-            hipsBaseRotation.z + Math.sin(elapsed * 0.48) * 0.004;
+            hipsBaseRotation.z +
+            Math.sin(elapsed * 0.48) *
+              0.004 *
+              (0.25 + 0.75 * (1 - attentionBlend));
         }
 
         if (chestBone) {
           chestBone.rotation.x =
-            chestBaseRotation.x + Math.sin(elapsed * 1.45) * 0.010;
+            chestBaseRotation.x +
+            Math.sin(elapsed * 1.45) * 0.010 -
+            0.055 * sitBlend;
           chestBone.rotation.z =
-            chestBaseRotation.z + Math.sin(elapsed * 0.55) * 0.0045;
+            chestBaseRotation.z +
+            Math.sin(elapsed * 0.55) *
+              0.0045 *
+              (0.30 + 0.70 * (1 - attentionBlend));
+        }
+
+        if (leftUpperLegBone) {
+          leftUpperLegBone.rotation.x =
+            leftUpperLegBaseRotation.x +
+            Math.sin(walkPhase) * 0.24 * walkBlend +
+            0.92 * sitBlend;
+        }
+        if (rightUpperLegBone) {
+          rightUpperLegBone.rotation.x =
+            rightUpperLegBaseRotation.x -
+            Math.sin(walkPhase) * 0.24 * walkBlend +
+            0.92 * sitBlend;
+        }
+        if (leftLowerLegBone) {
+          leftLowerLegBone.rotation.x =
+            leftLowerLegBaseRotation.x -
+            Math.max(0, -Math.sin(walkPhase)) * 0.34 * walkBlend -
+            1.08 * sitBlend;
+        }
+        if (rightLowerLegBone) {
+          rightLowerLegBone.rotation.x =
+            rightLowerLegBaseRotation.x -
+            Math.max(0, Math.sin(walkPhase)) * 0.34 * walkBlend -
+            1.08 * sitBlend;
+        }
+
+        if (leftUpperArmBone) {
+          leftUpperArmBone.rotation.x =
+            leftUpperArmBaseRotation.x -
+            Math.sin(walkPhase) * 0.17 * walkBlend -
+            0.12 * sitBlend;
+        }
+        if (rightUpperArmBone) {
+          rightUpperArmBone.rotation.x =
+            rightUpperArmBaseRotation.x +
+            Math.sin(walkPhase) * 0.17 * walkBlend -
+            0.12 * sitBlend;
+        }
+        if (leftLowerArmBone) {
+          leftLowerArmBone.rotation.x =
+            leftLowerArmBaseRotation.x - 0.34 * sitBlend;
+        }
+        if (rightLowerArmBone) {
+          rightLowerArmBone.rotation.x =
+            rightLowerArmBaseRotation.x - 0.34 * sitBlend;
         }
 
         const moodHeadPitch = sadMood
@@ -408,7 +630,10 @@ export function SarahAvatar({
           neckBone.rotation.x =
             neckBaseRotation.x + moodNeckPitch;
           neckBone.rotation.y =
-            neckBaseRotation.y + Math.sin(elapsed * 0.37) * 0.010;
+            neckBaseRotation.y +
+            Math.sin(elapsed * 0.37) *
+              0.010 *
+              (0.15 + 0.85 * (1 - attentionBlend));
           neckBone.rotation.z =
             neckBaseRotation.z +
             Math.sin(elapsed * 0.31) * 0.005 +
@@ -426,11 +651,16 @@ export function SarahAvatar({
             replyNod +
             moodHeadPitch;
           headBone.rotation.y =
-            headBaseRotation.y + Math.sin(elapsed * 0.29) * 0.009;
+            headBaseRotation.y +
+            Math.sin(elapsed * 0.29) *
+              0.009 *
+              (0.12 + 0.88 * (1 - attentionBlend));
           headBone.rotation.z =
             headBaseRotation.z +
-            Math.sin(elapsed * 0.42) * 0.012 +
-            (thinking ? 0.035 : 0) +
+            Math.sin(elapsed * 0.42) *
+              0.012 *
+              (0.15 + 0.85 * (1 - attentionBlend)) +
+            (thinking ? 0.018 : 0) +
             moodHeadRoll;
         }
 
@@ -500,21 +730,18 @@ export function SarahAvatar({
               ? 0.16
               : 0;
 
-          const smooth = (current: number, target: number, speed: number) =>
-            THREE.MathUtils.lerp(
-              current,
-              target,
-              1 - Math.exp(-speed * delta),
-            );
-
-          blinkWeight = smooth(blinkWeight, blinkTarget, 30);
-          aaWeight = smooth(aaWeight, mouthAaTarget, 18);
-          ohWeight = smooth(ohWeight, mouthOhTarget, 16);
-          happyWeight = smooth(happyWeight, happyTarget, 7);
-          relaxedWeight = smooth(relaxedWeight, relaxedTarget, 6);
-          sadWeight = smooth(sadWeight, sadTarget, 7);
-          angryWeight = smooth(angryWeight, angryTarget, 7);
-          surprisedWeight = smooth(surprisedWeight, surprisedTarget, 8);
+          blinkWeight = smoothValue(blinkWeight, blinkTarget, 30);
+          aaWeight = smoothValue(aaWeight, mouthAaTarget, 18);
+          ohWeight = smoothValue(ohWeight, mouthOhTarget, 16);
+          happyWeight = smoothValue(happyWeight, happyTarget, 7);
+          relaxedWeight = smoothValue(relaxedWeight, relaxedTarget, 6);
+          sadWeight = smoothValue(sadWeight, sadTarget, 7);
+          angryWeight = smoothValue(angryWeight, angryTarget, 7);
+          surprisedWeight = smoothValue(
+            surprisedWeight,
+            surprisedTarget,
+            8,
+          );
 
           expressions.setValue("blink", blinkWeight);
           expressions.setValue("aa", aaWeight);
