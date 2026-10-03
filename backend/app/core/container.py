@@ -21,11 +21,8 @@ from app.safety.moderation import ModerationService
 from app.safety.response_policy import ResponsePolicy
 from app.services.chat_ingestion import AssistantIntakeService
 from app.services.dialogue_engine import DialogueEngine
-from app.services.keyboard_interaction import KeyboardInteractionService
 from app.services.page_fetcher import PageFetcher
 from app.services.safe_identity_service import SafeIdentityService
-from app.services.screen_awareness import ScreenAwarenessService
-from app.services.visual_interaction_verified import VerifiedVisualInteractionService
 from app.services.voice_service import VoiceService
 from app.services.web_search_service import WebSearchService
 
@@ -215,12 +212,6 @@ def provider_status() -> dict[str, dict[str, str]]:
             "mode": (web_selection.mode if web_selection else "disabled"),
             "reason": (web_selection.reason if web_selection else "Not initialized"),
         },
-        "screen_vision": {
-            "requested": settings.local_vision_model,
-            "active": settings.local_vision_model if settings.screen_awareness_enabled else "disabled",
-            "mode": "local" if settings.screen_awareness_enabled else "disabled",
-            "reason": "Explicit ephemeral screen inspection" if settings.screen_awareness_enabled else "Disabled in settings",
-        },
     }
 
 
@@ -232,16 +223,6 @@ agent_runtime.tools.register_many(memory_tools(memory_learning_service))
 moderation_service = ModerationService()
 response_policy = ResponsePolicy()
 voice_service = VoiceService(stt_client=build_stt_client())
-screen_awareness_service = ScreenAwarenessService(permission_policy=agent_runtime.permissions)
-visual_interaction_service = VerifiedVisualInteractionService(
-    screen=screen_awareness_service,
-    tools=agent_runtime.tools,
-)
-keyboard_interaction_service = KeyboardInteractionService(
-    screen=screen_awareness_service,
-    tools=agent_runtime.tools,
-)
-
 web_search_service = WebSearchService(
     provider=build_web_provider(),
     max_results=settings.web_search_max_results,
@@ -268,7 +249,4 @@ stream_orchestrator = StreamOrchestrator(
     response_policy=response_policy,
     identity_service=identity_service,
     memory_learning_service=memory_learning_service,
-    screen_awareness_service=screen_awareness_service,
-    visual_interaction_service=visual_interaction_service,
-    keyboard_interaction_service=keyboard_interaction_service,
 )
