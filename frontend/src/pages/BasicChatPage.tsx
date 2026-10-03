@@ -3,6 +3,7 @@ import { MarkdownMessage } from "../components/MarkdownMessage";
 import { SarahAvatar } from "../components/SarahAvatar";
 import { fetchAssistantState, sendAssistantMessage } from "../lib/api";
 import {
+  emotionFromEmoji,
   localSpeechSupported,
   speakSarahReply,
   stopLocalSpeech,
@@ -47,8 +48,9 @@ export function BasicChatPage() {
         const state = await fetchAssistantState();
         if (!cancelled) {
           setStatus(state.assistant_state || "Online");
-          if (state.latest_reply_emotion) {
-            setAvatarMood(state.latest_reply_emotion);
+          const emojiMood = emotionFromEmoji(state.latest_reply || "");
+          if (emojiMood || state.latest_reply_emotion) {
+            setAvatarMood(emojiMood || state.latest_reply_emotion || "neutral");
           }
         }
       } catch {
@@ -123,7 +125,11 @@ export function BasicChatPage() {
 
         if (state.latest_reply && state.latest_reply !== previousReply) {
           reply = state.latest_reply;
-          setAvatarMood(state.latest_reply_emotion || "neutral");
+          setAvatarMood(
+            emotionFromEmoji(state.latest_reply) ||
+              state.latest_reply_emotion ||
+              "neutral",
+          );
           setReplySignal((current) => current + 1);
           break;
         }
