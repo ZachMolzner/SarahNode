@@ -99,6 +99,13 @@ export function SarahAvatar({
 
   useEffect(() => {
     motionTestModeRef.current = motionTestMode;
+    if (motionTestMode) {
+      viewModeRef.current = "full";
+      zoomRef.current = 1;
+      setViewMode("full");
+      setZoom(1);
+      window.requestAnimationFrame(() => frameAvatarRef.current?.());
+    }
   }, [motionTestMode]);
 
   const applyZoom = (nextZoom: number) => {
