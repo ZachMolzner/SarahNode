@@ -100,6 +100,12 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     let baseY = 0;
     const baseYaw = Math.PI;
     let animationFrame = 0;
+    let headBone: THREE.Object3D | null = null;
+    let chestBone: THREE.Object3D | null = null;
+    let headBaseRotation = new THREE.Euler();
+    let chestBaseRotation = new THREE.Euler();
+    let nextBlinkAt = 2.5;
+    let blinkStartedAt = -1;
 
     const frameAvatar = () => {
       if (!avatarRoot) return;
@@ -142,6 +148,20 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
         vrm = loadedVrm;
         VRMUtils.rotateVRM0(vrm);
         applyRelaxedPose(vrm);
+
+        headBone = normalizedBone(vrm, "head");
+        chestBone =
+          normalizedBone(vrm, "upperChest") ??
+          normalizedBone(vrm, "chest");
+
+        if (headBone) {
+          headBaseRotation = headBone.rotation.clone();
+        }
+        if (chestBone) {
+          chestBaseRotation = chestBone.rotation.clone();
+        }
+
+        nextBlinkAt = 2.2 + Math.random() * 1.8;
 
         avatarRoot = vrm.scene;
         avatarRoot.rotation.y = baseYaw;
@@ -197,6 +217,8 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
         const thinking =
           normalizedStatus.includes("think") || normalizedStatus.includes("work");
         const speaking = normalizedStatus.includes("speak");
+        const unavailable =
+          normalizedStatus.includes("offline") || normalizedStatus.includes("error");
 
         // Display-only procedural presence. This never reads or controls the desktop.
         avatarRoot.rotation.y =
@@ -205,8 +227,59 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
             (thinking ? 0.045 : 0.018);
         avatarRoot.position.y =
           baseY +
-          Math.sin(elapsed * (speaking ? 2.0 : 1.1)) *
-            (speaking ? 0.008 : 0.004);
+          Math.sin(elapsed * (speaking ? 2.0 : 1.05)) *
+            (speaking ? 0.008 : 0.0035);
+
+        if (chestBone) {
+          chestBone.rotation.x =
+            chestBaseRotation.x + Math.sin(elapsed * 1.45) * 0.009;
+          chestBone.rotation.z =
+            chestBaseRotation.z + Math.sin(elapsed * 0.55) * 0.004;
+        }
+
+        if (headBone) {
+          headBone.rotation.x =
+            headBaseRotation.x + Math.sin(elapsed * 0.72) * 0.006;
+          headBone.rotation.z =
+            headBaseRotation.z +
+            Math.sin(elapsed * 0.42) * 0.012 +
+            (thinking ? 0.035 : 0);
+        }
+
+        const expressions = vrm.expressionManager;
+        if (expressions) {
+          if (blinkStartedAt < 0 && elapsed >= nextBlinkAt) {
+            blinkStartedAt = elapsed;
+          }
+
+          let blinkValue = 0;
+          if (blinkStartedAt >= 0) {
+            const blinkProgress = (elapsed - blinkStartedAt) / 0.18;
+            if (blinkProgress < 0.45) {
+              blinkValue = Math.min(1, blinkProgress / 0.45);
+            } else if (blinkProgress < 1) {
+              blinkValue = Math.max(0, (1 - blinkProgress) / 0.55);
+            } else {
+              blinkStartedAt = -1;
+              nextBlinkAt = elapsed + 3.0 + Math.random() * 3.2;
+            }
+          }
+          expressions.setValue("blink", blinkValue);
+
+          const mouthWave = speaking
+            ? 0.18 + (0.5 + 0.5 * Math.sin(elapsed * 11.5)) * 0.48
+            : 0;
+          expressions.setValue("aa", mouthWave);
+          expressions.setValue(
+            "oh",
+            speaking
+              ? (0.5 + 0.5 * Math.sin(elapsed * 7.3 + 1.1)) * 0.16
+              : 0,
+          );
+
+          expressions.setValue("relaxed", thinking ? 0.12 : 0.035);
+          expressions.setValue("sad", unavailable ? 0.10 : 0);
+        }
 
         vrm.update(delta);
       }
