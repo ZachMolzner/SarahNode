@@ -700,24 +700,24 @@ export function SarahAvatar({
         }
 
         // Floor-sit reference, tuned from the side view. Keep the pelvis
-        // grounded and bring both thighs forward enough that the knees stay
-        // above the stage. The left leg extends low/forward; the right knee
-        // comes high toward the torso and its shin folds back down.
+        // grounded. With MANUKA's thighs rotated forward (negative local X),
+        // the knee must also bend negative to fold the shin back toward the body;
+        // positive knee bends were sending both boots below the stage.
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
             legSwing * 0.15 * walkBlend -
-            1.52 * floorSitBlend;
+            1.38 * floorSitBlend;
           leftUpperLegBone.rotation.y =
             leftUpperLegBaseRotation.y + 0.03 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.16 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.18 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
             oppositeLegSwing * 0.15 * walkBlend -
-            1.94 * floorSitBlend;
+            1.72 * floorSitBlend;
           rightUpperLegBone.rotation.y =
             rightUpperLegBaseRotation.y - 0.02 * floorSitBlend;
           rightUpperLegBone.rotation.z =
@@ -726,8 +726,8 @@ export function SarahAvatar({
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
-            Math.max(0, -legSwing) * 0.16 * walkBlend +
-            0.08 * floorSitBlend;
+            Math.max(0, -legSwing) * 0.16 * walkBlend -
+            0.22 * floorSitBlend;
           leftLowerLegBone.rotation.y =
             leftLowerLegBaseRotation.y + 0.01 * floorSitBlend;
           leftLowerLegBone.rotation.z =
@@ -736,8 +736,8 @@ export function SarahAvatar({
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
-            Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend +
-            1.34 * floorSitBlend;
+            Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend -
+            1.18 * floorSitBlend;
           rightLowerLegBone.rotation.y =
             rightLowerLegBaseRotation.y - 0.03 * floorSitBlend;
           rightLowerLegBone.rotation.z =
@@ -746,8 +746,8 @@ export function SarahAvatar({
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
-            legSwing * 0.04 * walkBlend -
-            0.04 * floorSitBlend;
+            legSwing * 0.04 * walkBlend +
+            0.16 * floorSitBlend;
           leftFootBone.rotation.y =
             leftFootBaseRotation.y + 0.03 * floorSitBlend;
           leftFootBone.rotation.z =
@@ -756,8 +756,8 @@ export function SarahAvatar({
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
-            oppositeLegSwing * 0.04 * walkBlend -
-            0.18 * floorSitBlend;
+            oppositeLegSwing * 0.04 * walkBlend +
+            0.28 * floorSitBlend;
           rightFootBone.rotation.y =
             rightFootBaseRotation.y - 0.04 * floorSitBlend;
           rightFootBone.rotation.z =
