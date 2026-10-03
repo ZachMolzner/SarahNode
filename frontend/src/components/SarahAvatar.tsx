@@ -3,10 +3,13 @@ import * as THREE from "three";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
+export type SarahAppearance = "default" | "casual" | "sexy" | "underwear";
+
 type SarahAvatarProps = {
   status: string;
   mood?: string;
   replySignal?: number;
+  appearance?: SarahAppearance;
 };
 
 type LoadState = "loading" | "ready" | "missing" | "error";
@@ -51,10 +54,12 @@ export function SarahAvatar({
   status,
   mood = "neutral",
   replySignal = 0,
+  appearance = "default",
 }: SarahAvatarProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const statusRef = useRef(status);
   const moodRef = useRef(mood);
+  const appearanceRef = useRef<SarahAppearance>(appearance);
   const replyPulseStartedAtRef = useRef<number | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
 
@@ -67,10 +72,19 @@ export function SarahAvatar({
   }, [mood]);
 
   useEffect(() => {
+    appearanceRef.current = appearance;
+  }, [appearance]);
+
+  useEffect(() => {
     if (replySignal > 0) {
       replyPulseStartedAtRef.current = performance.now();
     }
   }, [replySignal]);
+
+  const modelUrl =
+    appearance === "underwear"
+      ? "/models/sarah-underwear.vrm"
+      : "/models/sarah.vrm";
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -137,6 +151,38 @@ export function SarahAvatar({
     let happyWeight = 0;
     let relaxedWeight = 0;
     let sadWeight = 0;
+    let appliedAppearance: SarahAppearance | null = null;
+    const wearableMeshes = new Map<string, THREE.Object3D>();
+
+    const applyAppearance = (nextAppearance: SarahAppearance) => {
+      if (nextAppearance === "underwear") {
+        // The underwear profile is a separate VRM export, so its meshes stay as-authored.
+        appliedAppearance = nextAppearance;
+        return;
+      }
+
+      const visibility: Record<string, boolean> = {
+        Manuka_costume_apron: nextAppearance === "default",
+        Manuka_costume_apron_nameplate: nextAppearance === "default",
+        Manuka_costume_tie: nextAppearance !== "casual" && nextAppearance !== "sexy",
+        Manuka_costume_bracelet: true,
+        Manuka_costume_shirt: true,
+        Manuka_costume_shoes: true,
+        Manuka_costume_shorts: true,
+        Manuka_underwear_stocking: true,
+        Manuka_kemono_ear: true,
+        Manuka_kemono_tail: true,
+      };
+
+      for (const [name, node] of wearableMeshes.entries()) {
+        const visible = visibility[name];
+        if (typeof visible === "boolean") {
+          node.visible = visible;
+        }
+      }
+
+      appliedAppearance = nextAppearance;
+    };
 
     const frameAvatar = () => {
       if (!avatarRoot) return;
@@ -168,7 +214,7 @@ export function SarahAvatar({
     loader.register((parser) => new VRMLoaderPlugin(parser));
 
     loader.load(
-      "/models/sarah.vrm",
+      modelUrl,
       (gltf) => {
         const loadedVrm = gltf.userData.vrm as VRM | undefined;
         if (!loadedVrm) {
@@ -210,8 +256,18 @@ export function SarahAvatar({
             node.castShadow = true;
             node.receiveShadow = true;
             node.frustumCulled = false;
+
+            if (
+              node.name.startsWith("Manuka_costume_") ||
+              node.name.startsWith("Manuka_underwear_") ||
+              node.name.startsWith("Manuka_kemono_")
+            ) {
+              wearableMeshes.set(node.name, node);
+            }
           }
         });
+
+        applyAppearance(appearanceRef.current);
 
         const initialBox = new THREE.Box3().setFromObject(avatarRoot);
         const initialSize = initialBox.getSize(new THREE.Vector3());
@@ -252,6 +308,11 @@ export function SarahAvatar({
       const elapsed = clock.elapsedTime;
 
       if (vrm && avatarRoot) {
+        if (appliedAppearance !== appearanceRef.current) {
+          applyAppearance(appearanceRef.current);
+          frameAvatar();
+        }
+
         const normalizedStatus = statusRef.current.toLowerCase();
         const normalizedMood = moodRef.current.toLowerCase();
         const thinking =
@@ -415,13 +476,15 @@ export function SarahAvatar({
       renderer.dispose();
       renderer.domElement.remove();
     };
-  }, []);
+  }, [modelUrl]);
 
   const fallbackText =
     loadState === "loading"
       ? "Loading Sarah's MANUKA model..."
       : loadState === "missing"
-        ? "Place MANUKA.vrm at frontend/public/models/sarah.vrm to display Sarah."
+        ? appearance === "underwear"
+          ? "Underwear profile is not installed yet. Export the underwear version as frontend/public/models/sarah-underwear.vrm."
+          : "Place MANUKA.vrm at frontend/public/models/sarah.vrm to display Sarah."
         : "The avatar file loaded, but it was not recognized as a VRM model.";
 
   return (
