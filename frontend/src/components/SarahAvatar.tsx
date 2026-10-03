@@ -641,67 +641,68 @@ export function SarahAvatar({
               (0.30 + 0.70 * (1 - attentionBlend));
         }
 
-        // Reference-style floor sit: the left leg forms the raised knee
-        // close to the body, while the right leg reaches diagonally along the floor.
+        // Compact side-sit: both thighs sweep toward the same side while the
+        // calves fold back toward the hips. A small left/right offset keeps the
+        // knees and boots from stacking on top of each other.
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
             legSwing * 0.15 * walkBlend +
-            0.88 * floorSitBlend;
+            1.02 * floorSitBlend;
           leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y + 0.12 * floorSitBlend;
+            leftUpperLegBaseRotation.y + 0.08 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.16 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.34 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
             oppositeLegSwing * 0.15 * walkBlend +
-            1.30 * floorSitBlend;
+            1.18 * floorSitBlend;
           rightUpperLegBone.rotation.y =
-            rightUpperLegBaseRotation.y - 0.06 * floorSitBlend;
+            rightUpperLegBaseRotation.y + 0.02 * floorSitBlend;
           rightUpperLegBone.rotation.z =
-            rightUpperLegBaseRotation.z - 0.58 * floorSitBlend;
+            rightUpperLegBaseRotation.z + 0.28 * floorSitBlend;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend +
-            0.48 * floorSitBlend;
+            0.92 * floorSitBlend;
           leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y + 0.12 * floorSitBlend;
+            leftLowerLegBaseRotation.y + 0.06 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z + 0.14 * floorSitBlend;
+            leftLowerLegBaseRotation.z + 0.18 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
             Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend +
-            0.04 * floorSitBlend;
+            0.72 * floorSitBlend;
           rightLowerLegBone.rotation.y =
-            rightLowerLegBaseRotation.y - 0.04 * floorSitBlend;
+            rightLowerLegBaseRotation.y + 0.04 * floorSitBlend;
           rightLowerLegBone.rotation.z =
-            rightLowerLegBaseRotation.z - 0.03 * floorSitBlend;
+            rightLowerLegBaseRotation.z + 0.12 * floorSitBlend;
         }
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
             legSwing * 0.04 * walkBlend -
-            0.08 * floorSitBlend;
+            0.24 * floorSitBlend;
           leftFootBone.rotation.y =
-            leftFootBaseRotation.y + 0.10 * floorSitBlend;
+            leftFootBaseRotation.y + 0.02 * floorSitBlend;
           leftFootBone.rotation.z =
-            leftFootBaseRotation.z + 0.12 * floorSitBlend;
+            leftFootBaseRotation.z + 0.06 * floorSitBlend;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
             oppositeLegSwing * 0.04 * walkBlend -
-            0.38 * floorSitBlend;
+            0.26 * floorSitBlend;
           rightFootBone.rotation.y =
-            rightFootBaseRotation.y - 0.06 * floorSitBlend;
+            rightFootBaseRotation.y + 0.00 * floorSitBlend;
           rightFootBone.rotation.z =
-            rightFootBaseRotation.z - 0.14 * floorSitBlend;
+            rightFootBaseRotation.z + 0.04 * floorSitBlend;
         }
 
         // Arms counter-swing while walking. During the floor sit, upper
@@ -954,12 +955,13 @@ export function SarahAvatar({
             .applyQuaternion(baseWorldQuaternion)
             .normalize();
 
-          // Curl the tail down and off Sarah's left side, slightly behind her,
-          // so it rests beside the seated pose instead of passing through the floor.
+          // Keep the tail mostly behind Sarah with only a modest sideways sweep.
+          // This keeps the fluffy mass close to the seated silhouette instead of
+          // stretching straight across the stage.
           const desiredWorldDirection = new THREE.Vector3(
-            -0.82,
-            0.10,
-            -0.56,
+            -0.46,
+            0.04,
+            -0.89,
           ).normalize();
 
           const worldDelta = new THREE.Quaternion().setFromUnitVectors(
@@ -979,29 +981,29 @@ export function SarahAvatar({
             Math.min(1, floorSitBlend * 0.92),
           );
 
-          // Give the rest of the MANUKA tail a soft upward side curl so the
-          // fluffy tail stays visible beside Sarah instead of sagging below the stage.
+          // Add a gentle wrap through the rest of the chain so the tail settles
+          // around the hips and along the floor instead of reading as a straight rod.
           if (tailBones.length > 1) {
             const lastIndex = Math.max(1, tailBones.length - 1);
             tailBones.forEach((entry, index) => {
               if (entry.node === tailRootBone) return;
               const alongTail = index / lastIndex;
-              const curlStrength = floorSitBlend * (0.24 + alongTail * 0.42);
+              const curlStrength = floorSitBlend * (0.20 + alongTail * 0.55);
 
               entry.node.rotation.x = THREE.MathUtils.lerp(
                 entry.node.rotation.x,
-                entry.baseRotation.x - 0.10 * curlStrength,
-                floorSitBlend * 0.55,
+                entry.baseRotation.x - 0.06 * curlStrength,
+                floorSitBlend * 0.65,
               );
               entry.node.rotation.y = THREE.MathUtils.lerp(
                 entry.node.rotation.y,
-                entry.baseRotation.y + 0.18 * curlStrength,
-                floorSitBlend * 0.55,
+                entry.baseRotation.y + 0.32 * curlStrength,
+                floorSitBlend * 0.65,
               );
               entry.node.rotation.z = THREE.MathUtils.lerp(
                 entry.node.rotation.z,
-                entry.baseRotation.z - 0.22 * curlStrength,
-                floorSitBlend * 0.55,
+                entry.baseRotation.z - 0.14 * curlStrength,
+                floorSitBlend * 0.65,
               );
             });
           }
