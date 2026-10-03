@@ -13,7 +13,7 @@ type SarahAvatarProps = {
 
 type LoadState = "loading" | "ready" | "missing" | "error";
 type AvatarViewMode = "full" | "face";
-type IdleActivity = "stand" | "walk" | "sit";
+type IdleActivity = "stand" | "walk" | "floorSit" | "stretch";
 
 const MIN_AVATAR_ZOOM = 1;
 const MAX_AVATAR_ZOOM = 3.2;
@@ -171,35 +171,6 @@ export function SarahAvatar({
     floor.receiveShadow = true;
     scene.add(floor);
 
-    const stoolMaterial = new THREE.MeshStandardMaterial({
-      color: 0x1c2533,
-      roughness: 0.78,
-      metalness: 0.12,
-    });
-    const stoolGroup = new THREE.Group();
-    const stoolSeat = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.28, 0.28, 0.07, 32),
-      stoolMaterial,
-    );
-    stoolSeat.position.set(0, 0.50, -0.02);
-    stoolSeat.castShadow = true;
-    stoolSeat.receiveShadow = true;
-    stoolGroup.add(stoolSeat);
-    for (const x of [-0.18, 0.18]) {
-      for (const z of [-0.14, 0.14]) {
-        const leg = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.018, 0.022, 0.48, 12),
-          stoolMaterial,
-        );
-        leg.position.set(x, 0.25, z - 0.02);
-        leg.castShadow = true;
-        leg.receiveShadow = true;
-        stoolGroup.add(leg);
-      }
-    }
-    stoolGroup.visible = false;
-    scene.add(stoolGroup);
-
     const clock = new THREE.Clock();
     let vrm: VRM | null = null;
     let avatarRoot: THREE.Object3D | null = null;
@@ -236,7 +207,8 @@ export function SarahAvatar({
     let idleActivity: IdleActivity = "stand";
     let nextIdleActivityAt = 7.5;
     let walkBlend = 0;
-    let sitBlend = 0;
+    let floorSitBlend = 0;
+    let stretchBlend = 0;
     let attentionBlend = 1;
 
     let nextBlinkAt = 2.5;
@@ -453,17 +425,25 @@ export function SarahAvatar({
           nextIdleActivityAt = elapsed + 7.0;
         } else if (elapsed >= nextIdleActivityAt) {
           if (idleActivity === "stand") {
-            idleActivity = Math.random() < 0.56 ? "walk" : "sit";
+            const roll = Math.random();
+            idleActivity =
+              roll < 0.48
+                ? "walk"
+                : roll < 0.80
+                  ? "floorSit"
+                  : "stretch";
           } else {
             idleActivity = "stand";
           }
 
           const duration =
             idleActivity === "walk"
-              ? 7 + Math.random() * 4
-              : idleActivity === "sit"
-                ? 10 + Math.random() * 6
-                : 6 + Math.random() * 5;
+              ? 8 + Math.random() * 4
+              : idleActivity === "floorSit"
+                ? 10 + Math.random() * 5
+                : idleActivity === "stretch"
+                  ? 4.5 + Math.random() * 2.5
+                  : 6 + Math.random() * 5;
           nextIdleActivityAt = elapsed + duration;
         }
 
@@ -486,12 +466,17 @@ export function SarahAvatar({
         walkBlend = smoothValue(
           walkBlend,
           !interactionActive && idleActivity === "walk" ? 1 : 0,
-          2.8,
+          2.6,
         );
-        sitBlend = smoothValue(
-          sitBlend,
-          !interactionActive && idleActivity === "sit" ? 1 : 0,
-          2.5,
+        floorSitBlend = smoothValue(
+          floorSitBlend,
+          !interactionActive && idleActivity === "floorSit" ? 1 : 0,
+          2.2,
+        );
+        stretchBlend = smoothValue(
+          stretchBlend,
+          !interactionActive && idleActivity === "stretch" ? 1 : 0,
+          2.4,
         );
 
         const pulseStarted = replyPulseStartedAtRef.current;
@@ -503,10 +488,20 @@ export function SarahAvatar({
         const replyFalloff = replySettling ? Math.max(0, 1 - replyAge / 2.2) : 0;
 
         // Display-only procedural presence. This never reads or controls the desktop.
-        const walkPhase = elapsed * 4.4;
-        const paceOffsetX = Math.sin(elapsed * 0.72) * 0.16 * walkBlend;
+        const walkPhase = elapsed * 5.2;
+        const legSwing = Math.sin(walkPhase);
+        const oppositeLegSwing = Math.sin(walkPhase + Math.PI);
+
+        // Travel visibly across the stage rather than walking in place.
+        const travelPhase = (elapsed * 0.18) % 2;
+        const travel01 =
+          travelPhase <= 1 ? travelPhase : 2 - travelPhase;
+        const walkDirection = travelPhase <= 1 ? 1 : -1;
+        const walkTravelX =
+          THREE.MathUtils.lerp(-0.42, 0.42, travel01) * walkBlend;
+
         const walkBob =
-          Math.abs(Math.sin(walkPhase)) * 0.012 * walkBlend;
+          Math.abs(Math.sin(walkPhase)) * 0.015 * walkBlend;
         const breathingBob =
           Math.sin(elapsed * (speaking ? 2.0 : 1.05)) *
           (speaking ? 0.008 : 0.0035);
@@ -515,23 +510,23 @@ export function SarahAvatar({
           (thinking ? 0.045 : 0.018) *
           (0.20 + 0.80 * (1 - attentionBlend));
 
-        avatarRoot.position.x = baseX + paceOffsetX;
+        avatarRoot.position.x = baseX + walkTravelX;
         avatarRoot.position.y =
           baseY -
-          0.34 * sitBlend +
+          0.54 * floorSitBlend +
           walkBob +
           breathingBob;
         avatarRoot.position.z = baseZ;
         avatarRoot.rotation.y =
           baseYaw +
           idleYaw +
-          Math.sin(elapsed * 0.72) * 0.06 * walkBlend;
-
-        stoolGroup.visible = sitBlend > 0.08;
+          walkDirection * 0.10 * walkBlend;
 
         if (hipsBone) {
           hipsBone.rotation.x =
-            hipsBaseRotation.x + 0.08 * sitBlend;
+            hipsBaseRotation.x +
+            0.16 * floorSitBlend -
+            0.025 * stretchBlend;
           hipsBone.rotation.z =
             hipsBaseRotation.z +
             Math.sin(elapsed * 0.48) *
@@ -543,7 +538,8 @@ export function SarahAvatar({
           chestBone.rotation.x =
             chestBaseRotation.x +
             Math.sin(elapsed * 1.45) * 0.010 -
-            0.055 * sitBlend;
+            0.08 * floorSitBlend -
+            0.10 * stretchBlend;
           chestBone.rotation.z =
             chestBaseRotation.z +
             Math.sin(elapsed * 0.55) *
@@ -554,47 +550,69 @@ export function SarahAvatar({
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
-            Math.sin(walkPhase) * 0.24 * walkBlend +
-            0.92 * sitBlend;
+            legSwing * 0.40 * walkBlend +
+            1.02 * floorSitBlend;
+          leftUpperLegBone.rotation.z =
+            leftUpperLegBaseRotation.z + 0.20 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
-            rightUpperLegBaseRotation.x -
-            Math.sin(walkPhase) * 0.24 * walkBlend +
-            0.92 * sitBlend;
+            rightUpperLegBaseRotation.x +
+            oppositeLegSwing * 0.40 * walkBlend +
+            1.02 * floorSitBlend;
+          rightUpperLegBone.rotation.z =
+            rightUpperLegBaseRotation.z - 0.20 * floorSitBlend;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
-            Math.max(0, -Math.sin(walkPhase)) * 0.34 * walkBlend -
-            1.08 * sitBlend;
+            Math.max(0, -legSwing) * 0.48 * walkBlend -
+            1.24 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
-            Math.max(0, Math.sin(walkPhase)) * 0.34 * walkBlend -
-            1.08 * sitBlend;
+            Math.max(0, -oppositeLegSwing) * 0.48 * walkBlend -
+            1.24 * floorSitBlend;
         }
 
+        // Arms counter-swing against the legs while walking, settle near the lap
+        // while sitting, and rise overhead during the stretch.
         if (leftUpperArmBone) {
           leftUpperArmBone.rotation.x =
-            leftUpperArmBaseRotation.x -
-            Math.sin(walkPhase) * 0.17 * walkBlend -
-            0.12 * sitBlend;
+            leftUpperArmBaseRotation.x +
+            oppositeLegSwing * 0.26 * walkBlend -
+            0.20 * floorSitBlend;
+          leftUpperArmBone.rotation.z =
+            leftUpperArmBaseRotation.z -
+            1.82 * stretchBlend -
+            0.10 * floorSitBlend;
         }
         if (rightUpperArmBone) {
           rightUpperArmBone.rotation.x =
             rightUpperArmBaseRotation.x +
-            Math.sin(walkPhase) * 0.17 * walkBlend -
-            0.12 * sitBlend;
+            legSwing * 0.26 * walkBlend -
+            0.20 * floorSitBlend;
+          rightUpperArmBone.rotation.z =
+            rightUpperArmBaseRotation.z +
+            1.82 * stretchBlend +
+            0.10 * floorSitBlend;
         }
         if (leftLowerArmBone) {
           leftLowerArmBone.rotation.x =
-            leftLowerArmBaseRotation.x - 0.34 * sitBlend;
+            leftLowerArmBaseRotation.x -
+            0.48 * floorSitBlend -
+            0.20 * stretchBlend;
+          leftLowerArmBone.rotation.z =
+            leftLowerArmBaseRotation.z + 0.10 * stretchBlend;
         }
         if (rightLowerArmBone) {
           rightLowerArmBone.rotation.x =
-            rightLowerArmBaseRotation.x - 0.34 * sitBlend;
+            rightLowerArmBaseRotation.x -
+            0.48 * floorSitBlend -
+            0.20 * stretchBlend;
+          rightLowerArmBone.rotation.z =
+            rightLowerArmBaseRotation.z - 0.10 * stretchBlend;
         }
 
         const moodHeadPitch = sadMood
@@ -613,13 +631,15 @@ export function SarahAvatar({
             : relaxedMood
               ? 0.032
               : 0;
-        const moodNeckPitch = sadMood
-          ? 0.035
-          : surprisedMood
-            ? -0.030
-            : angryMood
-              ? -0.012
-              : 0;
+        const moodNeckPitch =
+          (sadMood
+            ? 0.035
+            : surprisedMood
+              ? -0.030
+              : angryMood
+                ? -0.012
+                : 0) -
+          0.035 * stretchBlend;
         const moodNeckRoll = concernedMood
           ? 0.018
           : relaxedMood
@@ -649,7 +669,8 @@ export function SarahAvatar({
             headBaseRotation.x +
             Math.sin(elapsed * 0.72) * 0.006 +
             replyNod +
-            moodHeadPitch;
+            moodHeadPitch -
+            0.07 * stretchBlend;
           headBone.rotation.y =
             headBaseRotation.y +
             Math.sin(elapsed * 0.29) *
