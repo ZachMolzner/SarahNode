@@ -99,11 +99,9 @@ export function SarahAvatar({
 
   const selectViewMode = (mode: AvatarViewMode) => {
     viewModeRef.current = mode;
+    zoomRef.current = 1;
     setViewMode(mode);
-    if (mode === "full") {
-      zoomRef.current = 1;
-      setZoom(1);
-    }
+    setZoom(1);
     window.requestAnimationFrame(() => frameAvatarRef.current?.());
   };
 
