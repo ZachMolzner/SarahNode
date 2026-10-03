@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
+import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 type SarahAvatarProps = {
   status: string;
 };
 
-type LoadState = "loading" | "ready" | "missing";
+type LoadState = "loading" | "ready" | "missing" | "error";
 
 function disposeMaterial(material: THREE.Material) {
   const record = material as THREE.Material & Record<string, unknown>;
@@ -32,7 +33,7 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b0f17);
 
-    const camera = new THREE.PerspectiveCamera(32, 1, 0.01, 100);
+    const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
     camera.position.set(0, 1.35, 3.4);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
@@ -41,24 +42,24 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     renderer.shadowMap.enabled = true;
     mount.appendChild(renderer.domElement);
 
-    const hemi = new THREE.HemisphereLight(0xdde8ff, 0x26202a, 2.2);
+    const hemi = new THREE.HemisphereLight(0xdde8ff, 0x211c28, 2.1);
     scene.add(hemi);
 
-    const key = new THREE.DirectionalLight(0xffffff, 3.2);
+    const key = new THREE.DirectionalLight(0xffffff, 3.0);
     key.position.set(2.5, 4.5, 3.5);
     key.castShadow = true;
     scene.add(key);
 
-    const rim = new THREE.DirectionalLight(0x8fb8ff, 2.2);
+    const rim = new THREE.DirectionalLight(0x8fb8ff, 1.8);
     rim.position.set(-3, 2.8, -2);
     scene.add(rim);
 
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(1.2, 64),
+      new THREE.CircleGeometry(1.15, 64),
       new THREE.MeshStandardMaterial({
         color: 0x151b26,
-        roughness: 0.9,
-        metalness: 0.05,
+        roughness: 0.92,
+        metalness: 0.04,
       }),
     );
     floor.rotation.x = -Math.PI / 2;
@@ -66,26 +67,39 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     scene.add(floor);
 
     const clock = new THREE.Clock();
+    let vrm: VRM | null = null;
     let avatarRoot: THREE.Object3D | null = null;
-    let mixer: THREE.AnimationMixer | null = null;
+    let baseY = 0;
     let animationFrame = 0;
 
     const loader = new GLTFLoader();
+    loader.register((parser) => new VRMLoaderPlugin(parser));
+
     loader.load(
-      "/models/sarah.glb",
+      "/models/sarah.vrm",
       (gltf) => {
-        avatarRoot = gltf.scene;
+        const loadedVrm = gltf.userData.vrm as VRM | undefined;
+        if (!loadedVrm) {
+          setLoadState("error");
+          return;
+        }
+
+        vrm = loadedVrm;
+        VRMUtils.rotateVRM0(vrm);
+
+        avatarRoot = vrm.scene;
         avatarRoot.traverse((node) => {
           if (node instanceof THREE.Mesh) {
             node.castShadow = true;
             node.receiveShadow = true;
+            node.frustumCulled = false;
           }
         });
 
         const initialBox = new THREE.Box3().setFromObject(avatarRoot);
         const initialSize = initialBox.getSize(new THREE.Vector3());
         const maxDimension = Math.max(initialSize.x, initialSize.y, initialSize.z, 0.001);
-        const scale = 2.25 / maxDimension;
+        const scale = 2.35 / maxDimension;
         avatarRoot.scale.setScalar(scale);
 
         const fittedBox = new THREE.Box3().setFromObject(avatarRoot);
@@ -93,6 +107,7 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
         avatarRoot.position.x -= center.x;
         avatarRoot.position.z -= center.z;
         avatarRoot.position.y -= fittedBox.min.y;
+        baseY = avatarRoot.position.y;
 
         scene.add(avatarRoot);
 
@@ -100,16 +115,8 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
           .setFromObject(avatarRoot)
           .getSize(new THREE.Vector3());
         const lookY = Math.max(0.9, fittedSize.y * 0.56);
-        camera.position.set(0, lookY, 3.35);
+        camera.position.set(0, lookY, 3.2);
         camera.lookAt(0, lookY, 0);
-
-        if (gltf.animations.length > 0) {
-          mixer = new THREE.AnimationMixer(avatarRoot);
-          const idle =
-            gltf.animations.find((clip) => /idle/i.test(clip.name)) ??
-            gltf.animations[0];
-          mixer.clipAction(idle).play();
-        }
 
         setLoadState("ready");
       },
@@ -132,18 +139,22 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     resize();
 
     const animate = () => {
-      const delta = clock.getDelta();
+      const delta = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.elapsedTime;
-      mixer?.update(delta);
 
-      if (avatarRoot) {
+      if (vrm && avatarRoot) {
         const normalizedStatus = statusRef.current.toLowerCase();
-        const thinking = normalizedStatus.includes("think") || normalizedStatus.includes("work");
+        const thinking =
+          normalizedStatus.includes("think") || normalizedStatus.includes("work");
         const speaking = normalizedStatus.includes("speak");
 
-        avatarRoot.rotation.y = Math.sin(elapsed * 0.35) * (thinking ? 0.035 : 0.018);
-        avatarRoot.position.y +=
-          Math.sin(elapsed * (speaking ? 2.1 : 1.25)) * 0.00025;
+        // Display-only procedural presence. This never reads or controls the desktop.
+        avatarRoot.rotation.y =
+          Math.sin(elapsed * (thinking ? 0.55 : 0.3)) * (thinking ? 0.045 : 0.018);
+        avatarRoot.position.y =
+          baseY + Math.sin(elapsed * (speaking ? 2.0 : 1.1)) * (speaking ? 0.008 : 0.004);
+
+        vrm.update(delta);
       }
 
       renderer.render(scene, camera);
@@ -154,7 +165,6 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     return () => {
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
-      mixer?.stopAllAction();
 
       scene.traverse((node) => {
         if (node instanceof THREE.Mesh) {
@@ -172,24 +182,27 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     };
   }, []);
 
+  const fallbackText =
+    loadState === "loading"
+      ? "Loading Sarah's MANUKA model..."
+      : loadState === "missing"
+        ? "Place MANUKA.vrm at frontend/public/models/sarah.vrm to display Sarah."
+        : "The avatar file loaded, but it was not recognized as a VRM model.";
+
   return (
     <section style={styles.shell} aria-label="Sarah display-only avatar">
       <div ref={mountRef} style={styles.viewport}>
         {loadState !== "ready" && (
           <div style={styles.fallback}>
             <div style={styles.monogram}>S</div>
-            <strong>MANUKA</strong>
-            <span style={styles.fallbackText}>
-              {loadState === "loading"
-                ? "Loading Sarah's runtime model..."
-                : "Avatar runtime is ready. Export MANUKA.blend to public/models/sarah.glb to display her here."}
-            </span>
+            <strong>Sarah</strong>
+            <span style={styles.fallbackText}>{fallbackText}</span>
           </div>
         )}
       </div>
       <div style={styles.caption}>
         <span style={styles.captionTitle}>Sarah</span>
-        <span style={styles.captionDetail}>Display-only avatar • {status}</span>
+        <span style={styles.captionDetail}>Display-only MANUKA avatar • {status}</span>
       </div>
     </section>
   );
@@ -236,7 +249,7 @@ const styles: Record<string, React.CSSProperties> = {
     boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
   },
   fallbackText: {
-    maxWidth: "270px",
+    maxWidth: "290px",
     color: "#8792a4",
     fontSize: "12px",
     lineHeight: 1.5,
