@@ -21,3 +21,4 @@ def test_troubleshooting_rules_require_evidence_first_workflow() -> None:
     assert "least disruptive diagnostic step" in IT_TROUBLESHOOTING_RULES
     assert "Separate confirmed observations from likely causes" in IT_TROUBLESHOOTING_RULES
     assert "official documentation" in IT_TROUBLESHOOTING_RULES
+    assert IT_TROUBLESHOOTING_RULES in settings.persona_system_prompt
