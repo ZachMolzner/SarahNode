@@ -174,6 +174,8 @@ export function SarahAvatar({
     let happyWeight = 0;
     let relaxedWeight = 0;
     let sadWeight = 0;
+    let angryWeight = 0;
+    let surprisedWeight = 0;
 
     const frameAvatar = () => {
       if (!avatarRoot) return;
@@ -320,10 +322,11 @@ export function SarahAvatar({
         const speaking = normalizedStatus.includes("speak");
         const unavailable =
           normalizedStatus.includes("offline") || normalizedStatus.includes("error");
-        const concerned =
-          unavailable ||
-          normalizedMood.includes("concern") ||
-          normalizedMood.includes("sad");
+        const sadMood = normalizedMood.includes("sad");
+        const angryMood = normalizedMood.includes("angry");
+        const surprisedMood = normalizedMood.includes("surpris");
+        const concernedMood =
+          unavailable || normalizedMood.includes("concern");
         const happy =
           normalizedMood.includes("happy") ||
           normalizedMood.includes("glad");
@@ -361,11 +364,44 @@ export function SarahAvatar({
             chestBaseRotation.z + Math.sin(elapsed * 0.55) * 0.0045;
         }
 
+        const moodHeadPitch = sadMood
+          ? 0.095
+          : surprisedMood
+            ? -0.065
+            : concernedMood
+              ? 0.028
+              : happy
+                ? -0.018
+                : 0;
+        const moodHeadRoll = angryMood
+          ? -0.025
+          : concernedMood
+            ? 0.050
+            : relaxedMood
+              ? 0.032
+              : 0;
+        const moodNeckPitch = sadMood
+          ? 0.035
+          : surprisedMood
+            ? -0.030
+            : angryMood
+              ? -0.012
+              : 0;
+        const moodNeckRoll = concernedMood
+          ? 0.018
+          : relaxedMood
+            ? 0.012
+            : 0;
+
         if (neckBone) {
+          neckBone.rotation.x =
+            neckBaseRotation.x + moodNeckPitch;
           neckBone.rotation.y =
             neckBaseRotation.y + Math.sin(elapsed * 0.37) * 0.010;
           neckBone.rotation.z =
-            neckBaseRotation.z + Math.sin(elapsed * 0.31) * 0.005;
+            neckBaseRotation.z +
+            Math.sin(elapsed * 0.31) * 0.005 +
+            moodNeckRoll;
         }
 
         if (headBone) {
@@ -376,13 +412,15 @@ export function SarahAvatar({
           headBone.rotation.x =
             headBaseRotation.x +
             Math.sin(elapsed * 0.72) * 0.006 +
-            replyNod;
+            replyNod +
+            moodHeadPitch;
           headBone.rotation.y =
             headBaseRotation.y + Math.sin(elapsed * 0.29) * 0.009;
           headBone.rotation.z =
             headBaseRotation.z +
             Math.sin(elapsed * 0.42) * 0.012 +
-            (thinking ? 0.035 : 0);
+            (thinking ? 0.035 : 0) +
+            moodHeadRoll;
         }
 
         const expressions = vrm.expressionManager;
@@ -414,24 +452,42 @@ export function SarahAvatar({
 
           const mouthAaTarget = speaking
             ? 0.12 + (0.5 + 0.5 * Math.sin(elapsed * 11.2)) * 0.48
-            : 0;
+            : happy
+              ? 0.045
+              : 0;
           const mouthOhTarget = speaking
             ? (0.5 + 0.5 * Math.sin(elapsed * 7.1 + 1.1)) * 0.14
-            : 0;
+            : surprisedMood
+              ? 0.18
+              : 0;
 
           const happyTarget = happy
-            ? 0.30
-            : replySettling && !concerned
+            ? 0.68
+            : replySettling &&
+                !sadMood &&
+                !angryMood &&
+                !surprisedMood &&
+                !concernedMood
               ? 0.07 * replyFalloff
               : 0;
           const relaxedTarget = relaxedMood
-            ? 0.14
+            ? 0.50
             : thinking
               ? 0.11
               : replySettling
                 ? 0.06 * replyFalloff
                 : 0.025;
-          const sadTarget = concerned ? 0.18 : 0;
+          const sadTarget = sadMood
+            ? 0.62
+            : concernedMood
+              ? 0.24
+              : 0;
+          const angryTarget = angryMood ? 0.58 : 0;
+          const surprisedTarget = surprisedMood
+            ? 0.62
+            : concernedMood
+              ? 0.16
+              : 0;
 
           const smooth = (current: number, target: number, speed: number) =>
             THREE.MathUtils.lerp(
@@ -443,16 +499,23 @@ export function SarahAvatar({
           blinkWeight = smooth(blinkWeight, blinkTarget, 30);
           aaWeight = smooth(aaWeight, mouthAaTarget, 18);
           ohWeight = smooth(ohWeight, mouthOhTarget, 16);
-          happyWeight = smooth(happyWeight, happyTarget, 5);
-          relaxedWeight = smooth(relaxedWeight, relaxedTarget, 5);
-          sadWeight = smooth(sadWeight, sadTarget, 5);
+          happyWeight = smooth(happyWeight, happyTarget, 7);
+          relaxedWeight = smooth(relaxedWeight, relaxedTarget, 6);
+          sadWeight = smooth(sadWeight, sadTarget, 7);
+          angryWeight = smooth(angryWeight, angryTarget, 7);
+          surprisedWeight = smooth(surprisedWeight, surprisedTarget, 8);
 
           expressions.setValue("blink", blinkWeight);
           expressions.setValue("aa", aaWeight);
           expressions.setValue("oh", ohWeight);
+
+          // Keep every preset channel explicitly updated so old emotions cannot
+          // bleed into the next reply.
           expressions.setValue("happy", happyWeight);
           expressions.setValue("relaxed", relaxedWeight);
           expressions.setValue("sad", sadWeight);
+          expressions.setValue("angry", angryWeight);
+          expressions.setValue("surprised", surprisedWeight);
         }
 
         vrm.update(delta);
@@ -557,7 +620,7 @@ export function SarahAvatar({
       <div style={styles.caption}>
         <span style={styles.captionTitle}>Sarah</span>
         <span style={styles.captionDetail}>
-          Display-only MANUKA avatar • {status}
+          Display-only MANUKA avatar • {status} • mood: {mood}
         </span>
       </div>
     </section>
