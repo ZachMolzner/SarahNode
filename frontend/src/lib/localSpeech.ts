@@ -7,7 +7,8 @@ const PREFERRED_VOICE_HINTS = [
   "Zira",
 ];
 
-export type SarahEmojiMood = "happy" | "relaxed" | "sad" | "angry" | "surprised" | "concerned";
+export type SarahEmotion = "happy" | "relaxed" | "sad" | "angry" | "surprised" | "concerned";
+export type SarahEmojiMood = SarahEmotion;
 
 const HAPPY_EMOJI = [
   "😀", "😃", "😄", "😁", "😆", "😊", "😍", "🥰", "😘", "😎",
@@ -48,6 +49,69 @@ export function emotionFromEmoji(text: string): SarahEmojiMood | null {
   return null;
 }
 
+const WORD_EMOTION_PATTERNS: ReadonlyArray<{
+  mood: SarahEmotion;
+  patterns: RegExp[];
+}> = [
+  {
+    mood: "angry",
+    patterns: [
+      /\b(?:frustrating|irritating|annoying|infuriating|unacceptable|furious)\b/i,
+      /\b(?:i(?:\x27m| am) (?:angry|mad|frustrated))\b/i,
+    ],
+  },
+  {
+    mood: "sad",
+    patterns: [
+      /\b(?:i(?:\x27m| am) sorry|sorry to hear|unfortunately|disappointing|that(?:\x27s| is) rough|that(?:\x27s| is) difficult)\b/i,
+      /\b(?:sad|heartbreaking|regret|loss)\b/i,
+    ],
+  },
+  {
+    mood: "surprised",
+    patterns: [
+      /\b(?:wow|surprisingly|unexpectedly|unexpected|didn(?:\x27t|’t) expect|did not expect|that(?:\x27s| is) unusual|amazing)\b/i,
+    ],
+  },
+  {
+    mood: "concerned",
+    patterns: [
+      /\b(?:be careful|use caution|warning|potential risk|serious risk|could damage|could lose|data loss|unsafe|concerning)\b/i,
+      /\b(?:i(?:\x27m| am) concerned|i(?:\x27m| am) worried)\b/i,
+    ],
+  },
+  {
+    mood: "happy",
+    patterns: [
+      /\b(?:great news|excellent|awesome|perfect|fantastic|glad to hear|happy to hear|that worked|that fixed it|you(?:\x27re| are) all set|successfully fixed|looks great)\b/i,
+      /\b(?:nice!|great!|awesome!|perfect!)\b/i,
+    ],
+  },
+  {
+    mood: "relaxed",
+    patterns: [
+      /\b(?:no rush|all good|take your time|no problem|nothing to worry about|totally fine|pretty simple|straightforward)\b/i,
+    ],
+  },
+];
+
+export function emotionFromWording(text: string): SarahEmotion | null {
+  const plain = stripEmojiForSpeech(text)
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  for (const group of WORD_EMOTION_PATTERNS) {
+    if (group.patterns.some((pattern) => pattern.test(plain))) {
+      return group.mood;
+    }
+  }
+  return null;
+}
+
+export function emotionFromReply(text: string): SarahEmotion | null {
+  return emotionFromEmoji(text) ?? emotionFromWording(text);
+}
 export function stripEmojiForSpeech(text: string): string {
   return text
     .replace(EMOJI_SEQUENCE_RE, " ")
@@ -171,7 +235,7 @@ export function speakSarahReply(
     utterance.lang = "en-US";
   }
 
-  const emojiMood = emotionFromEmoji(markdown);
+  const replyMood = emotionFromReply(markdown);
   const prosody = {
     happy: { rate: 1.04, pitch: 1.08 },
     relaxed: { rate: 0.98, pitch: 1.01 },
@@ -180,7 +244,7 @@ export function speakSarahReply(
     surprised: { rate: 1.06, pitch: 1.11 },
     concerned: { rate: 0.96, pitch: 0.98 },
   } as const;
-  const selectedProsody = emojiMood ? prosody[emojiMood] : null;
+  const selectedProsody = replyMood ? prosody[replyMood] : null;
 
   utterance.rate = selectedProsody?.rate ?? 1.02;
   utterance.pitch = selectedProsody?.pitch ?? 1.03;
