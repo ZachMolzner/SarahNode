@@ -902,8 +902,9 @@ export function SarahAvatar({
 
         if (floorSitBlend > 0.001 && hipsBone) {
           // Use two-bone IK for the final seated leg placement instead of
-          // relying only on imported Euler axes. Both ankles are explicitly
-          // kept just above the stage while the pole targets shape the knees.
+          // relying only on imported Euler axes. MANUKA faces toward local -Z
+          // after the VRM orientation correction, so seated targets use -Z to
+          // place the legs in front of the pelvis rather than behind Sarah.
           avatarRoot.updateWorldMatrix(true, true);
           hipsBone.updateWorldMatrix(true, false);
 
@@ -917,21 +918,21 @@ export function SarahAvatar({
 
           const leftAnkleTarget = hipsWorld
             .clone()
-            .add(worldOffset(-0.34, 0, 0.70));
+            .add(worldOffset(-0.34, 0, -0.70));
           leftAnkleTarget.y = 0.13;
 
           const leftKneePole = hipsWorld
             .clone()
-            .add(worldOffset(-0.18, 0.30, 0.46));
+            .add(worldOffset(-0.18, 0.30, -0.46));
 
           const rightAnkleTarget = hipsWorld
             .clone()
-            .add(worldOffset(0.18, 0, 0.40));
+            .add(worldOffset(0.18, 0, -0.40));
           rightAnkleTarget.y = 0.13;
 
           const rightKneePole = hipsWorld
             .clone()
-            .add(worldOffset(0.14, 0.58, 0.34));
+            .add(worldOffset(0.14, 0.58, -0.34));
 
           const ikBlend = THREE.MathUtils.smoothstep(
             floorSitBlend,
