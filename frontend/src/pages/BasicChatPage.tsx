@@ -1,6 +1,6 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
-import { SarahAvatar } from "../components/SarahAvatar";
+import { SarahAvatar, type SarahAppearance } from "../components/SarahAvatar";
 import { fetchAssistantState, sendAssistantMessage } from "../lib/api";
 
 type Message = {
@@ -24,6 +24,14 @@ export function BasicChatPage() {
   const [input, setInput] = useState("");
   const [status, setStatus] = useState("Connecting");
   const [avatarMood, setAvatarMood] = useState("neutral");
+  const [appearance, setAppearance] = useState<SarahAppearance>(() => {
+    const saved = window.localStorage.getItem("sarah.appearance");
+    return saved === "casual" ||
+      saved === "sexy" ||
+      saved === "underwear"
+      ? saved
+      : "default";
+  });
   const [replySignal, setReplySignal] = useState(0);
   const [sending, setSending] = useState(false);
   const nextId = useRef(2);
@@ -60,6 +68,10 @@ export function BasicChatPage() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    window.localStorage.setItem("sarah.appearance", appearance);
+  }, [appearance]);
 
   const addMessage = (role: Message["role"], content: string) => {
     setMessages((current) => [
@@ -131,11 +143,32 @@ export function BasicChatPage() {
     <main style={styles.shell}>
       <section style={styles.app}>
         <aside style={styles.avatarPane}>
-          <SarahAvatar
-            status={status}
-            mood={avatarMood}
-            replySignal={replySignal}
-          />
+          <div style={styles.avatarStack}>
+            <SarahAvatar
+              status={status}
+              mood={avatarMood}
+              replySignal={replySignal}
+              appearance={appearance}
+            />
+            <div style={styles.appearanceBar}>
+              <label htmlFor="sarah-appearance" style={styles.appearanceLabel}>
+                Appearance
+              </label>
+              <select
+                id="sarah-appearance"
+                value={appearance}
+                onChange={(event) =>
+                  setAppearance(event.target.value as SarahAppearance)
+                }
+                style={styles.appearanceSelect}
+              >
+                <option value="default">Default</option>
+                <option value="casual">Casual</option>
+                <option value="sexy">Sexy</option>
+                <option value="underwear">Underwear</option>
+              </select>
+            </div>
+          </div>
         </aside>
 
         <section style={styles.chatPane}>
@@ -237,6 +270,40 @@ const styles: Record<string, React.CSSProperties> = {
   avatarPane: {
     minWidth: 0,
     minHeight: 0,
+  },
+  avatarStack: {
+    width: "100%",
+    height: "100%",
+    minHeight: 0,
+    display: "grid",
+    gridTemplateRows: "1fr auto",
+  },
+  appearanceBar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "10px",
+    padding: "10px 14px",
+    borderTop: "1px solid #202733",
+    background: "#0b0f17",
+  },
+  appearanceLabel: {
+    color: "#8e99aa",
+    fontSize: "12px",
+    fontWeight: 700,
+    letterSpacing: "0.04em",
+    textTransform: "uppercase",
+  },
+  appearanceSelect: {
+    minWidth: "124px",
+    border: "1px solid #303949",
+    borderRadius: "8px",
+    background: "#111722",
+    color: "#eef2f7",
+    padding: "7px 9px",
+    font: "inherit",
+    fontSize: "12px",
+    outline: "none",
   },
   chatPane: {
     minWidth: 0,
