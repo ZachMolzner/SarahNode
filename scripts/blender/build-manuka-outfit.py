@@ -310,12 +310,19 @@ def body_shell(
     mask = obj.modifiers.new("SarahOutfit_Mask", "MASK")
     mask.vertex_group = keep_group.name
 
+    smooth = obj.modifiers.new("SarahOutfit_Smooth", "SMOOTH")
+    smooth.factor = 0.12
+    smooth.iterations = 2
+
     solidify = obj.modifiers.new("SarahOutfit_Thickness", "SOLIDIFY")
     solidify.thickness = thickness
     solidify.offset = 1.0
     solidify.use_rim = True
     if hasattr(solidify, "use_even_offset"):
         solidify.use_even_offset = True
+
+    for polygon in obj.data.polygons:
+        polygon.use_smooth = True
 
     obj["sarah_outfit_generated"] = True
     obj["sarah_outfit_body_shell"] = True
@@ -412,9 +419,9 @@ def build_casual_streetwear(armature, coll, m):
     proportions, then add a separate open jacket shell around the body and arms.
     This avoids the large primitive cylinders/boxes from the original prototype.
     """
-    cream = material("Casual_Cream", "cream", roughness=0.56)
-    black = material("Casual_Black", "black", roughness=0.34)
-    amber = material("Casual_Amber", "honey_amber", metallic=0.12, roughness=0.34)
+    cream = material("Casual_Cream", "cream", metallic=0.0, roughness=0.58)
+    black = material("Casual_Black", "black", metallic=0.0, roughness=0.62)
+    amber = material("Casual_Amber", "honey_amber", metallic=0.08, roughness=0.42)
 
     hips, chest, neck = m["hips"], m["chest"], m["neck"]
     sw, hw, depth, th = (
@@ -474,16 +481,26 @@ def build_casual_streetwear(armature, coll, m):
             "LowerArm_twist_",
         ),
     )
-    hand_groups = group_indices(body, ("Hand_",))
+    hand_groups = group_indices(
+        body,
+        (
+            "Hand_",
+            "Thumb_",
+            "Index_",
+            "Middle_",
+            "Ring_",
+            "Little_",
+        ),
+    )
     leg_groups = group_indices(
         body,
         ("UpperLeg_", "LowerLeg_", "Foot_"),
     )
 
-    jacket_low = hips.z + th * 0.10
-    jacket_high = neck.z - th * 0.04
-    front_y = chest.y - depth * 0.08
-    front_gap_half_width = sw * 0.105
+    jacket_low = hips.z + th * 0.16
+    jacket_high = neck.z - th * 0.07
+    front_y = chest.y - depth * 0.06
+    front_gap_half_width = sw * 0.235
 
     def keep_jacket_torso(obj, vertex, world_co):
         if world_co.z < jacket_low or world_co.z > jacket_high:
@@ -507,13 +524,24 @@ def build_casual_streetwear(armature, coll, m):
         coll,
         black,
         keep_jacket_torso,
-        thickness=max(sw * 0.030, 0.010),
+        thickness=max(sw * 0.024, 0.008),
     )
 
+    hand_l = bone_head(armature, "Hand_L")
+    hand_r = bone_head(armature, "Hand_R")
+    wrist_limit = min(
+        abs(hand_l.x - chest.x),
+        abs(hand_r.x - chest.x),
+    ) - sw * 0.012
+
     def keep_jacket_sleeves(obj, vertex, world_co):
-        if has_group_weight(vertex, hand_groups, 0.40):
+        # Cut the garment before the hand/finger vertices. The first prototype
+        # inherited some finger-weighted geometry and looked like clawed gloves.
+        if abs(world_co.x - chest.x) > wrist_limit:
             return False
-        return has_group_weight(vertex, arm_groups, 0.09)
+        if has_group_weight(vertex, hand_groups, 0.02):
+            return False
+        return has_group_weight(vertex, arm_groups, 0.10)
 
     body_shell(
         body,
@@ -521,20 +549,41 @@ def build_casual_streetwear(armature, coll, m):
         coll,
         black,
         keep_jacket_sleeves,
-        thickness=max(sw * 0.040, 0.012),
+        thickness=max(sw * 0.030, 0.009),
     )
 
+    # Clean cuffs hide the raw sleeve cut and create the intentional streetwear
+    # wrist finish visible in the reference.
+    cuff_major = max(sw * 0.070, 0.028)
+    cuff_minor = max(sw * 0.010, 0.004)
+    for side, hand_name, forearm_name in (
+        ("L", "Hand_L", "LowerArm_L"),
+        ("R", "Hand_R", "LowerArm_R"),
+    ):
+        wrist = bone_head(armature, hand_name)
+        add_torus(
+            f"Casual_Cuff_{side}",
+            wrist,
+            cuff_major,
+            cuff_minor,
+            black,
+            coll,
+            armature,
+            forearm_name,
+            rotation=(0.0, math.radians(90), 0.0),
+        )
+
     # Small lapels add the street-jacket silhouette without dominating the fit.
-    lapel_z = chest.z + th * 0.10
+    lapel_z = chest.z + th * 0.08
     lapel_y = chest.y - depth * 0.60
-    lapel_w = sw * 0.16
-    lapel_h = th * 0.26
-    lapel_d = max(depth * 0.10, 0.012)
+    lapel_w = sw * 0.105
+    lapel_h = th * 0.205
+    lapel_d = max(depth * 0.075, 0.009)
     for side, sign in (("L", -1), ("R", 1)):
         add_box(
             f"Casual_Lapel_{side}",
             Vector((
-                chest.x + sign * sw * 0.12,
+                chest.x + sign * sw * 0.205,
                 lapel_y,
                 lapel_z,
             )),
@@ -543,8 +592,8 @@ def build_casual_streetwear(armature, coll, m):
             coll,
             armature,
             "Chest",
-            rotation=(0.0, 0.0, math.radians(sign * 24)),
-            bevel=max(sw * 0.010, 0.004),
+            rotation=(0.0, 0.0, math.radians(sign * 18)),
+            bevel=max(sw * 0.008, 0.003),
         )
 
     # One fitted thigh strap mirrors the reference without adding bulky geometry.
