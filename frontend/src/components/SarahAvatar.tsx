@@ -982,75 +982,69 @@ export function SarahAvatar({
           );
         }
 
-        // Arms counter-swing while walking. During the floor sit, upper
-        // arms stay close to the torso and the forearms fold inward around
-        // the raised knee, matching the reference instead of opening outward.
+        // Walking/stretching keep their procedural arm motion here. The floor
+        // sit itself is owned entirely by IK below so the arms do not receive a
+        // second set of Euler rotations before the IK solve.
         if (leftUpperArmBone) {
           leftUpperArmBone.rotation.x =
             leftUpperArmBaseRotation.x +
-            oppositeLegSwing * 0.52 * walkBlend -
-            0.52 * floorSitBlend;
+            oppositeLegSwing * 0.52 * walkBlend;
           leftUpperArmBone.rotation.y =
             leftUpperArmBaseRotation.y +
-            legSwing * 0.08 * walkBlend -
-            0.24 * floorSitBlend;
+            legSwing * 0.08 * walkBlend;
           leftUpperArmBone.rotation.z =
             leftUpperArmBaseRotation.z -
             1.82 * stretchBlend +
-            0.10 * floorSitBlend +
             legSwing * 0.055 * walkBlend;
         }
         if (rightUpperArmBone) {
           rightUpperArmBone.rotation.x =
             rightUpperArmBaseRotation.x +
-            legSwing * 0.52 * walkBlend -
-            0.48 * floorSitBlend;
+            legSwing * 0.52 * walkBlend;
           rightUpperArmBone.rotation.y =
             rightUpperArmBaseRotation.y -
-            legSwing * 0.08 * walkBlend +
-            0.22 * floorSitBlend;
+            legSwing * 0.08 * walkBlend;
           rightUpperArmBone.rotation.z =
             rightUpperArmBaseRotation.z +
             1.82 * stretchBlend -
-            0.10 * floorSitBlend -
             legSwing * 0.055 * walkBlend;
         }
         if (leftLowerArmBone) {
           leftLowerArmBone.rotation.x =
             leftLowerArmBaseRotation.x -
-            0.18 * floorSitBlend -
             0.20 * stretchBlend;
-          leftLowerArmBone.rotation.y =
-            leftLowerArmBaseRotation.y - 0.20 * floorSitBlend;
+          leftLowerArmBone.rotation.y = leftLowerArmBaseRotation.y;
           leftLowerArmBone.rotation.z =
             leftLowerArmBaseRotation.z +
-            1.28 * floorSitBlend +
             0.10 * stretchBlend;
         }
         if (rightLowerArmBone) {
           rightLowerArmBone.rotation.x =
             rightLowerArmBaseRotation.x -
-            0.24 * floorSitBlend -
             0.20 * stretchBlend;
-          rightLowerArmBone.rotation.y =
-            rightLowerArmBaseRotation.y + 0.18 * floorSitBlend;
+          rightLowerArmBone.rotation.y = rightLowerArmBaseRotation.y;
           rightLowerArmBone.rotation.z =
             rightLowerArmBaseRotation.z -
-            1.22 * floorSitBlend -
             0.10 * stretchBlend;
         }
 
-        if (floorSitBlend > 0.001 && hipsBone) {
-          // Final seated arm placement uses the same two-bone IK solver as the
-          // legs. Keep both hands low, close together, and farther forward so
-          // the forearms settle naturally across the raised knee instead of
-          // lifting toward the chest or drifting behind Sarah.
+        if (
+          floorSitBlend > 0.001 &&
+          hipsBone &&
+          rightLowerLegBone
+        ) {
+          // Anchor the hands to the raised right knee itself. This keeps both
+          // elbows bent and makes the arms follow the knee naturally instead
+          // of reaching toward a fixed point far in front of the body.
           avatarRoot.updateWorldMatrix(true, true);
           hipsBone.updateWorldMatrix(true, false);
+          rightLowerLegBone.updateWorldMatrix(true, false);
 
           const hipsWorldForArms = new THREE.Vector3();
+          const raisedKneeWorld = new THREE.Vector3();
           const rootWorldQuaternionForArms = new THREE.Quaternion();
           hipsBone.getWorldPosition(hipsWorldForArms);
+          rightLowerLegBone.getWorldPosition(raisedKneeWorld);
           avatarRoot.getWorldQuaternion(rootWorldQuaternionForArms);
 
           const armWorldOffset = (x: number, y: number, z: number) =>
@@ -1058,24 +1052,24 @@ export function SarahAvatar({
               rootWorldQuaternionForArms,
             );
 
-          const leftHandTarget = hipsWorldForArms
+          const leftHandTarget = raisedKneeWorld
             .clone()
-            .add(armWorldOffset(-0.05, 0.22, -0.58));
+            .add(armWorldOffset(-0.10, 0.03, -0.04));
+          const rightHandTarget = raisedKneeWorld
+            .clone()
+            .add(armWorldOffset(0.08, -0.02, -0.02));
+
           const leftElbowPole = hipsWorldForArms
             .clone()
-            .add(armWorldOffset(-0.30, 0.34, -0.30));
-
-          const rightHandTarget = hipsWorldForArms
-            .clone()
-            .add(armWorldOffset(0.05, 0.24, -0.56));
+            .add(armWorldOffset(-0.36, 0.42, -0.10));
           const rightElbowPole = hipsWorldForArms
             .clone()
-            .add(armWorldOffset(0.30, 0.34, -0.30));
+            .add(armWorldOffset(0.36, 0.42, -0.10));
 
           const armIkBlend = THREE.MathUtils.smoothstep(
             floorSitBlend,
-            0.18,
-            0.92,
+            0.02,
+            0.98,
           );
 
           solveTwoBoneChain(
