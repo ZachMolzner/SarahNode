@@ -1,6 +1,16 @@
 param(
     [string]$SourceBlend = "C:\Users\karvo\MANUKA_ver1.02\MANUKA.blend",
-    [string]$BlenderExe = ""
+    [string]$BlenderExe = "",
+    [ValidateSet(
+        "all",
+        "casual-streetwear",
+        "cafe-maid",
+        "sporty-athleisure",
+        "elegant-evening",
+        "cozy-sweater",
+        "futuristic-idol-techwear"
+    )]
+    [string]$Preset = "all"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,7 +50,7 @@ if (-not (Test-Path -LiteralPath $builder)) {
 New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 New-Item -ItemType Directory -Force -Path $modelDir | Out-Null
 
-$presets = @(
+$allPresets = @(
     "casual-streetwear",
     "cafe-maid",
     "sporty-athleisure",
@@ -49,9 +59,17 @@ $presets = @(
     "futuristic-idol-techwear"
 )
 
+$presets = if ($Preset -eq "all") {
+    $allPresets
+}
+else {
+    @($Preset)
+}
+
 Write-Host "Building MANUKA outfit collection with:" -ForegroundColor Cyan
 Write-Host "  Blender: $BlenderExe"
 Write-Host "  Source:  $SourceBlend"
+Write-Host "  Preset:  $Preset"
 Write-Host ""
 
 foreach ($preset in $presets) {
