@@ -4,6 +4,7 @@ export type KnownEventType =
   | "assistant_state"
   | "reply_selected"
   | "web_grounded_answer"
+  | "learning_captured"
   | "speaking_status"
   | "tts_output"
   | "avatar_event"
@@ -35,6 +36,7 @@ export type KnownPayloadByEvent = {
   assistant_state: AssistantStatePayload;
   reply_selected: ReplySelectedPayload;
   web_grounded_answer: EventPayload;
+  learning_captured: EventPayload;
   speaking_status: SpeakingStatusPayload;
   tts_output: EventPayload;
   avatar_event: EventPayload;
@@ -70,6 +72,7 @@ const KNOWN_EVENT_TYPES: ReadonlySet<KnownEventType> = new Set([
   "assistant_state",
   "reply_selected",
   "web_grounded_answer",
+  "learning_captured",
   "speaking_status",
   "tts_output",
   "avatar_event",
