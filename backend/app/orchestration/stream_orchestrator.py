@@ -17,9 +17,6 @@ from app.schemas.chat import AssistantReply, ChatMessage
 from app.schemas.events import SystemEvent
 from app.services.dialogue_engine import DialogueEngine
 from app.services.identity_service import IdentityService
-from app.services.keyboard_interaction import KeyboardInteractionService
-from app.services.screen_awareness import ScreenAwarenessError, ScreenAwarenessService
-from app.services.visual_interaction import VisualInteractionService
 
 logger = logging.getLogger(__name__)
 
@@ -35,9 +32,6 @@ class StreamOrchestrator:
         response_policy: ResponsePolicy,
         identity_service: IdentityService,
         memory_learning_service: MemoryLearningService,
-        screen_awareness_service: ScreenAwarenessService,
-        visual_interaction_service: VisualInteractionService,
-        keyboard_interaction_service: KeyboardInteractionService,
     ) -> None:
         self.dialogue_engine = dialogue_engine
         self.tts_client = tts_client
@@ -47,9 +41,6 @@ class StreamOrchestrator:
         self.response_policy = response_policy
         self.identity_service = identity_service
         self.memory_learning_service = memory_learning_service
-        self.screen_awareness_service = screen_awareness_service
-        self.visual_interaction_service = visual_interaction_service
-        self.keyboard_interaction_service = keyboard_interaction_service
 
         self.queue: asyncio.PriorityQueue[tuple[int, int, ChatMessage]] | None = None
         self.events: asyncio.Queue[SystemEvent] | None = None
@@ -271,35 +262,6 @@ class StreamOrchestrator:
         generated_reply = None
 
         if moderation.allowed:
-            keyboard_interaction_requested = self.keyboard_interaction_service.can_handle(message)
-            visual_interaction_requested = self.visual_interaction_service.can_handle(message)
-
-            # Pending Enter and pending visual actions are deliberately ephemeral and
-            # mutually exclusive in practice. Any unrelated turn invalidates the old
-            # confirmation so a stale approval cannot act on a changed desktop.
-            if self.keyboard_interaction_service.has_pending(message.user_id) and not keyboard_interaction_requested:
-                cancelled_keyboard = self.keyboard_interaction_service.cancel_pending(message.user_id)
-                if cancelled_keyboard is not None:
-                    await self.emit_event(
-                        "keyboard_interaction_invalidated",
-                        {
-                            "key": "enter",
-                            "window": cancelled_keyboard.title,
-                            "reason": "intervening_user_message",
-                        },
-                    )
-
-            if self.visual_interaction_service.has_pending(message.user_id) and not visual_interaction_requested:
-                cancelled_visual = self.visual_interaction_service.cancel_pending(message.user_id)
-                if cancelled_visual is not None:
-                    await self.emit_event(
-                        "visual_interaction_invalidated",
-                        {
-                            "target": cancelled_visual.target_query,
-                            "reason": "intervening_user_message",
-                        },
-                    )
-
             explicit_status = getattr(explicit_memory_decision, "status", None)
             if explicit_status == "blocked_secret":
                 self.dialogue_engine.last_web_context = None
@@ -318,130 +280,6 @@ class StreamOrchestrator:
                     emotion="calm",
                     should_speak=True,
                 )
-            elif keyboard_interaction_requested:
-                self.dialogue_engine.last_web_context = None
-                other_pending = bool(
-                    self.dialogue_engine.pending_confirmed_actions.get(message.user_id)
-                    or self.dialogue_engine.pending_action_plans.get(message.user_id)
-                )
-                await self.emit_event(
-                    "keyboard_interaction_started",
-                    {
-                        "persistence": "ephemeral",
-                        "other_system_change_pending": other_pending,
-                    },
-                )
-                try:
-                    generated_reply = await self.keyboard_interaction_service.handle(
-                        message,
-                        other_system_change_pending=other_pending,
-                    )
-                    await self.emit_event(
-                        "keyboard_interaction_completed",
-                        {
-                            "pending_enter": self.keyboard_interaction_service.has_pending(message.user_id),
-                        },
-                    )
-                except Exception as exc:
-                    logger.exception("Controlled keyboard interaction failed")
-                    generated_reply = AssistantReply(
-                        text=f"I couldn't complete that controlled keyboard interaction safely: {exc}",
-                        emotion="concerned",
-                        should_speak=True,
-                    )
-                    await self.emit_event(
-                        "error",
-                        {
-                            "stage": "keyboard_interaction",
-                            "username": message.username,
-                            "details": str(exc),
-                        },
-                    )
-            elif visual_interaction_requested:
-                self.dialogue_engine.last_web_context = None
-                other_pending = bool(
-                    self.dialogue_engine.pending_confirmed_actions.get(message.user_id)
-                    or self.dialogue_engine.pending_action_plans.get(message.user_id)
-                )
-                await self.emit_event(
-                    "visual_interaction_started",
-                    {
-                        "persistence": "ephemeral",
-                        "other_system_change_pending": other_pending,
-                    },
-                )
-                try:
-                    generated_reply = await self.visual_interaction_service.handle(
-                        message,
-                        other_system_change_pending=other_pending,
-                    )
-                    await self.emit_event(
-                        "visual_interaction_completed",
-                        {
-                            "pending_visual_action": self.visual_interaction_service.has_pending(message.user_id),
-                        },
-                    )
-                except Exception as exc:
-                    logger.exception("Visual interaction failed")
-                    generated_reply = AssistantReply(
-                        text=f"I couldn't complete that visual interaction safely: {exc}",
-                        emotion="concerned",
-                        should_speak=True,
-                    )
-                    await self.emit_event(
-                        "error",
-                        {
-                            "stage": "visual_interaction",
-                            "username": message.username,
-                            "details": str(exc),
-                        },
-                    )
-            elif self.screen_awareness_service.should_handle(message.content):
-                # Screen requests bypass the text-model/tool loop. Capture happens only
-                # for this explicit turn and the image is never added to memory/history.
-                self.dialogue_engine.last_web_context = None
-                await self.emit_event(
-                    "screen_capture_started",
-                    {
-                        "mode": "explicit_request",
-                        "persistence": "ephemeral_in_memory",
-                    },
-                )
-                try:
-                    visual = await self.screen_awareness_service.analyze(message.content)
-                    generated_reply = AssistantReply(
-                        text=visual.text,
-                        emotion="calm",
-                        should_speak=True,
-                    )
-                    await self.emit_event(
-                        "screen_analysis_completed",
-                        {
-                            "model": visual.model,
-                            "reasoning_mode": visual.reasoning_mode,
-                            "target_count": len(visual.targets),
-                            "source_width": visual.source_width,
-                            "source_height": visual.source_height,
-                            "sent_width": visual.sent_width,
-                            "sent_height": visual.sent_height,
-                            "sarah_hidden_for_capture": visual.sarah_hidden_for_capture,
-                            "screenshot_persisted": False,
-                        },
-                    )
-                except ScreenAwarenessError as exc:
-                    generated_reply = AssistantReply(
-                        text=str(exc),
-                        emotion="concerned",
-                        should_speak=True,
-                    )
-                    await self.emit_event(
-                        "error",
-                        {
-                            "stage": "screen_awareness",
-                            "username": message.username,
-                            "details": str(exc),
-                        },
-                    )
             else:
                 generated_reply = await self.dialogue_engine.generate(
                     message,
@@ -453,6 +291,8 @@ class StreamOrchestrator:
                         f"confidence={speaker_identity.confidence:.2f}, mode={addressing_context.mode}. "
                         f"Address as '{addressing_context.address_name}'. "
                         f"Tone directive: {addressing_context.tone_directive} "
+                        "Sarah is a knowledge-first technical assistant focused on IT troubleshooting, coding, research, and general questions. "
+                        "Sarah cannot see, capture, click, type into, or control the user's screen or desktop. "
                         "Use persistent memory when relevant, but never claim a memory that was not supplied or retrieved. "
                         "Only call memory_remember when the user explicitly asks you to remember/save/learn something. "
                         "If speaker is unknown, use neutral greetings like 'Hey there' or 'How can I help?'. "
