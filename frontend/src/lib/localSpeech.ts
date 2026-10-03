@@ -10,16 +10,16 @@ const PREFERRED_VOICE_HINTS = [
 export function speechTextFromMarkdown(markdown: string): string {
   let text = markdown;
 
-  text = text.replace(/```[\s\S]*?```/g, " I included a code example in the chat. ");
-  text = text.replace(/![[^\]]*\]\([^)]*\)/g, " ");
-  text = text.replace(/[([^\]]+)\]\([^)]*\)/g, "$1");
+  text = text.replace(/\`\`\`[\s\S]*?\`\`\`/g, " I included a code example in the chat. ");
+  text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, " ");
+  text = text.replace(/\[([^\]]+)\]\([^)]*\)/g, "$1");
   text = text.replace(/https?:\/\/\S+/g, " link ");
   text = text.replace(/^#{1,6}\s+/gm, "");
   text = text.replace(/^\s*[-*+]\s+/gm, "");
   text = text.replace(/^\s*\d+[.)]\s+/gm, "");
   text = text.replace(/\*\*([^*]+)\*\*/g, "$1");
   text = text.replace(/__([^_]+)__/g, "$1");
-  text = text.replace(/`([^`]+)`/g, "$1");
+  text = text.replace(/\`([^\`]+)\`/g, "$1");
   text = text.replace(/[>*_~]/g, "");
   text = text.replace(/\s+/g, " ").trim();
 
