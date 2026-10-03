@@ -420,18 +420,6 @@ class DialogueEngine:
     ) -> AssistantReply:
         self.last_web_context = None
 
-        batch_action_reply = await self._handle_batch_action(message)
-        if batch_action_reply is not None:
-            return batch_action_reply
-
-        confirmed_action_reply = await self._handle_confirmed_action(message)
-        if confirmed_action_reply is not None:
-            return confirmed_action_reply
-
-        desktop_action_reply = await self._handle_desktop_action(message)
-        if desktop_action_reply is not None:
-            return desktop_action_reply
-
         decision = self.web_browsing_policy.decide(message.content, capability_route)
 
         if decision.should_browse and self.web_search_service and self.web_search_service.status.enabled:
