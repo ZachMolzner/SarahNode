@@ -9,6 +9,7 @@ type SarahAvatarProps = {
   replySignal?: number;
   faceTestSignal?: number;
   attentionSignal?: number;
+  motionTestMode?: IdleActivity | null;
 };
 
 type LoadState = "loading" | "ready" | "missing" | "error";
@@ -61,12 +62,14 @@ export function SarahAvatar({
   replySignal = 0,
   faceTestSignal = 0,
   attentionSignal = 0,
+  motionTestMode = null,
 }: SarahAvatarProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const statusRef = useRef(status);
   const moodRef = useRef(mood);
   const replyPulseStartedAtRef = useRef<number | null>(null);
   const attentionUntilRef = useRef(0);
+  const motionTestModeRef = useRef<IdleActivity | null>(motionTestMode);
   const zoomRef = useRef(1);
   const viewModeRef = useRef<AvatarViewMode>("full");
   const frameAvatarRef = useRef<(() => void) | null>(null);
@@ -93,6 +96,10 @@ export function SarahAvatar({
       attentionUntilRef.current = performance.now() + 6500;
     }
   }, [attentionSignal]);
+
+  useEffect(() => {
+    motionTestModeRef.current = motionTestMode;
+  }, [motionTestMode]);
 
   const applyZoom = (nextZoom: number) => {
     const clamped = THREE.MathUtils.clamp(
@@ -191,6 +198,8 @@ export function SarahAvatar({
     let rightUpperLegBone: THREE.Object3D | null = null;
     let leftLowerLegBone: THREE.Object3D | null = null;
     let rightLowerLegBone: THREE.Object3D | null = null;
+    let leftFootBone: THREE.Object3D | null = null;
+    let rightFootBone: THREE.Object3D | null = null;
     let headBaseRotation = new THREE.Euler();
     let neckBaseRotation = new THREE.Euler();
     let chestBaseRotation = new THREE.Euler();
@@ -203,6 +212,8 @@ export function SarahAvatar({
     let rightUpperLegBaseRotation = new THREE.Euler();
     let leftLowerLegBaseRotation = new THREE.Euler();
     let rightLowerLegBaseRotation = new THREE.Euler();
+    let leftFootBaseRotation = new THREE.Euler();
+    let rightFootBaseRotation = new THREE.Euler();
 
     let idleActivity: IdleActivity = "stand";
     let nextIdleActivityAt = 7.5;
@@ -287,6 +298,8 @@ export function SarahAvatar({
         rightUpperLegBone = normalizedBone(vrm, "rightUpperLeg");
         leftLowerLegBone = normalizedBone(vrm, "leftLowerLeg");
         rightLowerLegBone = normalizedBone(vrm, "rightLowerLeg");
+        leftFootBone = normalizedBone(vrm, "leftFoot");
+        rightFootBone = normalizedBone(vrm, "rightFoot");
 
         if (headBone) {
           headBaseRotation = headBone.rotation.clone();
@@ -323,6 +336,12 @@ export function SarahAvatar({
         }
         if (rightLowerLegBone) {
           rightLowerLegBaseRotation = rightLowerLegBone.rotation.clone();
+        }
+        if (leftFootBone) {
+          leftFootBaseRotation = leftFootBone.rotation.clone();
+        }
+        if (rightFootBone) {
+          rightFootBaseRotation = rightFootBone.rotation.clone();
         }
 
         nextBlinkAt = 2.2 + Math.random() * 1.8;
@@ -415,12 +434,17 @@ export function SarahAvatar({
           normalizedMood.includes("relax") ||
           normalizedMood.includes("calm");
 
+        const forcedMotion = motionTestModeRef.current;
         const interactionActive =
-          thinking ||
-          speaking ||
-          performance.now() < attentionUntilRef.current;
+          !forcedMotion &&
+          (thinking ||
+            speaking ||
+            performance.now() < attentionUntilRef.current);
 
-        if (interactionActive) {
+        if (forcedMotion) {
+          idleActivity = forcedMotion;
+          nextIdleActivityAt = elapsed + 30;
+        } else if (interactionActive) {
           idleActivity = "stand";
           nextIdleActivityAt = elapsed + 7.0;
         } else if (elapsed >= nextIdleActivityAt) {
@@ -465,17 +489,17 @@ export function SarahAvatar({
         );
         walkBlend = smoothValue(
           walkBlend,
-          !interactionActive && idleActivity === "walk" ? 1 : 0,
+          idleActivity === "walk" ? 1 : 0,
           2.6,
         );
         floorSitBlend = smoothValue(
           floorSitBlend,
-          !interactionActive && idleActivity === "floorSit" ? 1 : 0,
+          idleActivity === "floorSit" ? 1 : 0,
           2.2,
         );
         stretchBlend = smoothValue(
           stretchBlend,
-          !interactionActive && idleActivity === "stretch" ? 1 : 0,
+          idleActivity === "stretch" ? 1 : 0,
           2.4,
         );
 
