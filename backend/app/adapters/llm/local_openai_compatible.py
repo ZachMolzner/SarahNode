@@ -36,10 +36,16 @@ class LocalOpenAICompatibleClient(LLMClient):
         )
         self.tool_registry = tool_registry
 
-    def _tool_specs(self, *, exclude_names: set[str] | None = None) -> list[dict[str, Any]]:
+    def _tool_specs(
+        self,
+        *,
+        exclude_names: set[str] | None = None,
+        include_names: set[str] | None = None,
+    ) -> list[dict[str, Any]]:
         if not self.tool_registry:
             return []
         excluded = exclude_names or set()
+        included = include_names
         return [
             {
                 "type": "function",
@@ -51,6 +57,7 @@ class LocalOpenAICompatibleClient(LLMClient):
             }
             for tool in self.tool_registry.list_tools()
             if tool.name not in excluded
+            and (included is None or tool.name in included)
         ]
 
     async def _complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Any:
@@ -59,6 +66,8 @@ class LocalOpenAICompatibleClient(LLMClient):
             messages=messages,
             tools=tools or None,
             temperature=settings.local_llm_temperature,
+            max_tokens=settings.local_llm_max_tokens,
+            reasoning_effort=settings.local_llm_reasoning_effort,
         )
 
     async def _invoke_live_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -89,6 +98,52 @@ class LocalOpenAICompatibleClient(LLMClient):
         if not candidate or candidate.lower() in {"anything", "something", "it"}:
             return None
         return candidate[:80]
+
+    @staticmethod
+    def _relevant_tool_names(user_text: str, capability_route: CapabilityRoute) -> set[str]:
+        lowered = user_text.lower()
+        allowed: set[str] = set()
+
+        if any(
+            marker in lowered
+            for marker in (
+                "remember",
+                "save that",
+                "learn that",
+                "forget",
+                "what do you remember",
+                "memory",
+                "update my",
+                "correct my",
+            )
+        ):
+            allowed.update(
+                {"memory_search", "memory_remember", "memory_update", "memory_forget"}
+            )
+
+        if capability_route.intent == "it_troubleshooting" or any(
+            marker in lowered
+            for marker in (
+                "cpu",
+                "ram",
+                "memory usage",
+                "disk",
+                "process",
+                "running",
+                "system info",
+                "windows version",
+                "computer specs",
+                "hostname",
+            )
+        ):
+            allowed.update(
+                {"system_info", "system_resources", "running_processes"}
+            )
+
+        if any(marker in lowered for marker in ("what time", "current time", "date today")):
+            allowed.add("current_time")
+
+        return allowed
 
     async def _prefetch_live_context(self, user_text: str) -> list[dict[str, Any]]:
         """Fetch obvious volatile host facts before inference.
@@ -361,7 +416,7 @@ class LocalOpenAICompatibleClient(LLMClient):
         system_prompt = system_prompt_override or str(persona.get("system_prompt", settings.persona_system_prompt))
         persona_name = str(persona.get("name", settings.persona_name))
         persona_style = str(persona.get("style", settings.persona_style))
-        history_text = "\n".join(recent_history[-8:]) if recent_history else "No prior turns recorded."
+        history_text = "\n".join(recent_history[-5:]) if recent_history else "No prior turns recorded."
 
         live_context = await self._prefetch_live_context(message.content)
         direct_live_answer = self._direct_live_answer(message.content, live_context)
@@ -378,7 +433,11 @@ class LocalOpenAICompatibleClient(LLMClient):
             for item in live_context
             if item.get("ok") and item.get("tool")
         }
-        tools = self._tool_specs(exclude_names=prefetched_tools)
+        relevant_tools = self._relevant_tool_names(message.content, capability_route)
+        tools = self._tool_specs(
+            exclude_names=prefetched_tools,
+            include_names=relevant_tools,
+        )
 
         messages: list[dict[str, Any]] = [
             {
