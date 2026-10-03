@@ -1022,8 +1022,9 @@ export function SarahAvatar({
 
         if (floorSitBlend > 0.001 && hipsBone) {
           // Final seated arm placement uses the same two-bone IK solver as the
-          // legs. Put both hands in front of Sarah near her knees instead of
-          // allowing the imported arm axes to fold the arms behind her back.
+          // legs. Keep both hands low, close together, and farther forward so
+          // the forearms settle naturally across the raised knee instead of
+          // lifting toward the chest or drifting behind Sarah.
           avatarRoot.updateWorldMatrix(true, true);
           hipsBone.updateWorldMatrix(true, false);
 
@@ -1039,17 +1040,17 @@ export function SarahAvatar({
 
           const leftHandTarget = hipsWorldForArms
             .clone()
-            .add(armWorldOffset(-0.20, 0.34, -0.42));
+            .add(armWorldOffset(-0.05, 0.22, -0.58));
           const leftElbowPole = hipsWorldForArms
             .clone()
-            .add(armWorldOffset(-0.46, 0.50, -0.20));
+            .add(armWorldOffset(-0.30, 0.34, -0.30));
 
           const rightHandTarget = hipsWorldForArms
             .clone()
-            .add(armWorldOffset(0.20, 0.34, -0.42));
+            .add(armWorldOffset(0.05, 0.24, -0.56));
           const rightElbowPole = hipsWorldForArms
             .clone()
-            .add(armWorldOffset(0.46, 0.50, -0.20));
+            .add(armWorldOffset(0.30, 0.34, -0.30));
 
           const armIkBlend = THREE.MathUtils.smoothstep(
             floorSitBlend,
