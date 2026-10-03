@@ -15,8 +15,8 @@ type Message = {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-const REPLY_POLL_INTERVAL_MS = 500;
-const REPLY_POLL_ATTEMPTS = 240;
+const REPLY_POLL_INTERVAL_MS = 250;
+const REPLY_POLL_ATTEMPTS = 480;
 
 export function BasicChatPage() {
   const [messages, setMessages] = useState<Message[]>([
