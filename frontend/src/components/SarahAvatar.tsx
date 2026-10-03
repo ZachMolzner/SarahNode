@@ -82,6 +82,7 @@ export function SarahAvatar({
   const attentionUntilRef = useRef(0);
   const motionTestModeRef = useRef<IdleActivity | null>(motionTestMode);
   const inspectionYawRef = useRef(0);
+  const inspectionVerticalOffsetRef = useRef(0);
   const zoomRef = useRef(1);
   const viewModeRef = useRef<AvatarViewMode>("full");
   const frameAvatarRef = useRef<(() => void) | null>(null);
@@ -141,6 +142,20 @@ export function SarahAvatar({
 
   const resetAvatarRotation = () => {
     inspectionYawRef.current = 0;
+  };
+
+  const moveAvatarVertically = (delta: number) => {
+    inspectionVerticalOffsetRef.current = THREE.MathUtils.clamp(
+      inspectionVerticalOffsetRef.current + delta,
+      -1.2,
+      1.2,
+    );
+    window.requestAnimationFrame(() => frameAvatarRef.current?.());
+  };
+
+  const resetAvatarVerticalPosition = () => {
+    inspectionVerticalOffsetRef.current = 0;
+    window.requestAnimationFrame(() => frameAvatarRef.current?.());
   };
 
   const selectViewMode = (mode: AvatarViewMode) => {
@@ -303,8 +318,12 @@ export function SarahAvatar({
         : center.y;
       const viewDistance = distance * (faceMode ? 0.44 : 1) / zoomScale;
 
-      camera.position.set(0, targetY, viewDistance);
-      camera.lookAt(0, targetY, 0);
+      // Camera pan is inspection-only: it moves Sarah up/down in the viewport
+      // without changing her actual root position relative to the floor.
+      const inspectionTargetY =
+        targetY - inspectionVerticalOffsetRef.current;
+      camera.position.set(0, inspectionTargetY, viewDistance);
+      camera.lookAt(0, inspectionTargetY, 0);
       camera.updateProjectionMatrix();
     };
     frameAvatarRef.current = frameAvatar;
@@ -1424,10 +1443,35 @@ export function SarahAvatar({
             >
               ↷
             </button>
+            <span style={styles.zoomDivider} />
+            <button
+              type="button"
+              onClick={() => moveAvatarVertically(0.12)}
+              style={styles.zoomButton}
+              title="Move Sarah up in the viewer"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={resetAvatarVerticalPosition}
+              style={styles.rotateResetButton}
+              title="Reset Sarah vertical viewer position"
+            >
+              ↕
+            </button>
+            <button
+              type="button"
+              onClick={() => moveAvatarVertically(-0.12)}
+              style={styles.zoomButton}
+              title="Move Sarah down in the viewer"
+            >
+              ↓
+            </button>
           </div>
         )}
         {loadState === "ready" && (
-          <div style={styles.zoomHint}>Use ↶ / ↷ to spin • Drag to rotate • Scroll to zoom</div>
+          <div style={styles.zoomHint}>↶/↷ spin • ↑/↓ move • ↕ reset • Scroll to zoom</div>
         )}
         {loadState !== "ready" && (
           <div style={styles.fallback}>
