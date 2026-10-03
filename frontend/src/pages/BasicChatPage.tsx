@@ -2,6 +2,11 @@ import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { MarkdownMessage } from "../components/MarkdownMessage";
 import { SarahAvatar } from "../components/SarahAvatar";
 import { fetchAssistantState, sendAssistantMessage } from "../lib/api";
+import {
+  localSpeechSupported,
+  speakSarahReply,
+  stopLocalSpeech,
+} from "../lib/localSpeech";
 
 type Message = {
   id: number;
@@ -26,6 +31,11 @@ export function BasicChatPage() {
   const [avatarMood, setAvatarMood] = useState("neutral");
   const [replySignal, setReplySignal] = useState(0);
   const [sending, setSending] = useState(false);
+  const [localSpeaking, setLocalSpeaking] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(() => {
+    return window.localStorage.getItem("sarah.voiceEnabled") !== "false";
+  });
+  const speechAvailable = localSpeechSupported();
   const nextId = useRef(2);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -60,6 +70,20 @@ export function BasicChatPage() {
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    window.localStorage.setItem("sarah.voiceEnabled", String(voiceEnabled));
+    if (!voiceEnabled) {
+      stopLocalSpeech();
+      setLocalSpeaking(false);
+    }
+  }, [voiceEnabled]);
+
+  useEffect(() => {
+    return () => {
+      stopLocalSpeech();
+    };
+  }, []);
 
   const addMessage = (role: Message["role"], content: string) => {
     setMessages((current) => [
@@ -107,6 +131,17 @@ export function BasicChatPage() {
 
       if (reply) {
         addMessage("assistant", reply);
+
+        if (voiceEnabled && speechAvailable) {
+          const started = speakSarahReply(reply, {
+            onStart: () => setLocalSpeaking(true),
+            onEnd: () => setLocalSpeaking(false),
+            onError: () => setLocalSpeaking(false),
+          });
+          if (!started) {
+            setLocalSpeaking(false);
+          }
+        }
       } else {
         addMessage(
           "system",
@@ -127,12 +162,14 @@ export function BasicChatPage() {
     }
   };
 
+  const displayStatus = localSpeaking ? "speaking" : status;
+
   return (
     <main style={styles.shell}>
       <section style={styles.app}>
         <aside style={styles.avatarPane}>
           <SarahAvatar
-            status={status}
+            status={displayStatus}
             mood={avatarMood}
             replySignal={replySignal}
           />
@@ -146,9 +183,29 @@ export function BasicChatPage() {
                 IT • Coding • Research • General assistant
               </p>
             </div>
-            <div style={styles.statusWrap}>
-              <span style={styles.dot} />
-              <span>{status}</span>
+            <div style={styles.headerControls}>
+              <button
+                type="button"
+                onClick={() => setVoiceEnabled((enabled) => !enabled)}
+                disabled={!speechAvailable}
+                title={
+                  speechAvailable
+                    ? "Toggle Sarah's local Windows voice"
+                    : "Local speech synthesis is unavailable in this runtime"
+                }
+                style={{
+                  ...styles.voiceButton,
+                  ...(!voiceEnabled || !speechAvailable
+                    ? styles.voiceButtonMuted
+                    : {}),
+                }}
+              >
+                {voiceEnabled && speechAvailable ? "Voice On" : "Voice Off"}
+              </button>
+              <div style={styles.statusWrap}>
+                <span style={styles.dot} />
+                <span>{displayStatus}</span>
+              </div>
             </div>
           </header>
 
@@ -262,6 +319,25 @@ const styles: Record<string, React.CSSProperties> = {
     margin: "4px 0 0",
     color: "#8f98a8",
     fontSize: "13px",
+  },
+  headerControls: {
+    display: "flex",
+    alignItems: "center",
+    gap: "12px",
+  },
+  voiceButton: {
+    border: "1px solid #354052",
+    borderRadius: "8px",
+    padding: "6px 10px",
+    background: "#182230",
+    color: "#dce7f5",
+    fontSize: "12px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  voiceButtonMuted: {
+    background: "#11151d",
+    color: "#7e8999",
   },
   statusWrap: {
     display: "flex",
