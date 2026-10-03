@@ -22,6 +22,8 @@ export function BasicChatPage() {
   ]);
   const [input, setInput] = useState("");
   const [status, setStatus] = useState("Connecting");
+  const [avatarMood, setAvatarMood] = useState("neutral");
+  const [replySignal, setReplySignal] = useState(0);
   const [sending, setSending] = useState(false);
   const nextId = useRef(2);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -34,6 +36,9 @@ export function BasicChatPage() {
         const state = await fetchAssistantState();
         if (!cancelled) {
           setStatus(state.assistant_state || "Online");
+          if (state.latest_reply_emotion) {
+            setAvatarMood(state.latest_reply_emotion);
+          }
         }
       } catch {
         if (!cancelled) {
@@ -93,6 +98,8 @@ export function BasicChatPage() {
 
         if (state.latest_reply && state.latest_reply !== previousReply) {
           reply = state.latest_reply;
+          setAvatarMood(state.latest_reply_emotion || "neutral");
+          setReplySignal((current) => current + 1);
           break;
         }
       }
@@ -123,7 +130,11 @@ export function BasicChatPage() {
     <main style={styles.shell}>
       <section style={styles.app}>
         <aside style={styles.avatarPane}>
-          <SarahAvatar status={status} />
+          <SarahAvatar
+            status={status}
+            mood={avatarMood}
+            replySignal={replySignal}
+          />
         </aside>
 
         <section style={styles.chatPane}>
