@@ -179,9 +179,9 @@ export function SarahAvatar({
         color: 0x151b26,
         roughness: 0.92,
         metalness: 0.04,
-        transparent: true,
-        opacity: 0.88,
-        depthWrite: false,
+        transparent: false,
+        opacity: 1,
+        depthWrite: true,
       }),
     );
     floor.rotation.x = -Math.PI / 2;
@@ -548,7 +548,7 @@ export function SarahAvatar({
           baseX + walkTravelX + 0.045 * floorSitBlend;
         avatarRoot.position.y =
           baseY -
-          0.64 * floorSitBlend +
+          0.76 * floorSitBlend +
           walkBob +
           breathingBob;
         avatarRoot.position.z =
@@ -557,7 +557,7 @@ export function SarahAvatar({
           baseYaw +
           idleYaw +
           walkDirection * 0.14 * walkBlend -
-          0.12 * floorSitBlend;
+          0.05 * floorSitBlend;
 
         if (hipsBone) {
           hipsBone.rotation.x =
@@ -565,10 +565,10 @@ export function SarahAvatar({
             0.22 * floorSitBlend -
             0.025 * stretchBlend;
           hipsBone.rotation.y =
-            hipsBaseRotation.y - 0.14 * floorSitBlend;
+            hipsBaseRotation.y - 0.06 * floorSitBlend;
           hipsBone.rotation.z =
             hipsBaseRotation.z +
-            0.16 * floorSitBlend +
+            0.08 * floorSitBlend +
             Math.sin(elapsed * 0.48) *
               0.004 *
               (0.25 + 0.75 * (1 - attentionBlend));
@@ -581,76 +581,77 @@ export function SarahAvatar({
             0.015 * floorSitBlend -
             0.10 * stretchBlend;
           chestBone.rotation.y =
-            chestBaseRotation.y + 0.08 * floorSitBlend;
+            chestBaseRotation.y + 0.04 * floorSitBlend;
           chestBone.rotation.z =
             chestBaseRotation.z -
-            0.10 * floorSitBlend +
+            0.06 * floorSitBlend +
             Math.sin(elapsed * 0.55) *
               0.0045 *
               (0.30 + 0.70 * (1 - attentionBlend));
         }
 
-        // Reference-style floor sit: Sarah's left knee is raised while
-        // her right leg extends diagonally outward instead of crossing underneath.
+        // Reference-style floor sit. Both thighs rotate forward into a
+        // true seated position. Sarah's left knee stays raised/bent while her
+        // right leg remains mostly straight and extends diagonally along the floor.
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
             legSwing * 0.15 * walkBlend +
-            1.22 * floorSitBlend;
+            1.30 * floorSitBlend;
           leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y + 0.10 * floorSitBlend;
+            leftUpperLegBaseRotation.y + 0.08 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.12 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.18 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
             oppositeLegSwing * 0.15 * walkBlend +
-            0.30 * floorSitBlend;
+            1.16 * floorSitBlend;
           rightUpperLegBone.rotation.y =
-            rightUpperLegBaseRotation.y - 0.34 * floorSitBlend;
+            rightUpperLegBaseRotation.y - 0.18 * floorSitBlend;
           rightUpperLegBone.rotation.z =
-            rightUpperLegBaseRotation.z - 0.46 * floorSitBlend;
+            rightUpperLegBaseRotation.z - 0.30 * floorSitBlend;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend -
-            1.42 * floorSitBlend;
+            1.34 * floorSitBlend;
           leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y + 0.06 * floorSitBlend;
+            leftLowerLegBaseRotation.y + 0.04 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z + 0.06 * floorSitBlend;
+            leftLowerLegBaseRotation.z + 0.04 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
-            Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend -
-            0.16 * floorSitBlend;
+            Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend +
+            0.04 * floorSitBlend;
           rightLowerLegBone.rotation.y =
-            rightLowerLegBaseRotation.y - 0.18 * floorSitBlend;
+            rightLowerLegBaseRotation.y - 0.10 * floorSitBlend;
           rightLowerLegBone.rotation.z =
-            rightLowerLegBaseRotation.z - 0.12 * floorSitBlend;
+            rightLowerLegBaseRotation.z - 0.06 * floorSitBlend;
         }
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
             legSwing * 0.04 * walkBlend +
-            0.44 * floorSitBlend;
+            0.38 * floorSitBlend;
           leftFootBone.rotation.y =
-            leftFootBaseRotation.y + 0.04 * floorSitBlend;
+            leftFootBaseRotation.y + 0.02 * floorSitBlend;
           leftFootBone.rotation.z =
-            leftFootBaseRotation.z + 0.04 * floorSitBlend;
+            leftFootBaseRotation.z + 0.02 * floorSitBlend;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
             oppositeLegSwing * 0.04 * walkBlend +
-            0.10 * floorSitBlend;
+            0.16 * floorSitBlend;
           rightFootBone.rotation.y =
-            rightFootBaseRotation.y - 0.30 * floorSitBlend;
+            rightFootBaseRotation.y - 0.18 * floorSitBlend;
           rightFootBone.rotation.z =
-            rightFootBaseRotation.z - 0.24 * floorSitBlend;
+            rightFootBaseRotation.z - 0.18 * floorSitBlend;
         }
 
         // Arms counter-swing while walking. During the floor sit, upper
@@ -695,7 +696,7 @@ export function SarahAvatar({
             leftLowerArmBaseRotation.y - 0.20 * floorSitBlend;
           leftLowerArmBone.rotation.z =
             leftLowerArmBaseRotation.z +
-            0.82 * floorSitBlend +
+            1.02 * floorSitBlend +
             0.10 * stretchBlend;
         }
         if (rightLowerArmBone) {
@@ -707,7 +708,7 @@ export function SarahAvatar({
             rightLowerArmBaseRotation.y + 0.18 * floorSitBlend;
           rightLowerArmBone.rotation.z =
             rightLowerArmBaseRotation.z -
-            0.74 * floorSitBlend -
+            0.94 * floorSitBlend -
             0.10 * stretchBlend;
         }
 
