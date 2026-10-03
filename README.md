@@ -6,7 +6,7 @@ Sarah is represented in the desktop app by a display-only 3D avatar, but she doe
 
 ## Core goals
 
-- Help diagnose Windows, networking, hardware, software, printer, Active Directory, ServiceNow, and other IT problems.
+- Help diagnose Windows, networking, hardware, software, printer, Active Directory, ServiceNow, and other IT problems using an evidence-first troubleshooting flow.
 - Explain, write, review, and debug code.
 - Answer general questions and use web research when current information is needed.
 - Remember useful non-secret preferences and project context.
@@ -83,6 +83,24 @@ cd C:\Users\karvo\SarahNode
 ```
 
 The frontend uses Three.js and `@pixiv/three-vrm` to render the character. Avatar motion is presentation-only and has no screen-reading or computer-control access.
+
+## Local voice
+
+The desktop chat can speak Sarah's replies with the Windows/WebView speech-synthesis service. No ElevenLabs key is required for this frontend-local voice path.
+
+- Voice is enabled by default and can be toggled with **Voice On / Voice Off** in the chat header.
+- Sarah prefers English voices reported by the platform as local services.
+- The avatar receives a real `speaking` state for the duration of local playback so mouth animation remains active while audio is playing.
+- Markdown and code blocks are cleaned before speech so Sarah does not read formatting characters or long code listings aloud.
+- The selected Voice On/Off preference persists between launches.
+
+To request a particular installed voice by name, set:
+
+```text
+VITE_SARAH_VOICE_NAME=Zira
+```
+
+If that voice is unavailable, Sarah falls back to another local English voice and then to the platform default.
 
 ## Local development
 
