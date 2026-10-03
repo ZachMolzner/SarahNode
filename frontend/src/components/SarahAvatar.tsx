@@ -839,69 +839,51 @@ export function SarahAvatar({
               (0.30 + 0.70 * (1 - attentionBlend));
         }
 
-        // Floor-sit reference, tuned from the side view. Keep the pelvis
-        // grounded. With MANUKA's thighs rotated forward (negative local X),
-        // the knee must also bend negative to fold the shin back toward the body;
-        // positive knee bends were sending both boots below the stage.
+        // Keep the leg bones in their neutral/walk pose here. The seated pose
+        // itself is handled entirely by IK below. Previously the legs were first
+        // rotated with Euler sit offsets and then rotated again by IK, which made
+        // them corkscrew during the stand-to-sit transition.
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
-            legSwing * 0.15 * walkBlend -
-            1.38 * floorSitBlend;
-          leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y + 0.03 * floorSitBlend;
-          leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.18 * floorSitBlend;
+            legSwing * 0.15 * walkBlend;
+          leftUpperLegBone.rotation.y = leftUpperLegBaseRotation.y;
+          leftUpperLegBone.rotation.z = leftUpperLegBaseRotation.z;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
-            oppositeLegSwing * 0.15 * walkBlend -
-            1.72 * floorSitBlend;
-          rightUpperLegBone.rotation.y =
-            rightUpperLegBaseRotation.y - 0.02 * floorSitBlend;
-          rightUpperLegBone.rotation.z =
-            rightUpperLegBaseRotation.z - 0.08 * floorSitBlend;
+            oppositeLegSwing * 0.15 * walkBlend;
+          rightUpperLegBone.rotation.y = rightUpperLegBaseRotation.y;
+          rightUpperLegBone.rotation.z = rightUpperLegBaseRotation.z;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
-            Math.max(0, -legSwing) * 0.16 * walkBlend -
-            0.22 * floorSitBlend;
-          leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y + 0.01 * floorSitBlend;
-          leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z + 0.01 * floorSitBlend;
+            Math.max(0, -legSwing) * 0.16 * walkBlend;
+          leftLowerLegBone.rotation.y = leftLowerLegBaseRotation.y;
+          leftLowerLegBone.rotation.z = leftLowerLegBaseRotation.z;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
-            Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend -
-            1.18 * floorSitBlend;
-          rightLowerLegBone.rotation.y =
-            rightLowerLegBaseRotation.y - 0.03 * floorSitBlend;
-          rightLowerLegBone.rotation.z =
-            rightLowerLegBaseRotation.z - 0.03 * floorSitBlend;
+            Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend;
+          rightLowerLegBone.rotation.y = rightLowerLegBaseRotation.y;
+          rightLowerLegBone.rotation.z = rightLowerLegBaseRotation.z;
         }
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
-            legSwing * 0.04 * walkBlend +
-            0.16 * floorSitBlend;
-          leftFootBone.rotation.y =
-            leftFootBaseRotation.y + 0.03 * floorSitBlend;
-          leftFootBone.rotation.z =
-            leftFootBaseRotation.z + 0.01 * floorSitBlend;
+            legSwing * 0.04 * walkBlend;
+          leftFootBone.rotation.y = leftFootBaseRotation.y;
+          leftFootBone.rotation.z = leftFootBaseRotation.z;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
-            oppositeLegSwing * 0.04 * walkBlend +
-            0.28 * floorSitBlend;
-          rightFootBone.rotation.y =
-            rightFootBaseRotation.y - 0.04 * floorSitBlend;
-          rightFootBone.rotation.z =
-            rightFootBaseRotation.z - 0.02 * floorSitBlend;
+            oppositeLegSwing * 0.04 * walkBlend;
+          rightFootBone.rotation.y = rightFootBaseRotation.y;
+          rightFootBone.rotation.z = rightFootBaseRotation.z;
         }
 
         if (floorSitBlend > 0.001 && hipsBone) {
@@ -938,10 +920,13 @@ export function SarahAvatar({
             .clone()
             .add(worldOffset(0.14, 0.58, -0.34));
 
+          // Start the IK transition almost immediately and let it own the full
+          // seated motion. This keeps the knees moving on one continuous arc
+          // while the pelvis lowers instead of snapping after the body has moved.
           const ikBlend = THREE.MathUtils.smoothstep(
             floorSitBlend,
-            0.18,
-            0.92,
+            0.02,
+            0.98,
           );
 
           solveTwoBoneChain(
