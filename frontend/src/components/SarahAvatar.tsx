@@ -699,44 +699,45 @@ export function SarahAvatar({
               (0.30 + 0.70 * (1 - attentionBlend));
         }
 
-        // Reference floor sit: left leg reaches diagonally forward along the
-        // stage; right knee is pulled high toward the torso with its shin folded
-        // back. Boots are pitched/yawed so their soles face the floor, not camera.
+        // Floor-sit reference, tuned from the side view. MANUKA's seated
+        // thighs need to rotate forward from the hips (negative local X here),
+        // not backward behind the pelvis. The left leg stays mostly extended
+        // along the floor while the right knee folds up toward the torso.
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
-            legSwing * 0.15 * walkBlend +
-            1.14 * floorSitBlend;
+            legSwing * 0.15 * walkBlend -
+            0.86 * floorSitBlend;
           leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y + 0.03 * floorSitBlend;
+            leftUpperLegBaseRotation.y + 0.04 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.38 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.20 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
-            oppositeLegSwing * 0.15 * walkBlend +
-            1.34 * floorSitBlend;
+            oppositeLegSwing * 0.15 * walkBlend -
+            1.24 * floorSitBlend;
           rightUpperLegBone.rotation.y =
-            rightUpperLegBaseRotation.y - 0.02 * floorSitBlend;
+            rightUpperLegBaseRotation.y - 0.03 * floorSitBlend;
           rightUpperLegBone.rotation.z =
-            rightUpperLegBaseRotation.z - 0.08 * floorSitBlend;
+            rightUpperLegBaseRotation.z - 0.10 * floorSitBlend;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend +
-            0.06 * floorSitBlend;
+            0.12 * floorSitBlend;
           leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y + 0.01 * floorSitBlend;
+            leftLowerLegBaseRotation.y + 0.02 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z + 0.01 * floorSitBlend;
+            leftLowerLegBaseRotation.z + 0.02 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
             Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend +
-            0.96 * floorSitBlend;
+            1.42 * floorSitBlend;
           rightLowerLegBone.rotation.y =
             rightLowerLegBaseRotation.y - 0.04 * floorSitBlend;
           rightLowerLegBone.rotation.z =
@@ -745,20 +746,20 @@ export function SarahAvatar({
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
-            legSwing * 0.04 * walkBlend +
-            0.44 * floorSitBlend;
+            legSwing * 0.04 * walkBlend -
+            0.10 * floorSitBlend;
           leftFootBone.rotation.y =
-            leftFootBaseRotation.y + 0.06 * floorSitBlend;
+            leftFootBaseRotation.y + 0.04 * floorSitBlend;
           leftFootBone.rotation.z =
-            leftFootBaseRotation.z + 0.03 * floorSitBlend;
+            leftFootBaseRotation.z + 0.02 * floorSitBlend;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
-            oppositeLegSwing * 0.04 * walkBlend +
-            0.38 * floorSitBlend;
+            oppositeLegSwing * 0.04 * walkBlend -
+            0.34 * floorSitBlend;
           rightFootBone.rotation.y =
-            rightFootBaseRotation.y - 0.06 * floorSitBlend;
+            rightFootBaseRotation.y - 0.05 * floorSitBlend;
           rightFootBone.rotation.z =
             rightFootBaseRotation.z - 0.03 * floorSitBlend;
         }
