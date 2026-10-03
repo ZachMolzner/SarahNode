@@ -7,7 +7,7 @@ const PREFERRED_VOICE_HINTS = [
   "Zira",
 ];
 
-export type SarahEmojiMood = "happy" | "relaxed" | "sad" | "concerned";
+export type SarahEmojiMood = "happy" | "relaxed" | "sad" | "angry" | "surprised" | "concerned";
 
 const HAPPY_EMOJI = [
   "😀", "😃", "😄", "😁", "😆", "😊", "😍", "🥰", "😘", "😎",
@@ -23,14 +23,24 @@ const SAD_EMOJI = [
   "😢", "😭", "😞", "😔", "😟", "😥", "🥺", "💔",
 ];
 
+const ANGRY_EMOJI = [
+  "😠", "😡", "🤬", "👿", "💢",
+];
+
+const SURPRISED_EMOJI = [
+  "😮", "😯", "😲", "🤯", "😦",
+];
+
 const CONCERNED_EMOJI = [
-  "😠", "😡", "🤬", "😨", "😰", "😱", "😬", "😳", "😓", "⚠", "⚠️",
+  "😨", "😰", "😱", "😬", "😳", "😓", "⚠", "⚠️",
 ];
 
 const EMOJI_SEQUENCE_RE =
   /\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*/gu;
 
 export function emotionFromEmoji(text: string): SarahEmojiMood | null {
+  if (ANGRY_EMOJI.some((emoji) => text.includes(emoji))) return "angry";
+  if (SURPRISED_EMOJI.some((emoji) => text.includes(emoji))) return "surprised";
   if (CONCERNED_EMOJI.some((emoji) => text.includes(emoji))) return "concerned";
   if (SAD_EMOJI.some((emoji) => text.includes(emoji))) return "sad";
   if (HAPPY_EMOJI.some((emoji) => text.includes(emoji))) return "happy";
@@ -166,6 +176,8 @@ export function speakSarahReply(
     happy: { rate: 1.04, pitch: 1.08 },
     relaxed: { rate: 0.98, pitch: 1.01 },
     sad: { rate: 0.93, pitch: 0.95 },
+    angry: { rate: 1.0, pitch: 0.96 },
+    surprised: { rate: 1.06, pitch: 1.11 },
     concerned: { rate: 0.96, pitch: 0.98 },
   } as const;
   const selectedProsody = emojiMood ? prosody[emojiMood] : null;
