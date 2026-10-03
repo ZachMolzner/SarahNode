@@ -226,6 +226,8 @@ export function SarahAvatar({
     let rightUpperArmBone: THREE.Object3D | null = null;
     let leftLowerArmBone: THREE.Object3D | null = null;
     let rightLowerArmBone: THREE.Object3D | null = null;
+    let leftHandBone: THREE.Object3D | null = null;
+    let rightHandBone: THREE.Object3D | null = null;
     let leftUpperLegBone: THREE.Object3D | null = null;
     let rightUpperLegBone: THREE.Object3D | null = null;
     let leftLowerLegBone: THREE.Object3D | null = null;
@@ -333,6 +335,8 @@ export function SarahAvatar({
         rightUpperArmBone = normalizedBone(vrm, "rightUpperArm");
         leftLowerArmBone = normalizedBone(vrm, "leftLowerArm");
         rightLowerArmBone = normalizedBone(vrm, "rightLowerArm");
+        leftHandBone = normalizedBone(vrm, "leftHand");
+        rightHandBone = normalizedBone(vrm, "rightHand");
         leftUpperLegBone = normalizedBone(vrm, "leftUpperLeg");
         rightUpperLegBone = normalizedBone(vrm, "rightUpperLeg");
         leftLowerLegBone = normalizedBone(vrm, "leftLowerLeg");
@@ -586,7 +590,7 @@ export function SarahAvatar({
       bone.updateWorldMatrix(false, true);
     };
 
-    const solveTwoBoneLeg = (
+    const solveTwoBoneChain = (
       upper: THREE.Object3D | null,
       lower: THREE.Object3D | null,
       foot: THREE.Object3D | null,
@@ -940,7 +944,7 @@ export function SarahAvatar({
             0.92,
           );
 
-          solveTwoBoneLeg(
+          solveTwoBoneChain(
             leftUpperLegBone,
             leftLowerLegBone,
             leftFootBone,
@@ -948,7 +952,7 @@ export function SarahAvatar({
             leftKneePole,
             ikBlend,
           );
-          solveTwoBoneLeg(
+          solveTwoBoneChain(
             rightUpperLegBone,
             rightLowerLegBone,
             rightFootBone,
@@ -1014,6 +1018,61 @@ export function SarahAvatar({
             rightLowerArmBaseRotation.z -
             1.22 * floorSitBlend -
             0.10 * stretchBlend;
+        }
+
+        if (floorSitBlend > 0.001 && hipsBone) {
+          // Final seated arm placement uses the same two-bone IK solver as the
+          // legs. Put both hands in front of Sarah near her knees instead of
+          // allowing the imported arm axes to fold the arms behind her back.
+          avatarRoot.updateWorldMatrix(true, true);
+          hipsBone.updateWorldMatrix(true, false);
+
+          const hipsWorldForArms = new THREE.Vector3();
+          const rootWorldQuaternionForArms = new THREE.Quaternion();
+          hipsBone.getWorldPosition(hipsWorldForArms);
+          avatarRoot.getWorldQuaternion(rootWorldQuaternionForArms);
+
+          const armWorldOffset = (x: number, y: number, z: number) =>
+            new THREE.Vector3(x, y, z).applyQuaternion(
+              rootWorldQuaternionForArms,
+            );
+
+          const leftHandTarget = hipsWorldForArms
+            .clone()
+            .add(armWorldOffset(-0.20, 0.34, -0.42));
+          const leftElbowPole = hipsWorldForArms
+            .clone()
+            .add(armWorldOffset(-0.46, 0.50, -0.20));
+
+          const rightHandTarget = hipsWorldForArms
+            .clone()
+            .add(armWorldOffset(0.20, 0.34, -0.42));
+          const rightElbowPole = hipsWorldForArms
+            .clone()
+            .add(armWorldOffset(0.46, 0.50, -0.20));
+
+          const armIkBlend = THREE.MathUtils.smoothstep(
+            floorSitBlend,
+            0.18,
+            0.92,
+          );
+
+          solveTwoBoneChain(
+            leftUpperArmBone,
+            leftLowerArmBone,
+            leftHandBone,
+            leftHandTarget,
+            leftElbowPole,
+            armIkBlend,
+          );
+          solveTwoBoneChain(
+            rightUpperArmBone,
+            rightLowerArmBone,
+            rightHandBone,
+            rightHandTarget,
+            rightElbowPole,
+            armIkBlend,
+          );
         }
 
         const moodHeadPitch = sadMood
