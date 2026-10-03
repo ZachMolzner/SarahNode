@@ -3,7 +3,16 @@ import * as THREE from "three";
 import { VRMLoaderPlugin, VRMUtils, type VRM } from "@pixiv/three-vrm";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
-export type SarahAppearance = "default" | "casual" | "sexy" | "underwear";
+export type SarahAppearance =
+  | "default"
+  | "casual-streetwear"
+  | "cafe-maid"
+  | "sporty-athleisure"
+  | "elegant-evening"
+  | "cozy-sweater"
+  | "futuristic-idol-techwear"
+  | "sexy"
+  | "underwear";
 
 type SarahAvatarProps = {
   status: string;
@@ -81,10 +90,18 @@ export function SarahAvatar({
     }
   }, [replySignal]);
 
-  const modelUrl =
-    appearance === "underwear"
-      ? "/models/sarah-underwear.vrm"
-      : "/models/sarah.vrm";
+  const modelUrls: Record<SarahAppearance, string> = {
+    default: "/models/sarah.vrm",
+    "casual-streetwear": "/models/sarah-casual-streetwear.vrm",
+    "cafe-maid": "/models/sarah-cafe-maid.vrm",
+    "sporty-athleisure": "/models/sarah-sporty-athleisure.vrm",
+    "elegant-evening": "/models/sarah-elegant-evening.vrm",
+    "cozy-sweater": "/models/sarah-cozy-sweater.vrm",
+    "futuristic-idol-techwear": "/models/sarah-futuristic-idol-techwear.vrm",
+    sexy: "/models/sarah.vrm",
+    underwear: "/models/sarah-underwear.vrm",
+  };
+  const modelUrl = modelUrls[appearance];
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -155,8 +172,8 @@ export function SarahAvatar({
     const wearableMeshes = new Map<string, THREE.Object3D>();
 
     const applyAppearance = (nextAppearance: SarahAppearance) => {
-      if (nextAppearance === "underwear") {
-        // The underwear profile is a separate VRM export, so its meshes stay as-authored.
+      if (nextAppearance !== "default" && nextAppearance !== "sexy") {
+        // Alternate outfit profiles are authored as separate local VRMs.
         appliedAppearance = nextAppearance;
         return;
       }
@@ -164,7 +181,7 @@ export function SarahAvatar({
       const visibility: Record<string, boolean> = {
         Manuka_costume_apron: nextAppearance === "default",
         Manuka_costume_apron_nameplate: nextAppearance === "default",
-        Manuka_costume_tie: nextAppearance !== "casual" && nextAppearance !== "sexy",
+        Manuka_costume_tie: nextAppearance === "default",
         Manuka_costume_bracelet: true,
         Manuka_costume_shirt: true,
         Manuka_costume_shoes: true,
@@ -478,13 +495,25 @@ export function SarahAvatar({
     };
   }, [modelUrl]);
 
+  const appearanceLabels: Record<SarahAppearance, string> = {
+    default: "Default",
+    "casual-streetwear": "Casual Streetwear",
+    "cafe-maid": "Cafe Maid",
+    "sporty-athleisure": "Sporty Athleisure",
+    "elegant-evening": "Elegant Evening",
+    "cozy-sweater": "Cozy Sweater",
+    "futuristic-idol-techwear": "Futuristic Idol / Techwear",
+    sexy: "Sexy",
+    underwear: "Underwear",
+  };
+
   const fallbackText =
     loadState === "loading"
-      ? "Loading Sarah's MANUKA model..."
+      ? `Loading Sarah's ${appearanceLabels[appearance]} model...`
       : loadState === "missing"
-        ? appearance === "underwear"
-          ? "Underwear profile is not installed yet. Export the underwear version as frontend/public/models/sarah-underwear.vrm."
-          : "Place MANUKA.vrm at frontend/public/models/sarah.vrm to display Sarah."
+        ? appearance === "default" || appearance === "sexy"
+          ? "Place MANUKA.vrm at frontend/public/models/sarah.vrm to display Sarah."
+          : `${appearanceLabels[appearance]} is not installed yet. Expected: ${modelUrl.replace("/models/", "frontend/public/models/")}`
         : "The avatar file loaded, but it was not recognized as a VRM model.";
 
   return (
