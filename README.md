@@ -85,6 +85,13 @@ cd C:\Users\karvo\SarahNode
 
 The frontend uses Three.js and `@pixiv/three-vrm` to render the character. Avatar motion is presentation-only and has no screen-reading or computer-control access.
 
+Sarah's display behavior also includes:
+- emotion inference from both reply wording and emoji;
+- distinct happy, relaxed, sad, angry, surprised, and concerned facial recipes;
+- idle standing, short pacing, and seated-rest behavior;
+- automatic standing/centering and forward attention when the user begins typing, sends a message, or Sarah starts thinking/speaking;
+- Full/Face camera modes and interactive zoom.
+
 ## Avatar expression test
 
 The chat includes a local slash command for testing MANUKA's facial expressions without sending anything to Qwen:
