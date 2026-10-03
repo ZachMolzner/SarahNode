@@ -7,6 +7,45 @@ const PREFERRED_VOICE_HINTS = [
   "Zira",
 ];
 
+export type SarahEmojiMood = "happy" | "relaxed" | "sad" | "concerned";
+
+const HAPPY_EMOJI = [
+  "😀", "😃", "😄", "😁", "😆", "😊", "😍", "🥰", "😘", "😎",
+  "🤩", "🥳", "😂", "🤣", "❤️", "❤", "💕", "💖", "💗", "💓",
+  "💞", "💝", "💘", "🩷", "🧡", "💛", "💚", "💙", "💜", "🤍",
+];
+
+const RELAXED_EMOJI = [
+  "🙂", "😌", "😅", "😉", "🤗", "☺", "☺️", "✨",
+];
+
+const SAD_EMOJI = [
+  "😢", "😭", "😞", "😔", "😟", "😥", "🥺", "💔",
+];
+
+const CONCERNED_EMOJI = [
+  "😠", "😡", "🤬", "😨", "😰", "😱", "😬", "😳", "😓", "⚠", "⚠️",
+];
+
+const EMOJI_SEQUENCE_RE =
+  /\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*/gu;
+
+export function emotionFromEmoji(text: string): SarahEmojiMood | null {
+  if (CONCERNED_EMOJI.some((emoji) => text.includes(emoji))) return "concerned";
+  if (SAD_EMOJI.some((emoji) => text.includes(emoji))) return "sad";
+  if (HAPPY_EMOJI.some((emoji) => text.includes(emoji))) return "happy";
+  if (RELAXED_EMOJI.some((emoji) => text.includes(emoji))) return "relaxed";
+  return null;
+}
+
+export function stripEmojiForSpeech(text: string): string {
+  return text
+    .replace(EMOJI_SEQUENCE_RE, " ")
+    .replace(/[\uFE0E\uFE0F\u200D]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function speechTextFromMarkdown(markdown: string): string {
   let text = markdown;
 
@@ -21,6 +60,7 @@ export function speechTextFromMarkdown(markdown: string): string {
   text = text.replace(/__([^_]+)__/g, "$1");
   text = text.replace(/\`([^\`]+)\`/g, "$1");
   text = text.replace(/[>*_~]/g, "");
+  text = stripEmojiForSpeech(text);
   text = text.replace(/\s+/g, " ").trim();
 
   const maxCharacters = 1800;
@@ -121,8 +161,17 @@ export function speakSarahReply(
     utterance.lang = "en-US";
   }
 
-  utterance.rate = 1.02;
-  utterance.pitch = 1.03;
+  const emojiMood = emotionFromEmoji(markdown);
+  const prosody = {
+    happy: { rate: 1.04, pitch: 1.08 },
+    relaxed: { rate: 0.98, pitch: 1.01 },
+    sad: { rate: 0.93, pitch: 0.95 },
+    concerned: { rate: 0.96, pitch: 0.98 },
+  } as const;
+  const selectedProsody = emojiMood ? prosody[emojiMood] : null;
+
+  utterance.rate = selectedProsody?.rate ?? 1.02;
+  utterance.pitch = selectedProsody?.pitch ?? 1.03;
   utterance.volume = 1.0;
 
   utterance.onstart = () => callbacks.onStart?.();
