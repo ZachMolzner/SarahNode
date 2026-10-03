@@ -221,6 +221,28 @@ class StreamOrchestrator:
             },
         )
 
+        learning_scope = (
+            speaker_identity.speaker_id
+            if speaker_identity.speaker_id != "unknown"
+            else "household"
+        )
+        learned_item = self.memory_learning_service.capture_outcome_feedback(
+            message.content,
+            previous_user_text=self.memory_manager.state.last_user_query,
+            previous_reply=self.memory_manager.state.last_reply,
+            scope=learning_scope,
+        )
+        if learned_item is not None:
+            await self.emit_event(
+                "learning_captured",
+                {
+                    "memory_id": learned_item.id,
+                    "category": learned_item.category.value,
+                    "scope": learned_item.scope,
+                    "key": learned_item.key,
+                },
+            )
+
         session_memory = self.memory_manager.summarize()
         memory_scopes = {"household"}
         if speaker_identity.speaker_id != "unknown":
@@ -392,6 +414,7 @@ class StreamOrchestrator:
                     {"is_speaking": False, "emotion": "idle"},
                 )
 
+        self.memory_manager.set_last_user_query(message.content)
         await self._set_assistant_state("idle")
 
         self._cooldown_until = (
