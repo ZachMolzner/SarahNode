@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import ipaddress
 import logging
 from dataclasses import dataclass
@@ -30,10 +31,17 @@ class PageFetcher:
         self.extractor = ContentExtractor()
 
     async def fetch_pages(self, search_results: list[SearchResult]) -> list[FetchedPage]:
-        pages: list[FetchedPage] = []
-        for result in search_results[: self.max_pages]:
-            pages.append(await self._fetch_page(result.url, fallback_title=result.title))
-        return pages
+        selected = search_results[: self.max_pages]
+        if not selected:
+            return []
+        return list(
+            await asyncio.gather(
+                *(
+                    self._fetch_page(result.url, fallback_title=result.title)
+                    for result in selected
+                )
+            )
+        )
 
     def _is_disallowed_url(self, raw_url: str) -> bool:
         parsed = urlparse(raw_url)
