@@ -19,6 +19,18 @@ const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve
 const REPLY_POLL_INTERVAL_MS = 250;
 const REPLY_POLL_ATTEMPTS = 480;
 
+const FACE_TEST_MOODS = [
+  "happy",
+  "relaxed",
+  "sad",
+  "angry",
+  "surprised",
+  "concerned",
+  "neutral",
+] as const;
+
+type FaceTestMood = (typeof FACE_TEST_MOODS)[number];
+
 export function BasicChatPage() {
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -31,6 +43,7 @@ export function BasicChatPage() {
   const [status, setStatus] = useState("Connecting");
   const [avatarMood, setAvatarMood] = useState("neutral");
   const [replySignal, setReplySignal] = useState(0);
+  const [faceTestSignal, setFaceTestSignal] = useState(0);
   const [sending, setSending] = useState(false);
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(() => {
@@ -39,6 +52,8 @@ export function BasicChatPage() {
   const speechAvailable = localSpeechSupported();
   const nextId = useRef(2);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const faceTestActiveRef = useRef(false);
+  const faceTestTimersRef = useRef<number[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,9 +63,11 @@ export function BasicChatPage() {
         const state = await fetchAssistantState();
         if (!cancelled) {
           setStatus(state.assistant_state || "Online");
-          const emojiMood = emotionFromEmoji(state.latest_reply || "");
-          if (emojiMood || state.latest_reply_emotion) {
-            setAvatarMood(emojiMood || state.latest_reply_emotion || "neutral");
+          if (!faceTestActiveRef.current) {
+            const emojiMood = emotionFromEmoji(state.latest_reply || "");
+            if (emojiMood || state.latest_reply_emotion) {
+              setAvatarMood(emojiMood || state.latest_reply_emotion || "neutral");
+            }
           }
         }
       } catch {
@@ -84,6 +101,9 @@ export function BasicChatPage() {
   useEffect(() => {
     return () => {
       stopLocalSpeech();
+      for (const timer of faceTestTimersRef.current) {
+        window.clearTimeout(timer);
+      }
     };
   }, []);
 
@@ -94,14 +114,86 @@ export function BasicChatPage() {
     ]);
   };
 
+  const clearFaceTest = () => {
+    for (const timer of faceTestTimersRef.current) {
+      window.clearTimeout(timer);
+    }
+    faceTestTimersRef.current = [];
+    faceTestActiveRef.current = false;
+  };
+
+  const setTestMood = (mood: FaceTestMood) => {
+    setAvatarMood(mood);
+    setReplySignal((current) => current + 1);
+  };
+
+  const runFaceTestCommand = (content: string): boolean => {
+    const match = content.match(
+      /^\/(?:face-test|facetest)(?:\s+([a-z-]+))?\s*$/i,
+    );
+    if (!match) return false;
+
+    clearFaceTest();
+    stopLocalSpeech();
+    setLocalSpeaking(false);
+    setFaceTestSignal((current) => current + 1);
+    faceTestActiveRef.current = true;
+
+    const requested = (match[1] || "all").toLowerCase();
+
+    if (requested === "all") {
+      addMessage(
+        "system",
+        "Facial-expression test started in Face view: happy → relaxed → sad → angry → surprised → concerned → neutral.",
+      );
+
+      FACE_TEST_MOODS.forEach((mood, index) => {
+        const timer = window.setTimeout(() => {
+          setTestMood(mood);
+          if (index === FACE_TEST_MOODS.length - 1) {
+            const finishTimer = window.setTimeout(() => {
+              faceTestActiveRef.current = false;
+            }, 1800);
+            faceTestTimersRef.current.push(finishTimer);
+          }
+        }, index * 2200);
+        faceTestTimersRef.current.push(timer);
+      });
+      return true;
+    }
+
+    if (FACE_TEST_MOODS.includes(requested as FaceTestMood)) {
+      const mood = requested as FaceTestMood;
+      setTestMood(mood);
+      addMessage(
+        "system",
+        `Facial-expression test: ${mood}. Use /face-test all to cycle every expression or send a normal message to exit test mode.`,
+      );
+      return true;
+    }
+
+    faceTestActiveRef.current = false;
+    addMessage(
+      "system",
+      "Unknown facial-expression test. Use /face-test, or /face-test happy|relaxed|sad|angry|surprised|concerned|neutral.",
+    );
+    return true;
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const content = input.trim();
     if (!content || sending) return;
 
     setInput("");
-    setSending(true);
     addMessage("user", content);
+
+    if (runFaceTestCommand(content)) {
+      return;
+    }
+
+    clearFaceTest();
+    setSending(true);
 
     try {
       const before = await fetchAssistantState().catch(() => null);
@@ -178,6 +270,7 @@ export function BasicChatPage() {
             status={displayStatus}
             mood={avatarMood}
             replySignal={replySignal}
+            faceTestSignal={faceTestSignal}
           />
         </aside>
 
@@ -257,7 +350,7 @@ export function BasicChatPage() {
                   event.currentTarget.form?.requestSubmit();
                 }
               }}
-              placeholder="Ask Sarah about an IT issue, code, research, or anything else..."
+              placeholder="Ask Sarah anything, or type /face-test to test expressions..."
               rows={2}
               disabled={sending}
               style={styles.input}
