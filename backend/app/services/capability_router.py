@@ -6,6 +6,7 @@ CapabilityIntent = Literal[
     "lookup_information",
     "browse_web",
     "coding_help",
+    "it_troubleshooting",
     "shutdown_command",
     "smalltalk_or_greeting",
 ]
@@ -52,6 +53,17 @@ class CapabilityRouter:
                 style_hint=(
                     "Respond in structured coding-assistant mode: diagnose issue, propose implementation steps, "
                     "and include concise examples when useful."
+                ),
+            )
+
+        if self._is_it_troubleshooting(text):
+            return CapabilityRoute(
+                intent="it_troubleshooting",
+                confidence=0.88,
+                requires_web_lookup=False,
+                style_hint=(
+                    "Troubleshoot like desktop support: state the observed symptom, separate evidence from hypotheses, "
+                    "give the least disruptive diagnostic step first, and explain what each result means."
                 ),
             )
 
@@ -106,6 +118,59 @@ class CapabilityRouter:
             "difference between",
         )
         return any(keyword in text for keyword in keywords)
+
+    def _is_it_troubleshooting(self, text: str) -> bool:
+        direct_markers = (
+            "troubleshoot",
+            "how do i fix",
+            "how to fix",
+            "not working",
+            "won't work",
+            "doesn't work",
+            "cannot connect",
+            "can't connect",
+            "failed",
+            "failure",
+            "timed out",
+            "timeout",
+            "blue screen",
+            "bsod",
+            "keeps crashing",
+            "keeps freezing",
+            "no internet",
+            "not detected",
+            "not recognized",
+            "won't boot",
+            "doesn't boot",
+        )
+        if any(marker in text for marker in direct_markers):
+            return True
+
+        technical_context = (
+            "printer",
+            "network",
+            "wifi",
+            "wi-fi",
+            "ethernet",
+            "driver",
+            "device manager",
+            "active directory",
+            "servicenow",
+            "service now",
+            "vpn",
+            "windows",
+            "laptop",
+            "desktop",
+            "monitor",
+            "usb",
+            "zebra",
+            "solidworks",
+        )
+        error_context = ("error", "issue", "problem", "offline", "unavailable")
+        return (
+            any(term in text for term in technical_context)
+            and any(term in text for term in error_context)
+        )
 
     def _is_coding_help(self, text: str) -> bool:
         keywords = (
