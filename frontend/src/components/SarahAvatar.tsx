@@ -266,6 +266,9 @@ export function SarahAvatar({
         const happy =
           normalizedMood.includes("happy") ||
           normalizedMood.includes("glad");
+        const relaxedMood =
+          normalizedMood.includes("relax") ||
+          normalizedMood.includes("calm");
 
         const pulseStarted = replyPulseStartedAtRef.current;
         const replyAge =
@@ -356,16 +359,18 @@ export function SarahAvatar({
             : 0;
 
           const happyTarget = happy
-            ? 0.22
+            ? 0.30
             : replySettling && !concerned
               ? 0.07 * replyFalloff
               : 0;
-          const relaxedTarget = thinking
-            ? 0.11
-            : replySettling
-              ? 0.06 * replyFalloff
-              : 0.025;
-          const sadTarget = concerned ? 0.12 : 0;
+          const relaxedTarget = relaxedMood
+            ? 0.14
+            : thinking
+              ? 0.11
+              : replySettling
+                ? 0.06 * replyFalloff
+                : 0.025;
+          const sadTarget = concerned ? 0.18 : 0;
 
           const smooth = (current: number, target: number, speed: number) =>
             THREE.MathUtils.lerp(
