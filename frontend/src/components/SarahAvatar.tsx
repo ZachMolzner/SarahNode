@@ -5,6 +5,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 
 type SarahAvatarProps = {
   status: string;
+  mood?: string;
+  replySignal?: number;
 };
 
 type LoadState = "loading" | "ready" | "missing" | "error";
@@ -45,14 +47,30 @@ function applyRelaxedPose(vrm: VRM) {
   }
 }
 
-export function SarahAvatar({ status }: SarahAvatarProps) {
+export function SarahAvatar({
+  status,
+  mood = "neutral",
+  replySignal = 0,
+}: SarahAvatarProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const statusRef = useRef(status);
+  const moodRef = useRef(mood);
+  const replyPulseStartedAtRef = useRef<number | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
 
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  useEffect(() => {
+    moodRef.current = mood;
+  }, [mood]);
+
+  useEffect(() => {
+    if (replySignal > 0) {
+      replyPulseStartedAtRef.current = performance.now();
+    }
+  }, [replySignal]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -101,11 +119,24 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     const baseYaw = Math.PI;
     let animationFrame = 0;
     let headBone: THREE.Object3D | null = null;
+    let neckBone: THREE.Object3D | null = null;
     let chestBone: THREE.Object3D | null = null;
+    let hipsBone: THREE.Object3D | null = null;
     let headBaseRotation = new THREE.Euler();
+    let neckBaseRotation = new THREE.Euler();
     let chestBaseRotation = new THREE.Euler();
+    let hipsBaseRotation = new THREE.Euler();
+
     let nextBlinkAt = 2.5;
     let blinkStartedAt = -1;
+    let doubleBlinkPending = false;
+
+    let blinkWeight = 0;
+    let aaWeight = 0;
+    let ohWeight = 0;
+    let happyWeight = 0;
+    let relaxedWeight = 0;
+    let sadWeight = 0;
 
     const frameAvatar = () => {
       if (!avatarRoot) return;
@@ -150,15 +181,23 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
         applyRelaxedPose(vrm);
 
         headBone = normalizedBone(vrm, "head");
+        neckBone = normalizedBone(vrm, "neck");
         chestBone =
           normalizedBone(vrm, "upperChest") ??
           normalizedBone(vrm, "chest");
+        hipsBone = normalizedBone(vrm, "hips");
 
         if (headBone) {
           headBaseRotation = headBone.rotation.clone();
         }
+        if (neckBone) {
+          neckBaseRotation = neckBone.rotation.clone();
+        }
         if (chestBone) {
           chestBaseRotation = chestBone.rotation.clone();
+        }
+        if (hipsBone) {
+          hipsBaseRotation = hipsBone.rotation.clone();
         }
 
         nextBlinkAt = 2.2 + Math.random() * 1.8;
@@ -214,11 +253,27 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
 
       if (vrm && avatarRoot) {
         const normalizedStatus = statusRef.current.toLowerCase();
+        const normalizedMood = moodRef.current.toLowerCase();
         const thinking =
           normalizedStatus.includes("think") || normalizedStatus.includes("work");
         const speaking = normalizedStatus.includes("speak");
         const unavailable =
           normalizedStatus.includes("offline") || normalizedStatus.includes("error");
+        const concerned =
+          unavailable ||
+          normalizedMood.includes("concern") ||
+          normalizedMood.includes("sad");
+        const happy =
+          normalizedMood.includes("happy") ||
+          normalizedMood.includes("glad");
+
+        const pulseStarted = replyPulseStartedAtRef.current;
+        const replyAge =
+          pulseStarted == null
+            ? Number.POSITIVE_INFINITY
+            : (performance.now() - pulseStarted) / 1000;
+        const replySettling = replyAge < 2.2;
+        const replyFalloff = replySettling ? Math.max(0, 1 - replyAge / 2.2) : 0;
 
         // Display-only procedural presence. This never reads or controls the desktop.
         avatarRoot.rotation.y =
@@ -230,16 +285,36 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
           Math.sin(elapsed * (speaking ? 2.0 : 1.05)) *
             (speaking ? 0.008 : 0.0035);
 
+        if (hipsBone) {
+          hipsBone.rotation.z =
+            hipsBaseRotation.z + Math.sin(elapsed * 0.48) * 0.004;
+        }
+
         if (chestBone) {
           chestBone.rotation.x =
-            chestBaseRotation.x + Math.sin(elapsed * 1.45) * 0.009;
+            chestBaseRotation.x + Math.sin(elapsed * 1.45) * 0.010;
           chestBone.rotation.z =
-            chestBaseRotation.z + Math.sin(elapsed * 0.55) * 0.004;
+            chestBaseRotation.z + Math.sin(elapsed * 0.55) * 0.0045;
+        }
+
+        if (neckBone) {
+          neckBone.rotation.y =
+            neckBaseRotation.y + Math.sin(elapsed * 0.37) * 0.010;
+          neckBone.rotation.z =
+            neckBaseRotation.z + Math.sin(elapsed * 0.31) * 0.005;
         }
 
         if (headBone) {
+          const replyNod =
+            replySettling
+              ? Math.sin(replyAge * 8.5) * 0.024 * replyFalloff
+              : 0;
           headBone.rotation.x =
-            headBaseRotation.x + Math.sin(elapsed * 0.72) * 0.006;
+            headBaseRotation.x +
+            Math.sin(elapsed * 0.72) * 0.006 +
+            replyNod;
+          headBone.rotation.y =
+            headBaseRotation.y + Math.sin(elapsed * 0.29) * 0.009;
           headBone.rotation.z =
             headBaseRotation.z +
             Math.sin(elapsed * 0.42) * 0.012 +
@@ -252,33 +327,66 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
             blinkStartedAt = elapsed;
           }
 
-          let blinkValue = 0;
+          let blinkTarget = 0;
           if (blinkStartedAt >= 0) {
-            const blinkProgress = (elapsed - blinkStartedAt) / 0.18;
-            if (blinkProgress < 0.45) {
-              blinkValue = Math.min(1, blinkProgress / 0.45);
+            const blinkProgress = (elapsed - blinkStartedAt) / 0.16;
+            if (blinkProgress < 0.42) {
+              blinkTarget = Math.min(1, blinkProgress / 0.42);
             } else if (blinkProgress < 1) {
-              blinkValue = Math.max(0, (1 - blinkProgress) / 0.55);
+              blinkTarget = Math.max(0, (1 - blinkProgress) / 0.58);
             } else {
               blinkStartedAt = -1;
-              nextBlinkAt = elapsed + 3.0 + Math.random() * 3.2;
+              const shouldDoubleBlink =
+                !doubleBlinkPending && Math.random() < 0.18;
+              if (shouldDoubleBlink) {
+                doubleBlinkPending = true;
+                nextBlinkAt = elapsed + 0.16;
+              } else {
+                doubleBlinkPending = false;
+                nextBlinkAt = elapsed + 2.8 + Math.random() * 3.8;
+              }
             }
           }
-          expressions.setValue("blink", blinkValue);
 
-          const mouthWave = speaking
-            ? 0.18 + (0.5 + 0.5 * Math.sin(elapsed * 11.5)) * 0.48
+          const mouthAaTarget = speaking
+            ? 0.12 + (0.5 + 0.5 * Math.sin(elapsed * 11.2)) * 0.48
             : 0;
-          expressions.setValue("aa", mouthWave);
-          expressions.setValue(
-            "oh",
-            speaking
-              ? (0.5 + 0.5 * Math.sin(elapsed * 7.3 + 1.1)) * 0.16
-              : 0,
-          );
+          const mouthOhTarget = speaking
+            ? (0.5 + 0.5 * Math.sin(elapsed * 7.1 + 1.1)) * 0.14
+            : 0;
 
-          expressions.setValue("relaxed", thinking ? 0.12 : 0.035);
-          expressions.setValue("sad", unavailable ? 0.10 : 0);
+          const happyTarget = happy
+            ? 0.22
+            : replySettling && !concerned
+              ? 0.07 * replyFalloff
+              : 0;
+          const relaxedTarget = thinking
+            ? 0.11
+            : replySettling
+              ? 0.06 * replyFalloff
+              : 0.025;
+          const sadTarget = concerned ? 0.12 : 0;
+
+          const smooth = (current: number, target: number, speed: number) =>
+            THREE.MathUtils.lerp(
+              current,
+              target,
+              1 - Math.exp(-speed * delta),
+            );
+
+          blinkWeight = smooth(blinkWeight, blinkTarget, 30);
+          aaWeight = smooth(aaWeight, mouthAaTarget, 18);
+          ohWeight = smooth(ohWeight, mouthOhTarget, 16);
+          happyWeight = smooth(happyWeight, happyTarget, 5);
+          relaxedWeight = smooth(relaxedWeight, relaxedTarget, 5);
+          sadWeight = smooth(sadWeight, sadTarget, 5);
+
+          expressions.setValue("blink", blinkWeight);
+          expressions.setValue("aa", aaWeight);
+          expressions.setValue("oh", ohWeight);
+          expressions.setValue("happy", happyWeight);
+          expressions.setValue("relaxed", relaxedWeight);
+          expressions.setValue("sad", sadWeight);
         }
 
         vrm.update(delta);
