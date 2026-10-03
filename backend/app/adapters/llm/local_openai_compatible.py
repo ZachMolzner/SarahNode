@@ -8,7 +8,7 @@ from openai import AsyncOpenAI
 from app.adapters.llm.base import LLMClient
 from app.agent.contracts import ToolInvocation
 from app.agent.tool_registry import ToolRegistry
-from app.config.settings import settings
+from app.config.settings import TECHNICAL_ACCURACY_RULES, settings
 from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.capability_router import CapabilityRoute
 
@@ -386,6 +386,7 @@ class LocalOpenAICompatibleClient(LLMClient):
                 "content": (
                     f"{system_prompt}\n"
                     "You are the local reasoning and tool-selection layer for SarahNode. "
+                    f"{TECHNICAL_ACCURACY_RULES} "
                     "Use available tools when they improve accuracy or when the user asks for host-machine information. "
                     "For volatile computer state (running processes and CPU/RAM/disk use), live tool data always overrides memory and prior conversation. "
                     "Never claim a process is running/not running or give current resource usage from memory alone. "
