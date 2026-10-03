@@ -30,18 +30,18 @@ function applyRelaxedPose(vrm: VRM) {
   // MANUKA ships in a T-pose. Rotate the normalized humanoid arm bones down
   // into a comfortable neutral stance without modifying the source VRM asset.
   if (leftUpperArm) {
-    leftUpperArm.rotation.z = -1.18;
+    leftUpperArm.rotation.z = 1.18;
     leftUpperArm.rotation.x = -0.05;
   }
   if (rightUpperArm) {
-    rightUpperArm.rotation.z = 1.18;
+    rightUpperArm.rotation.z = -1.18;
     rightUpperArm.rotation.x = -0.05;
   }
   if (leftLowerArm) {
-    leftLowerArm.rotation.z = -0.10;
+    leftLowerArm.rotation.z = 0.10;
   }
   if (rightLowerArm) {
-    rightLowerArm.rotation.z = 0.10;
+    rightLowerArm.rotation.z = -0.10;
   }
 }
 
@@ -120,7 +120,7 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
         size.y / Math.max(2 * Math.tan(verticalFov / 2), 0.001);
       const widthDistance =
         size.x / Math.max(2 * Math.tan(horizontalFov / 2), 0.001);
-      const distance = Math.max(heightDistance, widthDistance, 1.5) * 1.15;
+      const distance = Math.max(heightDistance, widthDistance, 1.5) * 1.03;
 
       camera.position.set(0, center.y, distance);
       camera.lookAt(0, center.y, 0);
