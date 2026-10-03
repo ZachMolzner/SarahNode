@@ -9,6 +9,7 @@ from app.adapters.stt.base import STTClient
 from app.adapters.tts.base import TTSClient
 from app.adapters.tts.mock import MockTTSClient
 from app.adapters.web_search.base import WebSearchProvider
+from app.adapters.web_search.bing_rss import BingRSSSearchProvider
 from app.adapters.web_search.brave_search import BraveSearchProvider
 from app.adapters.web_search.serpapi_search import SerpAPISearchProvider
 from app.agent.memory_tools import memory_tools
@@ -167,6 +168,15 @@ def build_web_provider() -> WebSearchProvider | None:
     if provider in {"none", ""}:
         web_selection = ProviderSelection(provider or "none", "none", "disabled", "Configured as none")
         return None
+
+    if provider in {"bing", "bing_rss", "public"}:
+        web_selection = ProviderSelection(
+            provider,
+            "bing_rss",
+            "real",
+            "Public Bing RSS search; no API key required",
+        )
+        return BingRSSSearchProvider(timeout_seconds=settings.web_fetch_timeout_seconds)
 
     if provider == "brave":
         if not settings.brave_search_api_key:
