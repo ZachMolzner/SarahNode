@@ -85,6 +85,23 @@ cd C:\Users\karvo\SarahNode
 
 The frontend uses Three.js and `@pixiv/three-vrm` to render the character. Avatar motion is presentation-only and has no screen-reading or computer-control access.
 
+## Avatar expression test
+
+The chat includes a local slash command for testing MANUKA's facial expressions without sending anything to Qwen:
+
+```text
+/face-test
+/face-test happy
+/face-test relaxed
+/face-test sad
+/face-test angry
+/face-test surprised
+/face-test concerned
+/face-test neutral
+```
+
+`/face-test` and `/face-test all` automatically switch the avatar to Face view and cycle the expressions. A normal message exits test mode and returns emotion control to Sarah.
+
 ## Local voice
 
 The desktop chat can speak Sarah's replies with the Windows/WebView speech-synthesis service. No ElevenLabs key is required for this frontend-local voice path.
