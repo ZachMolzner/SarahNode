@@ -92,6 +92,21 @@ Sarah's display behavior also includes:
 - automatic standing/centering and forward attention when the user begins typing, sends a message, or Sarah starts thinking/speaking;
 - Full/Face camera modes and interactive zoom.
 
+## Avatar motion test
+
+The chat also has a local motion test command so MANUKA's idle poses can be inspected without waiting for the random idle cycle:
+
+```text
+/motion-test
+/motion-test stand
+/motion-test walk
+/motion-test sit
+/motion-test stretch
+/motion-test off
+```
+
+`/motion-test` cycles stand, walk, floor sit, and stretch in Full view. The floor sit uses a side-sit pose with bent legs tucked to one side and hands brought inward toward the lap.
+
 ## Avatar expression test
 
 The chat includes a local slash command for testing MANUKA's facial expressions without sending anything to Qwen:
