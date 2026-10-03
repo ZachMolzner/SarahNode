@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     env: str = "dev"
     log_level: str = "INFO"
 
-    assistant_cooldown_seconds: float = 1.0
+    assistant_cooldown_seconds: float = 0.15
     assistant_max_queue_size: int = 200
     assistant_memory_window: int = 25
     local_data_dir: str = "data"
@@ -55,8 +55,10 @@ class Settings(BaseSettings):
     local_llm_base_url: str = "http://127.0.0.1:11434/v1"
     local_llm_model: str = "qwen3:14b"
     local_llm_api_key: str = "local"
-    local_llm_temperature: float = 0.4
-    local_llm_max_tool_rounds: int = 5
+    local_llm_temperature: float = 0.35
+    local_llm_max_tokens: int = 700
+    local_llm_reasoning_effort: str = "none"
+    local_llm_max_tool_rounds: int = 4
 
     # Optional cloud fallback/provider.
     openai_api_key: str = ""
@@ -69,7 +71,7 @@ class Settings(BaseSettings):
     elevenlabs_voice_id: str = ""
     elevenlabs_model_id: str = "eleven_multilingual_v2"
 
-    web_search_provider: str = "none"
+    web_search_provider: str = "bing_rss"
     brave_search_api_key: str = ""
     serpapi_api_key: str = ""
     web_search_max_results: int = 5
