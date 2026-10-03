@@ -42,8 +42,9 @@ Sarah's active runtime supports:
 - IT and technical troubleshooting
 - coding and debugging help
 - general Q&A
-- web-grounded research when configured
+- live web-grounded research through a no-key Bing RSS provider by default, with Brave/SerpAPI available as optional providers
 - persistent non-secret memory
+- safe outcome learning from user-confirmed fixes and explicit corrections
 - read-only system information
 - CPU, memory, disk, and boot-time diagnostics
 - read-only running-process inspection
@@ -131,15 +132,42 @@ npm run tauri:dev
 
 ## Model configuration
 
-SarahNode defaults to a local OpenAI-compatible model endpoint:
+SarahNode defaults to a local Ollama/OpenAI-compatible model endpoint with latency-oriented settings:
 
 ```text
 LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
 LOCAL_LLM_MODEL=qwen3:14b
+LOCAL_LLM_TEMPERATURE=0.35
+LOCAL_LLM_MAX_TOKENS=700
+LOCAL_LLM_REASONING_EFFORT=none
+LOCAL_LLM_MAX_TOOL_ROUNDS=4
 LLM_PROVIDER=local
 ```
 
-Optional web-search providers can be configured through the backend environment file.
+For Ollama, Sarah requests no-thinking mode for everyday responses, sends only tool schemas relevant to the current turn, and uses a shorter response budget. These settings can be overridden in `backend/.env`.
+
+## Live web research
+
+SarahNode now defaults to a no-key public web-search provider:
+
+```text
+WEB_SEARCH_PROVIDER=bing_rss
+```
+
+Current/vendor-specific IT questions can therefore be web-grounded without an API key. Brave Search and SerpAPI remain available when their credentials are configured. Web pages are fetched concurrently to reduce research latency.
+
+## Outcome learning
+
+Sarah does not continuously retrain Qwen's model weights. Instead, she has a safe persistent learning loop for useful outcomes:
+
+- when the user explicitly confirms a troubleshooting answer worked, Sarah stores the prior problem and successful answer as an `experience` memory;
+- when the user says the actual fix was something else, Sarah stores that correction instead;
+- similar future problems can retrieve those user-confirmed experiences;
+- learned experiences are treated as prior evidence, not universal truth;
+- generic thanks/acknowledgements do not become memories;
+- credential/secret-shaped content is rejected by the same persistent-memory secret guard.
+
+This makes Sarah improve from real outcomes without allowing her to reinforce her own unverified answers.
 
 ## Safety and memory
 
