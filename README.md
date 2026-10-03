@@ -120,6 +120,14 @@ cd C:\Users\karvo\SarahNode
 .\scripts\build-manuka-outfits.ps1 -SourceBlend "C:\Users\karvo\MANUKA_ver1.02\MANUKA.blend"
 ```
 
+During visual tuning, rebuild only one outfit so iteration is faster:
+
+```powershell
+.\scripts\build-manuka-outfits.ps1 `
+  -SourceBlend "C:\Users\karvo\MANUKA_ver1.02\MANUKA.blend" `
+  -Preset "casual-streetwear"
+```
+
 The generated editable Blender files are placed under:
 
 ```text
