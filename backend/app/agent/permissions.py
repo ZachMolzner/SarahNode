@@ -43,30 +43,13 @@ class PermissionPolicy:
 
 
 def default_policy() -> PermissionPolicy:
-    # Local-first defaults allow read-only inspection (including explicit screen
-    # inspection), Sarah's persistent memory, low-risk launch/pointer/scroll/navigation
-    # actions, and deliberately narrow confirmed mutation/click/type/Enter scopes.
-    # Broad files.write, desktop.control, and system.control remain ungranted.
+    # SarahNode is now knowledge-first. Grant only read-only diagnostics, web research,
+    # and persistent memory. Screen, pointer/keyboard, app-control, and file-mutation
+    # scopes remain ungranted by default.
     return PermissionPolicy(
         granted_scopes={
-            PermissionScope.FILES_READ,
-            PermissionScope.FILES_OPEN,
-            PermissionScope.FILES_CREATE,
-            PermissionScope.FILES_MOVE,
-            PermissionScope.FILES_RECYCLE,
             PermissionScope.DESKTOP_READ,
-            PermissionScope.SCREEN_READ,
-            PermissionScope.SCREEN_POINTER,
-            PermissionScope.SCREEN_CLICK,
-            PermissionScope.SCREEN_TYPE,
-            PermissionScope.SCREEN_SCROLL,
-            PermissionScope.SCREEN_KEYS,
-            PermissionScope.APPS_LAUNCH,
-            PermissionScope.APPS_FOCUS,
-            PermissionScope.APPS_CLOSE,
-            PermissionScope.APPS_TERMINATE,
             PermissionScope.WEB_READ,
-            PermissionScope.WEB_LAUNCH,
             PermissionScope.SYSTEM_READ,
             PermissionScope.MEMORY_READ,
             PermissionScope.MEMORY_WRITE,
