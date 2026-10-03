@@ -7,6 +7,7 @@ type SarahAvatarProps = {
   status: string;
   mood?: string;
   replySignal?: number;
+  faceTestSignal?: number;
 };
 
 type LoadState = "loading" | "ready" | "missing" | "error";
@@ -56,6 +57,7 @@ export function SarahAvatar({
   status,
   mood = "neutral",
   replySignal = 0,
+  faceTestSignal = 0,
 }: SarahAvatarProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const statusRef = useRef(status);
@@ -104,6 +106,15 @@ export function SarahAvatar({
     setZoom(1);
     window.requestAnimationFrame(() => frameAvatarRef.current?.());
   };
+
+  useEffect(() => {
+    if (faceTestSignal <= 0) return;
+    viewModeRef.current = "face";
+    zoomRef.current = 1;
+    setViewMode("face");
+    setZoom(1);
+    window.requestAnimationFrame(() => frameAvatarRef.current?.());
+  }, [faceTestSignal]);
 
   useEffect(() => {
     const mount = mountRef.current;
