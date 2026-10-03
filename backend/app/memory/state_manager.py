@@ -11,6 +11,7 @@ class MemoryState:
     session_notes: list[str] = field(default_factory=list)
     assistant_state: str = "idle"
     last_reply: str = ""
+    last_reply_emotion: str = "neutral"
     last_capability_intent: str = "ask_general"
     last_used_live_web: bool = False
     latest_web_sources: list[dict[str, str]] = field(default_factory=list)
@@ -37,8 +38,9 @@ class MemoryManager:
     def set_assistant_state(self, assistant_state: str) -> None:
         self.state.assistant_state = assistant_state
 
-    def set_last_reply(self, reply: str) -> None:
+    def set_last_reply(self, reply: str, emotion: str = "neutral") -> None:
         self.state.last_reply = redact_for_session_memory(reply)
+        self.state.last_reply_emotion = str(emotion or "neutral")
 
     def set_last_capability(self, intent: str) -> None:
         self.state.last_capability_intent = intent
