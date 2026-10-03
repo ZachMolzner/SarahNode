@@ -26,3 +26,8 @@ frontend/.env.*
 backend/app/data/*.json
 !backend/app/data/.gitkeep
 *.log
+
+# Local licensed avatar assets (do not redistribute)
+frontend/public/models/*.vrm
+frontend/public/models/*.glb
+!frontend/public/models/.gitkeep
