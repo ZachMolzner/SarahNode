@@ -225,6 +225,9 @@ export function SarahAvatar({
       node: THREE.Object3D;
       baseRotation: THREE.Euler;
     }> = [];
+    let tailRootBone: THREE.Object3D | null = null;
+    let tailRootChild: THREE.Object3D | null = null;
+    let tailRootBaseQuaternion = new THREE.Quaternion();
     let headBaseRotation = new THREE.Euler();
     let neckBaseRotation = new THREE.Euler();
     let chestBaseRotation = new THREE.Euler();
@@ -391,9 +394,27 @@ export function SarahAvatar({
         });
 
         if (tailBones.length > 0) {
+          const explicitManukaRoot =
+            tailBones.find(
+              (entry) =>
+                entry.node.name.toLowerCase() === "manuka_tail.003",
+            )?.node ?? null;
+
+          tailRootBone = explicitManukaRoot ?? tailBones[0]?.node ?? null;
+          if (tailRootBone) {
+            tailRootBaseQuaternion = tailRootBone.quaternion.clone();
+            tailRootChild =
+              tailRootBone.children.find((child) => isLikelyTailBone(child)) ??
+              tailRootBone.children.find((child) => child instanceof THREE.Bone) ??
+              tailRootBone.children[0] ??
+              null;
+          }
+
           console.info(
             "Sarah MANUKA tail bones:",
             tailBones.map((entry) => entry.node.name),
+            "root:",
+            tailRootBone?.name ?? "none",
           );
         }
 
@@ -630,7 +651,7 @@ export function SarahAvatar({
           leftUpperLegBone.rotation.y =
             leftUpperLegBaseRotation.y + 0.14 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.28 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.20 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
@@ -646,7 +667,7 @@ export function SarahAvatar({
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend -
-            2.02 * floorSitBlend;
+            1.42 * floorSitBlend;
           leftLowerLegBone.rotation.y =
             leftLowerLegBaseRotation.y + 0.08 * floorSitBlend;
           leftLowerLegBone.rotation.z =
@@ -666,7 +687,7 @@ export function SarahAvatar({
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
             legSwing * 0.04 * walkBlend +
-            0.84 * floorSitBlend;
+            0.58 * floorSitBlend;
           leftFootBone.rotation.y =
             leftFootBaseRotation.y + 0.02 * floorSitBlend;
           leftFootBone.rotation.z =
@@ -905,29 +926,60 @@ export function SarahAvatar({
 
         vrm.update(delta);
 
-        if (tailBones.length > 0 && floorSitBlend > 0.001) {
-          const lastIndex = Math.max(1, tailBones.length - 1);
-          tailBones.forEach((entry, index) => {
-            const alongTail = index / lastIndex;
-            const strength = floorSitBlend * (1 - alongTail * 0.38);
-            const curl = floorSitBlend * alongTail;
+        if (
+          tailRootBone &&
+          tailRootChild &&
+          tailRootBone.parent &&
+          floorSitBlend > 0.001
+        ) {
+          // MANUKA's tail spring chain starts at Manuka_tail.003. Aim the
+          // entire chain in world space so the result does not depend on the
+          // imported bone's local Euler axes.
+          tailRootBone.parent.updateWorldMatrix(true, false);
+          tailRootBone.updateWorldMatrix(false, false);
+          tailRootChild.updateWorldMatrix(false, false);
 
-            entry.node.rotation.x = THREE.MathUtils.lerp(
-              entry.node.rotation.x,
-              entry.baseRotation.x - 0.18 * strength + 0.10 * curl,
-              floorSitBlend,
-            );
-            entry.node.rotation.y = THREE.MathUtils.lerp(
-              entry.node.rotation.y,
-              entry.baseRotation.y + 0.58 * strength + 0.20 * curl,
-              floorSitBlend,
-            );
-            entry.node.rotation.z = THREE.MathUtils.lerp(
-              entry.node.rotation.z,
-              entry.baseRotation.z + 0.42 * strength - 0.16 * curl,
-              floorSitBlend,
-            );
-          });
+          const parentWorldQuaternion = new THREE.Quaternion();
+          tailRootBone.parent.getWorldQuaternion(parentWorldQuaternion);
+
+          const baseWorldQuaternion = parentWorldQuaternion
+            .clone()
+            .multiply(tailRootBaseQuaternion);
+
+          const localTailAxis = tailRootChild.position
+            .clone()
+            .normalize();
+          const baseWorldDirection = localTailAxis
+            .clone()
+            .applyQuaternion(baseWorldQuaternion)
+            .normalize();
+
+          // Curl the tail down and off Sarah's left side, slightly behind her,
+          // so it rests beside the seated pose instead of passing through the floor.
+          const desiredWorldDirection = new THREE.Vector3(
+            -0.72,
+            -0.34,
+            -0.58,
+          ).normalize();
+
+          const worldDelta = new THREE.Quaternion().setFromUnitVectors(
+            baseWorldDirection,
+            desiredWorldDirection,
+          );
+          const targetWorldQuaternion = worldDelta
+            .multiply(baseWorldQuaternion);
+
+          const targetLocalQuaternion = parentWorldQuaternion
+            .clone()
+            .invert()
+            .multiply(targetWorldQuaternion);
+
+          tailRootBone.quaternion.slerp(
+            targetLocalQuaternion,
+            Math.min(1, floorSitBlend * 0.92),
+          );
+          tailRootBone.updateMatrix();
+          tailRootBone.updateWorldMatrix(false, true);
         }
       }
 
