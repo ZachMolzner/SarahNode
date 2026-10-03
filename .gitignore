@@ -31,3 +31,6 @@ backend/app/data/*.json
 frontend/public/models/*.vrm
 frontend/public/models/*.glb
 !frontend/public/models/.gitkeep
+
+# Locally generated MANUKA outfit source files
+local/manuka-outfits/
