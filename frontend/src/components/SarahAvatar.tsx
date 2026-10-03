@@ -647,11 +647,11 @@ export function SarahAvatar({
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
             legSwing * 0.15 * walkBlend +
-            1.04 * floorSitBlend;
+            1.28 * floorSitBlend;
           leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y + 0.14 * floorSitBlend;
+            leftUpperLegBaseRotation.y + 0.44 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.20 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.52 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
@@ -667,11 +667,11 @@ export function SarahAvatar({
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend -
-            1.42 * floorSitBlend;
+            1.82 * floorSitBlend;
           leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y + 0.08 * floorSitBlend;
+            leftLowerLegBaseRotation.y + 0.30 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z + 0.10 * floorSitBlend;
+            leftLowerLegBaseRotation.z + 0.36 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
@@ -687,11 +687,11 @@ export function SarahAvatar({
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
             legSwing * 0.04 * walkBlend +
-            0.58 * floorSitBlend;
+            0.82 * floorSitBlend;
           leftFootBone.rotation.y =
-            leftFootBaseRotation.y + 0.02 * floorSitBlend;
+            leftFootBaseRotation.y + 0.22 * floorSitBlend;
           leftFootBone.rotation.z =
-            leftFootBaseRotation.z + 0.02 * floorSitBlend;
+            leftFootBaseRotation.z + 0.28 * floorSitBlend;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
@@ -957,9 +957,9 @@ export function SarahAvatar({
           // Curl the tail down and off Sarah's left side, slightly behind her,
           // so it rests beside the seated pose instead of passing through the floor.
           const desiredWorldDirection = new THREE.Vector3(
-            -0.72,
-            -0.34,
-            -0.58,
+            -0.82,
+            0.10,
+            -0.56,
           ).normalize();
 
           const worldDelta = new THREE.Quaternion().setFromUnitVectors(
@@ -978,6 +978,34 @@ export function SarahAvatar({
             targetLocalQuaternion,
             Math.min(1, floorSitBlend * 0.92),
           );
+
+          // Give the rest of the MANUKA tail a soft upward side curl so the
+          // fluffy tail stays visible beside Sarah instead of sagging below the stage.
+          if (tailBones.length > 1) {
+            const lastIndex = Math.max(1, tailBones.length - 1);
+            tailBones.forEach((entry, index) => {
+              if (entry.node === tailRootBone) return;
+              const alongTail = index / lastIndex;
+              const curlStrength = floorSitBlend * (0.24 + alongTail * 0.42);
+
+              entry.node.rotation.x = THREE.MathUtils.lerp(
+                entry.node.rotation.x,
+                entry.baseRotation.x - 0.10 * curlStrength,
+                floorSitBlend * 0.55,
+              );
+              entry.node.rotation.y = THREE.MathUtils.lerp(
+                entry.node.rotation.y,
+                entry.baseRotation.y + 0.18 * curlStrength,
+                floorSitBlend * 0.55,
+              );
+              entry.node.rotation.z = THREE.MathUtils.lerp(
+                entry.node.rotation.z,
+                entry.baseRotation.z - 0.22 * curlStrength,
+                floorSitBlend * 0.55,
+              );
+            });
+          }
+
           tailRootBone.updateMatrix();
           tailRootBone.updateWorldMatrix(false, true);
         }
