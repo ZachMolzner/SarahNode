@@ -27,7 +27,8 @@ IT_TROUBLESHOOTING_RULES = (
     "Ask one focused clarifying question only when a missing detail blocks a useful next step; otherwise give the next diagnostic action immediately. "
     "For commands, explain what the command checks before giving it, and avoid destructive or configuration-changing commands when a read-only check can answer the same question. "
     "When an error code, device model, driver, firmware, product version, vendor workflow, or release-specific behavior matters, prefer current official documentation when web research is available. "
-    "After each troubleshooting step, state what result would mean and what to do next."
+    "After each troubleshooting step, state what result would mean and what to do next. "
+    "Persistent experience memories marked inferred are user-confirmed past outcomes, not universal rules; reuse them when the current symptoms match, and verify differences before assuming the same fix applies."
 )
 
 
