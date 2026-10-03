@@ -81,6 +81,7 @@ export function SarahAvatar({
   const replyPulseStartedAtRef = useRef<number | null>(null);
   const attentionUntilRef = useRef(0);
   const motionTestModeRef = useRef<IdleActivity | null>(motionTestMode);
+  const inspectionYawRef = useRef(0);
   const zoomRef = useRef(1);
   const viewModeRef = useRef<AvatarViewMode>("full");
   const frameAvatarRef = useRef<(() => void) | null>(null);
@@ -132,6 +133,14 @@ export function SarahAvatar({
 
   const changeZoom = (delta: number) => {
     applyZoom(zoomRef.current + delta);
+  };
+
+  const rotateAvatar = (deltaRadians: number) => {
+    inspectionYawRef.current += deltaRadians;
+  };
+
+  const resetAvatarRotation = () => {
+    inspectionYawRef.current = 0;
   };
 
   const selectViewMode = (mode: AvatarViewMode) => {
@@ -207,7 +216,6 @@ export function SarahAvatar({
     let baseZ = 0;
     const baseYaw = Math.PI;
     let animationFrame = 0;
-    let inspectionYaw = 0;
     let isModelDragging = false;
     let lastDragX = 0;
     let headBone: THREE.Object3D | null = null;
@@ -492,7 +500,7 @@ export function SarahAvatar({
 
       // Use ordinary desktop mouse events for the Tauri WebView. Listening on
       // window keeps rotation active even when the cursor leaves the viewport.
-      inspectionYaw += deltaX * 0.014;
+      inspectionYawRef.current += deltaX * 0.014;
     };
 
     const stopModelDrag = () => {
@@ -504,7 +512,7 @@ export function SarahAvatar({
     const resetModelRotation = (event: MouseEvent) => {
       const target = event.target;
       if (target instanceof Element && target.closest("button")) return;
-      inspectionYaw = 0;
+      inspectionYawRef.current = 0;
     };
 
     mount.style.cursor = "grab";
@@ -655,7 +663,7 @@ export function SarahAvatar({
           baseZ - 0.015 * floorSitBlend;
         avatarRoot.rotation.y =
           baseYaw +
-          inspectionYaw +
+          inspectionYawRef.current +
           idleYaw +
           walkDirection * 0.14 * walkBlend -
           0.02 * floorSitBlend;
@@ -1151,10 +1159,35 @@ export function SarahAvatar({
             >
               +
             </button>
+            <span style={styles.zoomDivider} />
+            <button
+              type="button"
+              onClick={() => rotateAvatar(-Math.PI / 12)}
+              style={styles.zoomButton}
+              title="Rotate Sarah left 15 degrees"
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              onClick={resetAvatarRotation}
+              style={styles.rotateResetButton}
+              title="Reset Sarah rotation"
+            >
+              0°
+            </button>
+            <button
+              type="button"
+              onClick={() => rotateAvatar(Math.PI / 12)}
+              style={styles.zoomButton}
+              title="Rotate Sarah right 15 degrees"
+            >
+              ↷
+            </button>
           </div>
         )}
         {loadState === "ready" && (
-          <div style={styles.zoomHint}>Hold left mouse + drag to spin • Scroll to zoom • Double-click to reset</div>
+          <div style={styles.zoomHint}>Use ↶ / ↷ to spin • Drag to rotate • Scroll to zoom</div>
         )}
         {loadState !== "ready" && (
           <div style={styles.fallback}>
@@ -1241,6 +1274,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: "#b8c3d3",
     fontSize: "11px",
     fontVariantNumeric: "tabular-nums",
+  },
+  rotateResetButton: {
+    minWidth: "34px",
+    height: "28px",
+    padding: "0 6px",
+    border: "1px solid #354052",
+    borderRadius: "7px",
+    background: "#141b26",
+    color: "#e7edf5",
+    fontSize: "11px",
+    fontWeight: 700,
+    cursor: "pointer",
   },
   zoomHint: {
     position: "absolute",
