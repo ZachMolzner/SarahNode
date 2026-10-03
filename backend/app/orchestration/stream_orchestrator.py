@@ -339,7 +339,7 @@ class StreamOrchestrator:
                     "provider": web_context.provider,
                 },
             )
-        self.memory_manager.set_last_reply(reply.text)
+        self.memory_manager.set_last_reply(reply.text, reply.emotion)
 
         await self.emit_event("reply_selected", reply.model_dump())
 
