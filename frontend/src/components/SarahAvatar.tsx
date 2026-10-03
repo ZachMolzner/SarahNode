@@ -17,6 +17,34 @@ function disposeMaterial(material: THREE.Material) {
   material.dispose();
 }
 
+function normalizedBone(vrm: VRM, name: string): THREE.Object3D | null {
+  return vrm.humanoid?.getNormalizedBoneNode(name as never) ?? null;
+}
+
+function applyRelaxedPose(vrm: VRM) {
+  const leftUpperArm = normalizedBone(vrm, "leftUpperArm");
+  const rightUpperArm = normalizedBone(vrm, "rightUpperArm");
+  const leftLowerArm = normalizedBone(vrm, "leftLowerArm");
+  const rightLowerArm = normalizedBone(vrm, "rightLowerArm");
+
+  // MANUKA ships in a T-pose. Rotate the normalized humanoid arm bones down
+  // into a comfortable neutral stance without modifying the source VRM asset.
+  if (leftUpperArm) {
+    leftUpperArm.rotation.z = -1.18;
+    leftUpperArm.rotation.x = -0.05;
+  }
+  if (rightUpperArm) {
+    rightUpperArm.rotation.z = 1.18;
+    rightUpperArm.rotation.x = -0.05;
+  }
+  if (leftLowerArm) {
+    leftLowerArm.rotation.z = -0.10;
+  }
+  if (rightLowerArm) {
+    rightLowerArm.rotation.z = 0.10;
+  }
+}
+
 export function SarahAvatar({ status }: SarahAvatarProps) {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const statusRef = useRef(status);
@@ -34,7 +62,7 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     scene.background = new THREE.Color(0x0b0f17);
 
     const camera = new THREE.PerspectiveCamera(30, 1, 0.01, 100);
-    camera.position.set(0, 1.35, 3.4);
+    camera.position.set(0, 1.35, 4.2);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -70,7 +98,34 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
     let vrm: VRM | null = null;
     let avatarRoot: THREE.Object3D | null = null;
     let baseY = 0;
+    const baseYaw = Math.PI;
     let animationFrame = 0;
+
+    const frameAvatar = () => {
+      if (!avatarRoot) return;
+
+      const box = new THREE.Box3().setFromObject(avatarRoot);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      const width = Math.max(1, mount.clientWidth);
+      const height = Math.max(1, mount.clientHeight);
+      const aspect = width / height;
+
+      const verticalFov = THREE.MathUtils.degToRad(camera.fov);
+      const horizontalFov =
+        2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(aspect, 0.1));
+
+      const heightDistance =
+        size.y / Math.max(2 * Math.tan(verticalFov / 2), 0.001);
+      const widthDistance =
+        size.x / Math.max(2 * Math.tan(horizontalFov / 2), 0.001);
+      const distance = Math.max(heightDistance, widthDistance, 1.5) * 1.15;
+
+      camera.position.set(0, center.y, distance);
+      camera.lookAt(0, center.y, 0);
+      camera.updateProjectionMatrix();
+    };
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -86,8 +141,11 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
 
         vrm = loadedVrm;
         VRMUtils.rotateVRM0(vrm);
+        applyRelaxedPose(vrm);
 
         avatarRoot = vrm.scene;
+        avatarRoot.rotation.y = baseYaw;
+
         avatarRoot.traverse((node) => {
           if (node instanceof THREE.Mesh) {
             node.castShadow = true;
@@ -98,9 +156,8 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
 
         const initialBox = new THREE.Box3().setFromObject(avatarRoot);
         const initialSize = initialBox.getSize(new THREE.Vector3());
-        const maxDimension = Math.max(initialSize.x, initialSize.y, initialSize.z, 0.001);
-        const scale = 2.35 / maxDimension;
-        avatarRoot.scale.setScalar(scale);
+        const modelHeight = Math.max(initialSize.y, 0.001);
+        avatarRoot.scale.setScalar(2.35 / modelHeight);
 
         const fittedBox = new THREE.Box3().setFromObject(avatarRoot);
         const center = fittedBox.getCenter(new THREE.Vector3());
@@ -110,14 +167,7 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
         baseY = avatarRoot.position.y;
 
         scene.add(avatarRoot);
-
-        const fittedSize = new THREE.Box3()
-          .setFromObject(avatarRoot)
-          .getSize(new THREE.Vector3());
-        const lookY = Math.max(0.9, fittedSize.y * 0.56);
-        camera.position.set(0, lookY, 3.2);
-        camera.lookAt(0, lookY, 0);
-
+        frameAvatar();
         setLoadState("ready");
       },
       undefined,
@@ -131,7 +181,7 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
       const height = Math.max(1, mount.clientHeight);
       renderer.setSize(width, height, false);
       camera.aspect = width / height;
-      camera.updateProjectionMatrix();
+      frameAvatar();
     };
 
     const observer = new ResizeObserver(resize);
@@ -150,9 +200,13 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
 
         // Display-only procedural presence. This never reads or controls the desktop.
         avatarRoot.rotation.y =
-          Math.sin(elapsed * (thinking ? 0.55 : 0.3)) * (thinking ? 0.045 : 0.018);
+          baseYaw +
+          Math.sin(elapsed * (thinking ? 0.55 : 0.3)) *
+            (thinking ? 0.045 : 0.018);
         avatarRoot.position.y =
-          baseY + Math.sin(elapsed * (speaking ? 2.0 : 1.1)) * (speaking ? 0.008 : 0.004);
+          baseY +
+          Math.sin(elapsed * (speaking ? 2.0 : 1.1)) *
+            (speaking ? 0.008 : 0.004);
 
         vrm.update(delta);
       }
@@ -202,7 +256,9 @@ export function SarahAvatar({ status }: SarahAvatarProps) {
       </div>
       <div style={styles.caption}>
         <span style={styles.captionTitle}>Sarah</span>
-        <span style={styles.captionDetail}>Display-only MANUKA avatar • {status}</span>
+        <span style={styles.captionDetail}>
+          Display-only MANUKA avatar • {status}
+        </span>
       </div>
     </section>
   );
