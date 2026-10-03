@@ -3,7 +3,7 @@ import { MarkdownMessage } from "../components/MarkdownMessage";
 import { SarahAvatar } from "../components/SarahAvatar";
 import { fetchAssistantState, sendAssistantMessage } from "../lib/api";
 import {
-  emotionFromEmoji,
+  emotionFromReply,
   localSpeechSupported,
   speakSarahReply,
   stopLocalSpeech,
@@ -44,6 +44,7 @@ export function BasicChatPage() {
   const [avatarMood, setAvatarMood] = useState("neutral");
   const [replySignal, setReplySignal] = useState(0);
   const [faceTestSignal, setFaceTestSignal] = useState(0);
+  const [attentionSignal, setAttentionSignal] = useState(0);
   const [sending, setSending] = useState(false);
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(() => {
@@ -64,9 +65,9 @@ export function BasicChatPage() {
         if (!cancelled) {
           setStatus(state.assistant_state || "Online");
           if (!faceTestActiveRef.current) {
-            const emojiMood = emotionFromEmoji(state.latest_reply || "");
-            if (emojiMood || state.latest_reply_emotion) {
-              setAvatarMood(emojiMood || state.latest_reply_emotion || "neutral");
+            const inferredMood = emotionFromReply(state.latest_reply || "");
+            if (inferredMood || state.latest_reply_emotion) {
+              setAvatarMood(inferredMood || state.latest_reply_emotion || "neutral");
             }
           }
         }
@@ -193,6 +194,7 @@ export function BasicChatPage() {
     }
 
     clearFaceTest();
+    setAttentionSignal((current) => current + 1);
     setSending(true);
 
     try {
@@ -218,7 +220,7 @@ export function BasicChatPage() {
         if (state.latest_reply && state.latest_reply !== previousReply) {
           reply = state.latest_reply;
           setAvatarMood(
-            emotionFromEmoji(state.latest_reply) ||
+            emotionFromReply(state.latest_reply) ||
               state.latest_reply_emotion ||
               "neutral",
           );
@@ -271,6 +273,7 @@ export function BasicChatPage() {
             mood={avatarMood}
             replySignal={replySignal}
             faceTestSignal={faceTestSignal}
+            attentionSignal={attentionSignal}
           />
         </aside>
 
@@ -343,7 +346,11 @@ export function BasicChatPage() {
           <form onSubmit={handleSubmit} style={styles.composer}>
             <textarea
               value={input}
-              onChange={(event) => setInput(event.target.value)}
+              onFocus={() => setAttentionSignal((current) => current + 1)}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setAttentionSignal((current) => current + 1);
+              }}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
