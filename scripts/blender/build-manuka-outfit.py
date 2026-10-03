@@ -6,9 +6,11 @@ Run with Blender, for example:
     --output MANUKA_casual-streetwear.blend \
     --vrm-output sarah-casual-streetwear.vrm
 
-This script intentionally creates stylized first-pass garments from simple meshes and
-parents them to MANUKA's humanoid bones. It is meant to produce an editable starting
-point that can be visually fitted/tuned in Blender before final VRM export.
+This script creates editable first-pass garments around MANUKA's actual rig and body
+geometry. Fitted pieces reuse MANUKA's existing skinned clothing where practical,
+while jackets and sleeves use masked body-surface shells so they follow the avatar
+instead of floating as primitive blocks. Final visual tuning in Blender is still
+expected before production VRM export.
 """
 
 from __future__ import annotations
@@ -222,6 +224,103 @@ def hide_original_costume():
             obj.hide_render = False
             obj.hide_viewport = False
 
+def set_single_material(obj, mat):
+    if not obj.data or not hasattr(obj.data, "materials"):
+        return
+    obj.data.materials.clear()
+    obj.data.materials.append(mat)
+    if hasattr(obj.data, "polygons"):
+        for polygon in obj.data.polygons:
+            polygon.material_index = 0
+
+def duplicate_rigged_piece(source_name, new_name, collection, mat=None):
+    source = get_object(source_name)
+    if source is None:
+        raise RuntimeError(f"Required MANUKA source object not found: {source_name}")
+
+    obj = source.copy()
+    obj.data = source.data.copy() if source.data else None
+    obj.name = new_name
+    move_to_collection(obj, collection)
+
+    obj.hide_viewport = False
+    obj.hide_render = False
+    try:
+        obj.hide_set(False)
+    except RuntimeError:
+        pass
+
+    if mat is not None:
+        set_single_material(obj, mat)
+
+    obj["sarah_outfit_generated"] = True
+    obj["sarah_outfit_source"] = source_name
+    return obj
+
+def group_indices(obj, prefixes):
+    prefixes = tuple(prefixes)
+    return {
+        group.index
+        for group in obj.vertex_groups
+        if any(group.name == prefix or group.name.startswith(prefix) for prefix in prefixes)
+    }
+
+def has_group_weight(vertex, indices, threshold=0.08):
+    return any(
+        membership.group in indices and membership.weight >= threshold
+        for membership in vertex.groups
+    )
+
+def body_shell(
+    body,
+    name,
+    collection,
+    mat,
+    keep_vertex,
+    thickness,
+):
+    obj = body.copy()
+    obj.data = body.data.copy()
+    obj.name = name
+    move_to_collection(obj, collection)
+    obj.hide_viewport = False
+    obj.hide_render = False
+    try:
+        obj.hide_set(False)
+    except RuntimeError:
+        pass
+
+    set_single_material(obj, mat)
+
+    keep_group = obj.vertex_groups.get("SarahOutfitKeep")
+    if keep_group is None:
+        keep_group = obj.vertex_groups.new(name="SarahOutfitKeep")
+
+    keep_indices = []
+    for vertex in obj.data.vertices:
+        world_co = obj.matrix_world @ vertex.co
+        if keep_vertex(obj, vertex, world_co):
+            keep_indices.append(vertex.index)
+
+    if not keep_indices:
+        raise RuntimeError(f"{name} mask selected no body vertices.")
+
+    keep_group.add(keep_indices, 1.0, "REPLACE")
+
+    mask = obj.modifiers.new("SarahOutfit_Mask", "MASK")
+    mask.vertex_group = keep_group.name
+
+    solidify = obj.modifiers.new("SarahOutfit_Thickness", "SOLIDIFY")
+    solidify.thickness = thickness
+    solidify.offset = 1.0
+    solidify.use_rim = True
+    if hasattr(solidify, "use_even_offset"):
+        solidify.use_even_offset = True
+
+    obj["sarah_outfit_generated"] = True
+    obj["sarah_outfit_body_shell"] = True
+    return obj
+
 def metrics(armature):
     hips = bone_center(armature, "Hips")
     chest = bone_center(armature, "Chest")
@@ -307,26 +406,163 @@ def add_socks(prefix, armature, collection, mat, tall=True):
         )
 
 def build_casual_streetwear(armature, coll, m):
-    cream = material("Cream", "cream", roughness=0.58)
-    black = material("Black", "black", roughness=0.36)
-    amber = material("Amber", "honey_amber", metallic=0.15, roughness=0.35)
-    hips, chest = m["hips"], m["chest"]
-    sw, hw, depth, th = m["shoulder_width"], m["hip_width"], m["depth"], m["torso_height"]
+    """Body-fitted streetwear pass based on the supplied reference.
 
-    add_box("Casual_CropTop", chest + Vector((0, 0, -th * 0.05)),
-            (sw * 0.62, depth * 1.04, th * 0.36), cream, coll, armature, "Chest", bevel=0.03)
-    add_box("Casual_JacketBody", chest + Vector((0, 0, th * 0.06)),
-            (sw * 1.18, depth * 1.34, th * 0.46), black, coll, armature, "Chest", bevel=0.055)
-    add_arm_sleeves("Casual_Jacket", armature, coll, black, oversized=True)
-    add_box("Casual_Shorts", hips + Vector((0, 0, -th * 0.10)),
-            (hw * 1.16, depth * 1.18, th * 0.25), black, coll, armature, "Hips", bevel=0.028)
-    add_torus("Casual_Belt", hips + Vector((0, 0, th * 0.03)),
-              hw * 0.63, hw * 0.035, amber, coll, armature, "Hips")
-    for side, leg in (("L", "UpperLeg_L"), ("R", "UpperLeg_R")):
-        pos = bone_head(armature, leg).lerp(bone_tail(armature, leg), 0.32)
-        add_torus(f"Casual_ThighStrap_{side}", pos, hw * 0.22, hw * 0.022,
-                  black, coll, armature, leg)
-    add_basic_shoes("Casual", armature, coll, black, chunky=True)
+    Reuse MANUKA's existing fitted bra/shorts/shoes/tie for reliable skinning and
+    proportions, then add a separate open jacket shell around the body and arms.
+    This avoids the large primitive cylinders/boxes from the original prototype.
+    """
+    cream = material("Casual_Cream", "cream", roughness=0.56)
+    black = material("Casual_Black", "black", roughness=0.34)
+    amber = material("Casual_Amber", "honey_amber", metallic=0.12, roughness=0.34)
+
+    hips, chest, neck = m["hips"], m["chest"], m["neck"]
+    sw, hw, depth, th = (
+        m["shoulder_width"],
+        m["hip_width"],
+        m["depth"],
+        m["torso_height"],
+    )
+
+    body = get_object("Manuka_body")
+    if body is None:
+        raise RuntimeError("Required MANUKA body object not found: Manuka_body")
+
+    # Use MANUKA's own fitted geometry wherever possible. These pieces already
+    # deform correctly with the avatar and immediately look less blocky.
+    top = duplicate_rigged_piece(
+        "Manuka_underwear_bra",
+        "Casual_CropTop",
+        coll,
+        cream,
+    )
+    shorts = duplicate_rigged_piece(
+        "Manuka_costume_shorts",
+        "Casual_FittedShorts",
+        coll,
+        black,
+    )
+    shoes = duplicate_rigged_piece(
+        "Manuka_costume_shoes",
+        "Casual_FittedShoes",
+        coll,
+        black,
+    )
+    tie = duplicate_rigged_piece(
+        "Manuka_costume_tie",
+        "Casual_AmberNecktie",
+        coll,
+        amber,
+    )
+
+    # Hide the original underwear top now that the cream duplicate replaces it.
+    original_bra = get_object("Manuka_underwear_bra")
+    if original_bra:
+        original_bra.hide_viewport = True
+        original_bra.hide_render = True
+
+    # Retain references so Blender does not optimize away user-facing object names.
+    for piece in (top, shorts, shoes, tie):
+        piece["sarah_outfit_preset"] = "casual-streetwear"
+
+    arm_groups = group_indices(
+        body,
+        (
+            "UpperArm_",
+            "UpperArm_twist_",
+            "LowerArm_",
+            "LowerArm_twist_",
+        ),
+    )
+    hand_groups = group_indices(body, ("Hand_",))
+    leg_groups = group_indices(
+        body,
+        ("UpperLeg_", "LowerLeg_", "Foot_"),
+    )
+
+    jacket_low = hips.z + th * 0.10
+    jacket_high = neck.z - th * 0.04
+    front_y = chest.y - depth * 0.08
+    front_gap_half_width = sw * 0.105
+
+    def keep_jacket_torso(obj, vertex, world_co):
+        if world_co.z < jacket_low or world_co.z > jacket_high:
+            return False
+        if has_group_weight(vertex, leg_groups, 0.10):
+            return False
+        if has_group_weight(vertex, arm_groups, 0.13):
+            return False
+
+        # MANUKA faces toward negative Y in this source. Remove a narrow strip
+        # down the front so the jacket reads as open rather than a sweater.
+        in_front_center = (
+            world_co.y < front_y
+            and abs(world_co.x - chest.x) < front_gap_half_width
+        )
+        return not in_front_center
+
+    body_shell(
+        body,
+        "Casual_OpenJacketBody",
+        coll,
+        black,
+        keep_jacket_torso,
+        thickness=max(sw * 0.030, 0.010),
+    )
+
+    def keep_jacket_sleeves(obj, vertex, world_co):
+        if has_group_weight(vertex, hand_groups, 0.40):
+            return False
+        return has_group_weight(vertex, arm_groups, 0.09)
+
+    body_shell(
+        body,
+        "Casual_JacketSleeves",
+        coll,
+        black,
+        keep_jacket_sleeves,
+        thickness=max(sw * 0.040, 0.012),
+    )
+
+    # Small lapels add the street-jacket silhouette without dominating the fit.
+    lapel_z = chest.z + th * 0.10
+    lapel_y = chest.y - depth * 0.60
+    lapel_w = sw * 0.16
+    lapel_h = th * 0.26
+    lapel_d = max(depth * 0.10, 0.012)
+    for side, sign in (("L", -1), ("R", 1)):
+        add_box(
+            f"Casual_Lapel_{side}",
+            Vector((
+                chest.x + sign * sw * 0.12,
+                lapel_y,
+                lapel_z,
+            )),
+            (lapel_w, lapel_d, lapel_h),
+            black,
+            coll,
+            armature,
+            "Chest",
+            rotation=(0.0, 0.0, math.radians(sign * 24)),
+            bevel=max(sw * 0.010, 0.004),
+        )
+
+    # One fitted thigh strap mirrors the reference without adding bulky geometry.
+    strap_leg = "UpperLeg_R"
+    strap_pos = bone_head(armature, strap_leg).lerp(
+        bone_tail(armature, strap_leg),
+        0.22,
+    )
+    add_torus(
+        "Casual_ThighStrap_R",
+        strap_pos,
+        max(hw * 0.17, 0.045),
+        max(hw * 0.014, 0.004),
+        black,
+        coll,
+        armature,
+        strap_leg,
+    )
 
 def build_cafe_maid(armature, coll, m):
     cream = material("Cream", "cream", roughness=0.56)
