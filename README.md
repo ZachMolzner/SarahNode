@@ -1,236 +1,141 @@
 # SarahNode
 
-SarahNode is a local-first AI companion built as a full-stack desktop/web system: a FastAPI orchestration backend, a React + TypeScript realtime client, and a Tauri shell for desktop runtime and tray-native behavior.
+SarahNode is a local-first personal technical assistant focused on **IT troubleshooting, coding, research, and general questions**.
 
-This project is positioned as an engineering portfolio piece focused on practical system design decisions: provider abstraction, realtime event orchestration, identity-aware dialogue context, and frontend presence behavior that reacts to assistant state instead of scripted animation loops.
+Sarah is represented in the desktop app by a display-only 3D avatar, but she does **not** inspect or operate the user's screen. Screen capture, pointer control, keyboard injection, UI Automation control, app launching, file mutation, and browser-driving workflows are not part of the active runtime.
 
----
+## Core goals
 
-## 1) Project overview
+- Help diagnose Windows, networking, hardware, software, printer, Active Directory, ServiceNow, and other IT problems.
+- Explain, write, review, and debug code.
+- Answer general questions and use web research when current information is needed.
+- Remember useful non-secret preferences and project context.
+- Offer read-only local diagnostics such as system resources and running-process information.
+- Present Sarah as a local 3D character without giving the avatar desktop-control privileges.
 
-SarahNode provides a conversational assistant experience that combines:
-
-- **Text + voice interaction** (message input and push-to-talk transcription).
-- **Realtime state streaming** from backend to frontend over WebSocket events.
-- **Avatar-driven companion UI** with deterministic presence and gesture layers.
-- **Optional web-grounded answers** that can surface concise findings and sources.
-- **Desktop-first runtime model** through Tauri (tray menu, summon hotkey, close-to-tray, overlay mode, sidecar backend process).
-
-The architecture is intentionally modular so core assistant behavior can run with mock providers locally, then upgrade to live providers (OpenAI/ElevenLabs/search) via configuration.
-
----
-
-## 2) Why SarahNode is different
-
-SarahNode is not just “chat UI + LLM API.” It emphasizes **runtime orchestration and behavior systems**:
-
-- **Provider decoupling by adapter contract** for LLM, STT, TTS, avatar, and web search so runtime capability can degrade gracefully instead of failing hard.
-- **Event-first orchestration** where backend state changes (moderation, routing, reply selection, speaking state, web grounding) are emitted as explicit events that power UI behavior.
-- **Identity-aware addressing** in the dialogue path (speaker resolution, addressing mode/tone directive, persisted context).
-- **Deterministic presence layer** in the frontend (engagement-aware stage movement, search presentation pose, overlay-aware positioning) rather than purely random idle motion.
-- **Desktop operations details** (system tray lifecycle, always-on-top/overlay toggles, summon shortcut, backend sidecar startup/teardown).
-
----
-
-## 3) Core features
-
-- Priority message queue with cooldown-aware processing.
-- Safety/moderation gate before response generation.
-- Capability routing (`ask_general`, `lookup_information`, `browse_web`, `coding_help`, `shutdown_command`, `smalltalk_or_greeting`).
-- Optional web lookup flow with fetch/extract/synthesis and source metadata retention.
-- TTS speaking synchronization events and frontend playback coordination.
-- Push-to-talk transcription endpoint integrated into the same assistant pipeline.
-- Microphone permission request flow delivered through Sarah’s existing dialogue textbox flow (no separate mic permission panel).
-- Web-grounded answer textbox with staged reveal and collapsible source list.
-- Overlay/immersive presence modes with desktop-ground movement behavior.
-- Persistent desktop settings (`always_on_top`, `overlay_mode`, `close_to_tray_on_close`, `voice_output_enabled`).
-
----
-
-## 4) Architecture overview
+## Architecture
 
 ```text
-┌──────────────────────────────────────────┐
-│                Frontend                  │
-│ React + Vite + TypeScript + Three/VRM   │
-│ - OverlayCompanionPage                   │
-│ - Presence + gesture + search presentation│
-└───────────────┬──────────────────────────┘
-                │ REST + WebSocket
-                ▼
-┌──────────────────────────────────────────┐
-│            FastAPI Backend               │
-│ - Routers (/messages, /transcribe, /ws) │
-│ - StreamOrchestrator worker + fanout     │
-│ - DialogueEngine + moderation + policy   │
-│ - MemoryManager + IdentityService        │
-└───────┬──────────────┬───────────────┬───┘
-        │              │               │
-        ▼              ▼               ▼
-   LLM Adapter     STT/TTS Adapters   Web Search + Page Fetch/Extract
- (mock/openai)   (openai/elevenlabs) (none/brave/serpapi optional)
-
-Desktop runtime (optional but primary target):
-Tauri shell manages window/tray/shortcut/settings and starts backend sidecar.
+┌───────────────────────────────────────────────┐
+│                 SarahNode UI                  │
+│ React + TypeScript + Three.js + VRM           │
+│                                               │
+│  Display-only Sarah avatar  │  Chat interface │
+└───────────────────────┬───────────────────────┘
+                        │ REST / WebSocket
+                        ▼
+┌───────────────────────────────────────────────┐
+│                 FastAPI backend               │
+│ StreamOrchestrator + DialogueEngine           │
+│ Safe persistent memory + secret guard         │
+│ Model gateway + web research                  │
+│ Read-only IT diagnostics                      │
+└───────────────────────────────────────────────┘
 ```
 
----
+The Tauri shell provides the Windows desktop application.
 
-## 5) Frontend behavior / presence system
+## What Sarah can do
 
-Frontend behavior is built from layered controllers rather than one monolithic animation module:
+Sarah's active runtime supports:
 
-- **Avatar state layer** (`useAvatarState`) reacts to streamed assistant events.
-- **Presence mode derivation** maps interaction context into semantic modes (speaking, presenting search results, listening, shutdown, idle transitions).
-- **Presence controller stack** (zones, movement, overlay constraints, idle behavior) handles where Sarah should stand and how she settles.
-- **Gesture/performance layer** adds deterministic expressive moments (startup greeting, listening acknowledgment, thinking/speaking posture, shutdown performance).
-- **Expression resolver** fuses timing signals (recent interaction, search activity, interruptions/errors) into mood/expression outputs.
+- IT and technical troubleshooting
+- coding and debugging help
+- general Q&A
+- web-grounded research when configured
+- persistent non-secret memory
+- read-only system information
+- CPU, memory, disk, and boot-time diagnostics
+- read-only running-process inspection
+- optional voice services
+- display-only avatar state/presence
 
-This split keeps behavior understandable and testable: state comes from backend events, while movement/presentation is handled by dedicated frontend systems.
+## What Sarah cannot do
 
----
+SarahNode intentionally does not expose:
 
-## 6) Search presentation / reporting flow
+- screen capture or screen vision
+- mouse movement or clicking
+- keyboard injection
+- UI Automation control
+- autonomous browser control
+- app launching/focusing/closing
+- local file creation, movement, deletion, or opening through assistant tools
+- unrestricted shell or system control
 
-SarahNode treats web-grounded responses as a separate presentation path:
+This boundary keeps Sarah focused on **helping the user solve problems** rather than operating the computer for them.
 
-1. Backend classifies request capability and browsing policy.
-2. If enabled and needed, search provider returns ranked results.
-3. Top pages are fetched + text-extracted with bounded limits/timeouts.
-4. Dialogue synthesis uses extracted context and returns reply.
-5. Backend emits `web_grounded_answer` event containing title, concise bullets, sources, and provider metadata.
-6. Frontend normalizes payload, suppresses stale/duplicate updates, and mounts `WebAnswerTextbox`.
-7. Textbox reveals in stages (heading → findings → settled), and source visibility can be expanded/collapsed.
+## MANUKA avatar
 
-This creates a readable “search report” UI surface without blocking the core conversational reply path.
+SarahNode can load a local VRM avatar from:
 
----
+```text
+frontend/public/models/sarah.vrm
+```
 
-## 7) Tech stack
+The model file is intentionally ignored by Git. Licensed avatar assets should remain local and should not be redistributed through this public repository.
 
-**Backend**
-- Python
-- FastAPI + Uvicorn
-- Pydantic / pydantic-settings
-- Adapter-based integrations for OpenAI, ElevenLabs, Brave Search, SerpAPI
+To install a local MANUKA VRM:
 
-**Frontend**
-- React 18
-- TypeScript
-- Vite
-- Three.js + `@pixiv/three-vrm`
+```powershell
+cd C:\Users\karvo\SarahNode
+.\scripts\install-manuka-avatar.ps1 "C:\path\to\MANUKA.vrm"
+```
 
-**Desktop shell**
-- Tauri 2 (Rust)
-- Tray menu + global shortcut plugin
+The frontend uses Three.js and `@pixiv/three-vrm` to render the character. Avatar motion is presentation-only and has no screen-reading or computer-control access.
 
----
+## Local development
 
-## 8) Local development setup
+### Backend
 
-> SarahNode can run as web app (frontend + backend dev servers) or as Tauri desktop app that launches the frontend and manages desktop behavior.
-
-### Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- npm
-- (Optional) Rust toolchain for Tauri development
-
-### Backend (FastAPI)
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate   # Windows PowerShell: .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+```powershell
+cd C:\Users\karvo\SarahNode\backend
+python -m pip install -r requirements.txt
 python run_server.py
 ```
 
-Backend defaults:
-- host: `0.0.0.0`
-- port: `8000`
-- env file support via `backend/.env` (optional)
+### Frontend
 
-### Frontend (Vite)
-
-```bash
-cd frontend
+```powershell
+cd C:\Users\karvo\SarahNode\frontend
 npm install
-npm run dev -- --host 0.0.0.0 --port 5173
+npm run dev
 ```
 
-Microphone access in browser mode must run on **HTTPS or localhost** because `getUserMedia` is blocked on insecure origins.
+### Tauri desktop app
 
-### Desktop shell (Tauri)
-
-```bash
-cd frontend
-npm install
+```powershell
+cd C:\Users\karvo\SarahNode\frontend
+$env:Path += ";$env:USERPROFILE\.cargo\bin"
+$env:Path += ";$env:LOCALAPPDATA\Programs\Ollama"
 npm run tauri:dev
 ```
 
-### Optional provider configuration
+## Model configuration
 
-Set environment variables (typically in `backend/.env`) as needed:
-
-- `LLM_PROVIDER` (`auto|mock|openai`)
-- `STT_PROVIDER` (`auto|openai`)
-- `TTS_PROVIDER` (`auto|mock|elevenlabs`)
-- `OPENAI_API_KEY`
-- `ELEVENLABS_API_KEY`
-- `WEB_SEARCH_PROVIDER` (`none|brave|serpapi`)
-- `BRAVE_SEARCH_API_KEY` / `SERPAPI_API_KEY`
-
----
-
-## 9) Current limitations
-
-- Web browsing is **opt-in** and disabled by default (`WEB_SEARCH_PROVIDER=none`), so live verification requires explicit configuration.
-- `web_grounded_answer` bullets are currently derived from search snippets/context and are intentionally concise (not a full citation engine).
-- Display mode defaults differ across layers (desktop settings are overlay-first; parser defaults are immersive unless overridden).
-- Tauri release packaging expects a sidecar backend executable path and still needs end-to-end packaging validation in production distribution.
-- Main page structure still carries dashboard-era naming in some areas despite companion-first runtime behavior.
-
----
-
-## 10) Roadmap / next steps
-
-Near-term engineering priorities:
-
-1. **Production packaging hardening**
-   - Validate sidecar build/distribution path and installer workflow.
-2. **Search grounding quality**
-   - Improve source ranking, attribution detail, and finding distillation quality.
-3. **Presence system observability**
-   - Add diagnostics/telemetry hooks for mode transitions and movement decisions.
-4. **Frontend modularity pass**
-   - Continue decomposing page-level orchestration into focused feature slices.
-5. **Expanded automated tests**
-   - Add higher-level integration coverage across event stream, search path, and desktop setting lifecycles.
-
----
-
-## Repository structure (quick map)
+SarahNode defaults to a local OpenAI-compatible model endpoint:
 
 ```text
-/backend
-  /app
-    /adapters      # provider contracts + implementations
-    /services      # dialogue, search, fetch/extract, voice, policy
-    /orchestration # stream orchestrator
-    /routers        # API and WebSocket routes
-    /memory         # state manager + persistence glue
-/frontend
-  /src             # React UI, behavior hooks, avatar/presence logic
-  /src-tauri       # desktop shell (Rust/Tauri)
-/docs              # audits, roadmap notes, and smoke checklist
+LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
+LOCAL_LLM_MODEL=llama3.2
+LLM_PROVIDER=local
 ```
 
-If you’re reviewing SarahNode as a portfolio project, start with:
+Optional web-search providers can be configured through the backend environment file.
 
-- `backend/app/orchestration/stream_orchestrator.py`
-- `backend/app/services/dialogue_engine.py`
-- `frontend/src/pages/OverlayCompanionPage.tsx`
-- `frontend/src/components/WebAnswerTextbox.tsx`
-- `frontend/src-tauri/src/lib.rs`
+## Safety and memory
+
+Persistent memory rejects credential-shaped values such as passwords, API keys, access tokens, recovery codes, and private keys. Secret-shaped chat content is also redacted from Sarah's rolling session-memory copy so later turns cannot retrieve it from recent conversation context.
+
+## Project direction
+
+The current priority order is:
+
+1. stronger IT troubleshooting and diagnostic reasoning
+2. better coding/repository workflows
+3. higher-quality general and web-grounded answers
+4. reliable safe memory
+5. Sarah's display-only MANUKA avatar
+6. optional voice interaction
+
+Desktop-control and screen-interaction features are deliberately outside the project direction.
