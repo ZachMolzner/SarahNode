@@ -26,10 +26,19 @@ export function BasicChatPage() {
   const [avatarMood, setAvatarMood] = useState("neutral");
   const [appearance, setAppearance] = useState<SarahAppearance>(() => {
     const saved = window.localStorage.getItem("sarah.appearance");
-    return saved === "casual" ||
-      saved === "sexy" ||
-      saved === "underwear"
-      ? saved
+    const supported: SarahAppearance[] = [
+      "default",
+      "casual-streetwear",
+      "cafe-maid",
+      "sporty-athleisure",
+      "elegant-evening",
+      "cozy-sweater",
+      "futuristic-idol-techwear",
+      "sexy",
+      "underwear",
+    ];
+    return supported.includes(saved as SarahAppearance)
+      ? (saved as SarahAppearance)
       : "default";
   });
   const [replySignal, setReplySignal] = useState(0);
@@ -163,7 +172,14 @@ export function BasicChatPage() {
                 style={styles.appearanceSelect}
               >
                 <option value="default">Default</option>
-                <option value="casual">Casual</option>
+                <option value="casual-streetwear">Casual Streetwear</option>
+                <option value="cafe-maid">Cafe Maid</option>
+                <option value="sporty-athleisure">Sporty Athleisure</option>
+                <option value="elegant-evening">Elegant Evening</option>
+                <option value="cozy-sweater">Cozy Sweater</option>
+                <option value="futuristic-idol-techwear">
+                  Futuristic Idol / Techwear
+                </option>
                 <option value="sexy">Sexy</option>
                 <option value="underwear">Underwear</option>
               </select>
@@ -295,7 +311,7 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
   },
   appearanceSelect: {
-    minWidth: "124px",
+    minWidth: "178px",
     border: "1px solid #303949",
     borderRadius: "8px",
     background: "#111722",
