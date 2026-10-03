@@ -699,69 +699,69 @@ export function SarahAvatar({
               (0.30 + 0.70 * (1 - attentionBlend));
         }
 
-        // Floor-sit reference, tuned from the side view. MANUKA's seated
-        // thighs need to rotate forward from the hips (negative local X here),
-        // not backward behind the pelvis. The left leg stays mostly extended
-        // along the floor while the right knee folds up toward the torso.
+        // Floor-sit reference, tuned from the side view. Keep the pelvis
+        // grounded and bring both thighs forward enough that the knees stay
+        // above the stage. The left leg extends low/forward; the right knee
+        // comes high toward the torso and its shin folds back down.
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
             legSwing * 0.15 * walkBlend -
-            0.86 * floorSitBlend;
+            1.52 * floorSitBlend;
           leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y + 0.04 * floorSitBlend;
+            leftUpperLegBaseRotation.y + 0.03 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.20 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.16 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
             oppositeLegSwing * 0.15 * walkBlend -
-            1.24 * floorSitBlend;
+            1.94 * floorSitBlend;
           rightUpperLegBone.rotation.y =
-            rightUpperLegBaseRotation.y - 0.03 * floorSitBlend;
+            rightUpperLegBaseRotation.y - 0.02 * floorSitBlend;
           rightUpperLegBone.rotation.z =
-            rightUpperLegBaseRotation.z - 0.10 * floorSitBlend;
+            rightUpperLegBaseRotation.z - 0.08 * floorSitBlend;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend +
-            0.12 * floorSitBlend;
+            0.08 * floorSitBlend;
           leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y + 0.02 * floorSitBlend;
+            leftLowerLegBaseRotation.y + 0.01 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z + 0.02 * floorSitBlend;
+            leftLowerLegBaseRotation.z + 0.01 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
             Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend +
-            1.42 * floorSitBlend;
+            1.34 * floorSitBlend;
           rightLowerLegBone.rotation.y =
-            rightLowerLegBaseRotation.y - 0.04 * floorSitBlend;
+            rightLowerLegBaseRotation.y - 0.03 * floorSitBlend;
           rightLowerLegBone.rotation.z =
-            rightLowerLegBaseRotation.z - 0.04 * floorSitBlend;
+            rightLowerLegBaseRotation.z - 0.03 * floorSitBlend;
         }
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
             legSwing * 0.04 * walkBlend -
-            0.10 * floorSitBlend;
+            0.04 * floorSitBlend;
           leftFootBone.rotation.y =
-            leftFootBaseRotation.y + 0.04 * floorSitBlend;
+            leftFootBaseRotation.y + 0.03 * floorSitBlend;
           leftFootBone.rotation.z =
-            leftFootBaseRotation.z + 0.02 * floorSitBlend;
+            leftFootBaseRotation.z + 0.01 * floorSitBlend;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
             oppositeLegSwing * 0.04 * walkBlend -
-            0.34 * floorSitBlend;
+            0.18 * floorSitBlend;
           rightFootBone.rotation.y =
-            rightFootBaseRotation.y - 0.05 * floorSitBlend;
+            rightFootBaseRotation.y - 0.04 * floorSitBlend;
           rightFootBone.rotation.z =
-            rightFootBaseRotation.z - 0.03 * floorSitBlend;
+            rightFootBaseRotation.z - 0.02 * floorSitBlend;
         }
 
         // Arms counter-swing while walking. During the floor sit, upper
