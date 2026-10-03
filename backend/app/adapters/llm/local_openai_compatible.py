@@ -61,14 +61,16 @@ class LocalOpenAICompatibleClient(LLMClient):
         ]
 
     async def _complete(self, messages: list[dict[str, Any]], tools: list[dict[str, Any]]) -> Any:
-        return await self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            tools=tools or None,
-            temperature=settings.local_llm_temperature,
-            max_tokens=settings.local_llm_max_tokens,
-            reasoning_effort=settings.local_llm_reasoning_effort,
-        )
+        request: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "tools": tools or None,
+            "temperature": settings.local_llm_temperature,
+            "max_tokens": settings.local_llm_max_tokens,
+        }
+        if "11434" in self.base_url or "ollama" in self.base_url.lower():
+            request["reasoning_effort"] = settings.local_llm_reasoning_effort
+        return await self.client.chat.completions.create(**request)
 
     async def _invoke_live_tool(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any] | None:
         if not self.tool_registry:
