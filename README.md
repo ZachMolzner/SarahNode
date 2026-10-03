@@ -117,7 +117,7 @@ SarahNode defaults to a local OpenAI-compatible model endpoint:
 
 ```text
 LOCAL_LLM_BASE_URL=http://127.0.0.1:11434/v1
-LOCAL_LLM_MODEL=llama3.2
+LOCAL_LLM_MODEL=qwen3:14b
 LLM_PROVIDER=local
 ```
 
