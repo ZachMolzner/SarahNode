@@ -347,7 +347,8 @@ class MemoryLearningService:
         ordered = sorted(logical.values(), key=lambda item: item.updated_at, reverse=True)[:limit]
         return "\n".join(
             (
-                f"- PERSISTENT [{item.category.value}/{item.scope}] "
+                f"- PERSISTENT [{item.category.value}/{item.scope}; "
+                f"source={item.source.value}; confidence={item.confidence:.2f}] "
                 f"id={item.id} key={item.key}: {item.value}"
             )
             for item in ordered
