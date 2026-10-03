@@ -58,16 +58,23 @@ export function chooseSarahVoice(
     if (configuredMatch) return configuredMatch;
   }
 
+  const localEnglishVoices = voices.filter(
+    (voice) =>
+      voice.localService && voice.lang.toLowerCase().startsWith("en"),
+  );
+
   for (const hint of PREFERRED_VOICE_HINTS) {
-    const match = voices.find(
-      (voice) =>
-        voice.lang.toLowerCase().startsWith("en") &&
-        voice.name.toLowerCase().includes(hint.toLowerCase()),
+    const match = localEnglishVoices.find((voice) =>
+      voice.name.toLowerCase().includes(hint.toLowerCase()),
     );
     if (match) return match;
   }
 
   return (
+    localEnglishVoices.find(
+      (voice) => voice.lang.toLowerCase() === "en-us",
+    ) ??
+    localEnglishVoices[0] ??
     voices.find((voice) => voice.lang.toLowerCase() === "en-us") ??
     voices.find((voice) => voice.lang.toLowerCase().startsWith("en")) ??
     voices[0] ??
