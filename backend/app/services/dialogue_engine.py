@@ -20,7 +20,7 @@ from app.agent.confirmed_action_router import (
 from app.agent.contracts import ToolInvocation
 from app.agent.desktop_action_router import DesktopActionRequest, parse_desktop_action
 from app.agent.runtime import agent_runtime
-from app.config.settings import settings
+from app.config.settings import IT_TROUBLESHOOTING_RULES, TECHNICAL_ACCURACY_RULES, settings
 from app.schemas.chat import AssistantReply, ChatMessage
 from app.services.capability_router import CapabilityRoute, CapabilityRouter
 from app.services.page_fetcher import PageFetcher
@@ -64,10 +64,15 @@ class DialogueEngine:
         with self.persona_path.open("r", encoding="utf-8") as file:
             parsed = json.load(file)
 
+        persona_prompt = str(parsed.get("system_prompt", settings.persona_system_prompt)).strip()
+        runtime_rules = f"{TECHNICAL_ACCURACY_RULES} {IT_TROUBLESHOOTING_RULES}"
+        if runtime_rules not in persona_prompt:
+            persona_prompt = f"{persona_prompt} {runtime_rules}".strip()
+
         return {
             "name": parsed.get("name", settings.persona_name),
             "style": parsed.get("style", settings.persona_style),
-            "system_prompt": parsed.get("system_prompt", settings.persona_system_prompt),
+            "system_prompt": persona_prompt,
         }
 
     def classify_capability(self, message: ChatMessage) -> CapabilityRoute:
