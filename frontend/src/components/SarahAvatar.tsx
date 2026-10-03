@@ -528,6 +528,142 @@ export function SarahAvatar({
     mount.addEventListener("wheel", handleWheel, { passive: false });
     resize();
 
+    const aimBoneAtWorldPoint = (
+      bone: THREE.Object3D,
+      child: THREE.Object3D,
+      targetWorld: THREE.Vector3,
+      blend: number,
+    ) => {
+      if (!bone.parent || blend <= 0.001) return;
+
+      bone.parent.updateWorldMatrix(true, false);
+      bone.updateWorldMatrix(false, true);
+      child.updateWorldMatrix(true, false);
+
+      const boneWorldPosition = new THREE.Vector3();
+      const childWorldPosition = new THREE.Vector3();
+      bone.getWorldPosition(boneWorldPosition);
+      child.getWorldPosition(childWorldPosition);
+
+      const currentDirection = childWorldPosition
+        .clone()
+        .sub(boneWorldPosition)
+        .normalize();
+      const desiredDirection = targetWorld
+        .clone()
+        .sub(boneWorldPosition)
+        .normalize();
+
+      if (
+        currentDirection.lengthSq() < 0.000001 ||
+        desiredDirection.lengthSq() < 0.000001
+      ) {
+        return;
+      }
+
+      const currentWorldQuaternion = new THREE.Quaternion();
+      const parentWorldQuaternion = new THREE.Quaternion();
+      bone.getWorldQuaternion(currentWorldQuaternion);
+      bone.parent.getWorldQuaternion(parentWorldQuaternion);
+
+      const worldDelta = new THREE.Quaternion().setFromUnitVectors(
+        currentDirection,
+        desiredDirection,
+      );
+      const targetWorldQuaternion = worldDelta
+        .multiply(currentWorldQuaternion);
+
+      const targetLocalQuaternion = parentWorldQuaternion
+        .clone()
+        .invert()
+        .multiply(targetWorldQuaternion);
+
+      bone.quaternion.slerp(
+        targetLocalQuaternion,
+        THREE.MathUtils.clamp(blend, 0, 1),
+      );
+      bone.updateMatrix();
+      bone.updateWorldMatrix(false, true);
+    };
+
+    const solveTwoBoneLeg = (
+      upper: THREE.Object3D | null,
+      lower: THREE.Object3D | null,
+      foot: THREE.Object3D | null,
+      ankleTargetWorld: THREE.Vector3,
+      kneePoleWorld: THREE.Vector3,
+      blend: number,
+    ) => {
+      if (!upper || !lower || !foot || blend <= 0.001) return;
+
+      avatarRoot?.updateWorldMatrix(true, true);
+      upper.updateWorldMatrix(true, true);
+      lower.updateWorldMatrix(true, true);
+      foot.updateWorldMatrix(true, false);
+
+      const hip = new THREE.Vector3();
+      const kneeNow = new THREE.Vector3();
+      const ankleNow = new THREE.Vector3();
+      upper.getWorldPosition(hip);
+      lower.getWorldPosition(kneeNow);
+      foot.getWorldPosition(ankleNow);
+
+      const upperLength = Math.max(hip.distanceTo(kneeNow), 0.001);
+      const lowerLength = Math.max(kneeNow.distanceTo(ankleNow), 0.001);
+
+      const hipToTarget = ankleTargetWorld.clone().sub(hip);
+      const rawDistance = hipToTarget.length();
+      if (rawDistance < 0.001) return;
+
+      const direction = hipToTarget.clone().normalize();
+      const minReach = Math.abs(upperLength - lowerLength) + 0.001;
+      const maxReach = upperLength + lowerLength - 0.001;
+      const distance = THREE.MathUtils.clamp(
+        rawDistance,
+        minReach,
+        maxReach,
+      );
+
+      const along =
+        (upperLength * upperLength -
+          lowerLength * lowerLength +
+          distance * distance) /
+        (2 * distance);
+      const kneeHeight = Math.sqrt(
+        Math.max(upperLength * upperLength - along * along, 0),
+      );
+
+      const poleDirection = kneePoleWorld
+        .clone()
+        .sub(hip)
+        .sub(
+          direction
+            .clone()
+            .multiplyScalar(
+              kneePoleWorld.clone().sub(hip).dot(direction),
+            ),
+        );
+
+      if (poleDirection.lengthSq() < 0.000001) {
+        poleDirection.set(1, 0, 0);
+      }
+      poleDirection.normalize();
+
+      const desiredKnee = hip
+        .clone()
+        .add(direction.clone().multiplyScalar(along))
+        .add(poleDirection.multiplyScalar(kneeHeight));
+
+      aimBoneAtWorldPoint(upper, lower, desiredKnee, blend);
+
+      // The first solve changes the knee position. Refresh matrices before
+      // aiming the shin at its final ankle target.
+      avatarRoot?.updateWorldMatrix(true, true);
+      lower.updateWorldMatrix(true, true);
+      foot.updateWorldMatrix(true, false);
+      aimBoneAtWorldPoint(lower, foot, ankleTargetWorld, blend);
+    };
+
     const animate = () => {
       const delta = Math.min(clock.getDelta(), 0.05);
       const elapsed = clock.elapsedTime;
@@ -762,6 +898,63 @@ export function SarahAvatar({
             rightFootBaseRotation.y - 0.04 * floorSitBlend;
           rightFootBone.rotation.z =
             rightFootBaseRotation.z - 0.02 * floorSitBlend;
+        }
+
+        if (floorSitBlend > 0.001 && hipsBone) {
+          // Use two-bone IK for the final seated leg placement instead of
+          // relying only on imported Euler axes. Both ankles are explicitly
+          // kept just above the stage while the pole targets shape the knees.
+          avatarRoot.updateWorldMatrix(true, true);
+          hipsBone.updateWorldMatrix(true, false);
+
+          const hipsWorld = new THREE.Vector3();
+          const rootWorldQuaternion = new THREE.Quaternion();
+          hipsBone.getWorldPosition(hipsWorld);
+          avatarRoot.getWorldQuaternion(rootWorldQuaternion);
+
+          const worldOffset = (x: number, y: number, z: number) =>
+            new THREE.Vector3(x, y, z).applyQuaternion(rootWorldQuaternion);
+
+          const leftAnkleTarget = hipsWorld
+            .clone()
+            .add(worldOffset(-0.34, 0, 0.70));
+          leftAnkleTarget.y = 0.13;
+
+          const leftKneePole = hipsWorld
+            .clone()
+            .add(worldOffset(-0.18, 0.30, 0.46));
+
+          const rightAnkleTarget = hipsWorld
+            .clone()
+            .add(worldOffset(0.18, 0, 0.40));
+          rightAnkleTarget.y = 0.13;
+
+          const rightKneePole = hipsWorld
+            .clone()
+            .add(worldOffset(0.14, 0.58, 0.34));
+
+          const ikBlend = THREE.MathUtils.smoothstep(
+            floorSitBlend,
+            0.18,
+            0.92,
+          );
+
+          solveTwoBoneLeg(
+            leftUpperLegBone,
+            leftLowerLegBone,
+            leftFootBone,
+            leftAnkleTarget,
+            leftKneePole,
+            ikBlend,
+          );
+          solveTwoBoneLeg(
+            rightUpperLegBone,
+            rightLowerLegBone,
+            rightFootBone,
+            rightAnkleTarget,
+            rightKneePole,
+            ikBlend,
+          );
         }
 
         // Arms counter-swing while walking. During the floor sit, upper
