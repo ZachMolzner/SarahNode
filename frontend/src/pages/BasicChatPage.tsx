@@ -29,16 +29,25 @@ export function BasicChatPage() {
   useEffect(() => {
     let cancelled = false;
 
-    fetchAssistantState()
-      .then((state) => {
-        if (!cancelled) setStatus(state.assistant_state || "Online");
-      })
-      .catch(() => {
-        if (!cancelled) setStatus("Backend offline");
-      });
+    const refreshBackendStatus = async () => {
+      try {
+        const state = await fetchAssistantState();
+        if (!cancelled) {
+          setStatus(state.assistant_state || "Online");
+        }
+      } catch {
+        if (!cancelled) {
+          setStatus("Backend offline");
+        }
+      }
+    };
+
+    void refreshBackendStatus();
+    const heartbeat = window.setInterval(refreshBackendStatus, 2000);
 
     return () => {
       cancelled = true;
+      window.clearInterval(heartbeat);
     };
   }, []);
 
