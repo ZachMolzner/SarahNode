@@ -86,8 +86,10 @@ export function SarahAvatar({
   const zoomRef = useRef(1);
   const viewModeRef = useRef<AvatarViewMode>("full");
   const frameAvatarRef = useRef<(() => void) | null>(null);
+  const applyInspectionViewRef = useRef<(() => void) | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [zoom, setZoom] = useState(1);
+  const [verticalOffset, setVerticalOffset] = useState(0);
   const [viewMode, setViewMode] = useState<AvatarViewMode>("full");
 
   useEffect(() => {
@@ -145,17 +147,20 @@ export function SarahAvatar({
   };
 
   const moveAvatarVertically = (delta: number) => {
-    inspectionVerticalOffsetRef.current = THREE.MathUtils.clamp(
+    const nextOffset = THREE.MathUtils.clamp(
       inspectionVerticalOffsetRef.current + delta,
-      -1.2,
-      1.2,
+      -1.5,
+      1.5,
     );
-    window.requestAnimationFrame(() => frameAvatarRef.current?.());
+    inspectionVerticalOffsetRef.current = nextOffset;
+    setVerticalOffset(nextOffset);
+    applyInspectionViewRef.current?.();
   };
 
   const resetAvatarVerticalPosition = () => {
     inspectionVerticalOffsetRef.current = 0;
-    window.requestAnimationFrame(() => frameAvatarRef.current?.());
+    setVerticalOffset(0);
+    applyInspectionViewRef.current?.();
   };
 
   const selectViewMode = (mode: AvatarViewMode) => {
@@ -291,6 +296,18 @@ export function SarahAvatar({
     let angryWeight = 0;
     let surprisedWeight = 0;
 
+    let framedTargetY = 1.35;
+    let framedViewDistance = 4.2;
+
+    const applyInspectionView = () => {
+      const inspectionTargetY =
+        framedTargetY - inspectionVerticalOffsetRef.current;
+      camera.position.set(0, inspectionTargetY, framedViewDistance);
+      camera.lookAt(0, inspectionTargetY, 0);
+      camera.updateProjectionMatrix();
+    };
+    applyInspectionViewRef.current = applyInspectionView;
+
     const frameAvatar = () => {
       if (!avatarRoot) return;
 
@@ -318,13 +335,12 @@ export function SarahAvatar({
         : center.y;
       const viewDistance = distance * (faceMode ? 0.44 : 1) / zoomScale;
 
-      // Camera pan is inspection-only: it moves Sarah up/down in the viewport
-      // without changing her actual root position relative to the floor.
-      const inspectionTargetY =
-        targetY - inspectionVerticalOffsetRef.current;
-      camera.position.set(0, inspectionTargetY, viewDistance);
-      camera.lookAt(0, inspectionTargetY, 0);
-      camera.updateProjectionMatrix();
+      // Store the framed camera position, then apply the inspection-only pan.
+      // This lets the up/down buttons move the viewport immediately without
+      // recomputing the avatar bounds on every click.
+      framedTargetY = targetY;
+      framedViewDistance = viewDistance;
+      applyInspectionView();
     };
     frameAvatarRef.current = frameAvatar;
 
@@ -1345,6 +1361,7 @@ export function SarahAvatar({
       window.removeEventListener("blur", stopModelDrag);
       mount.removeEventListener("dblclick", resetModelRotation);
       frameAvatarRef.current = null;
+      applyInspectionViewRef.current = null;
 
       scene.traverse((node) => {
         if (node instanceof THREE.Mesh) {
@@ -1446,7 +1463,7 @@ export function SarahAvatar({
             <span style={styles.zoomDivider} />
             <button
               type="button"
-              onClick={() => moveAvatarVertically(0.12)}
+              onClick={() => moveAvatarVertically(0.28)}
               style={styles.zoomButton}
               title="Move Sarah up in the viewer"
             >
@@ -1458,11 +1475,11 @@ export function SarahAvatar({
               style={styles.rotateResetButton}
               title="Reset Sarah vertical viewer position"
             >
-              ↕
+              Y {verticalOffset >= 0 ? "+" : ""}{verticalOffset.toFixed(1)}
             </button>
             <button
               type="button"
-              onClick={() => moveAvatarVertically(-0.12)}
+              onClick={() => moveAvatarVertically(-0.28)}
               style={styles.zoomButton}
               title="Move Sarah down in the viewer"
             >
@@ -1471,7 +1488,7 @@ export function SarahAvatar({
           </div>
         )}
         {loadState === "ready" && (
-          <div style={styles.zoomHint}>↶/↷ spin • ↑/↓ move • ↕ reset • Scroll to zoom</div>
+          <div style={styles.zoomHint}>↶/↷ spin • ↑/↓ move view • Y resets • Scroll to zoom</div>
         )}
         {loadState !== "ready" && (
           <div style={styles.fallback}>
