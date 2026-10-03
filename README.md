@@ -84,6 +84,24 @@ cd C:\Users\karvo\SarahNode
 
 The frontend uses Three.js and `@pixiv/three-vrm` to render the character. Avatar motion is presentation-only and has no screen-reading or computer-control access.
 
+### Appearance profiles
+
+Sarah's avatar selector supports:
+
+- `Default` — full original costume.
+- `Casual` — removes the apron/nameplate/tie while keeping the normal shirt/shorts outfit.
+- `Sexy` — a more minimal but still clothed version of the normal VRM.
+- `Underwear` — loads a separate local VRM at `frontend/public/models/sarah-underwear.vrm`.
+
+The shipped/default `sarah.vrm` does not expose the bra/panty as separate meshes, so SarahNode intentionally does not create underwear mode by hiding the normal shirt/shorts. Export an underwear-specific VRM from the MANUKA Blender source, then install it locally:
+
+```powershell
+cd C:\Users\karvo\SarahNode
+.\scripts\install-manuka-underwear-avatar.ps1 "C:\path\to\MANUKA_underwear.vrm"
+```
+
+Both avatar VRMs are ignored by Git and remain local to the installation.
+
 ## Local development
 
 ### Backend
