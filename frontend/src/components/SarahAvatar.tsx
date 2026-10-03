@@ -209,7 +209,6 @@ export function SarahAvatar({
     let animationFrame = 0;
     let inspectionYaw = 0;
     let isModelDragging = false;
-    let dragPointerId: number | null = null;
     let lastDragX = 0;
     let headBone: THREE.Object3D | null = null;
     let neckBone: THREE.Object3D | null = null;
@@ -472,7 +471,7 @@ export function SarahAvatar({
       frameAvatar();
     };
 
-    const handlePointerDown = (event: PointerEvent) => {
+    const handleMouseDown = (event: MouseEvent) => {
       if (event.button !== 0) return;
 
       const target = event.target;
@@ -480,39 +479,25 @@ export function SarahAvatar({
 
       event.preventDefault();
       isModelDragging = true;
-      dragPointerId = event.pointerId;
       lastDragX = event.clientX;
-
-      if (!mount.hasPointerCapture(event.pointerId)) {
-        mount.setPointerCapture(event.pointerId);
-      }
-
       mount.style.cursor = "grabbing";
     };
 
-    const handlePointerMove = (event: PointerEvent) => {
-      if (!isModelDragging || dragPointerId !== event.pointerId) return;
+    const handleMouseMove = (event: MouseEvent) => {
+      if (!isModelDragging) return;
 
       event.preventDefault();
       const deltaX = event.clientX - lastDragX;
       lastDragX = event.clientX;
 
-      // Dragging right rotates Sarah to the right. Keep yaw unbounded so the
-      // model can be spun through a full 360 degrees repeatedly.
+      // Use ordinary desktop mouse events for the Tauri WebView. Listening on
+      // window keeps rotation active even when the cursor leaves the viewport.
       inspectionYaw += deltaX * 0.014;
     };
 
-    const stopModelDrag = (event: PointerEvent) => {
-      if (dragPointerId !== event.pointerId) return;
-
-      event.preventDefault();
+    const stopModelDrag = () => {
+      if (!isModelDragging) return;
       isModelDragging = false;
-
-      if (mount.hasPointerCapture(event.pointerId)) {
-        mount.releasePointerCapture(event.pointerId);
-      }
-
-      dragPointerId = null;
       mount.style.cursor = "grab";
     };
 
@@ -526,13 +511,10 @@ export function SarahAvatar({
     mount.style.userSelect = "none";
     mount.style.touchAction = "none";
 
-    // Listen on the whole viewport rather than only the WebGL canvas. This is
-    // more reliable in Tauri because overlay controls and the canvas can overlap.
-    mount.addEventListener("pointerdown", handlePointerDown);
-    mount.addEventListener("pointermove", handlePointerMove);
-    mount.addEventListener("pointerup", stopModelDrag);
-    mount.addEventListener("pointercancel", stopModelDrag);
-    mount.addEventListener("lostpointercapture", stopModelDrag);
+    mount.addEventListener("mousedown", handleMouseDown);
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", stopModelDrag);
+    window.addEventListener("blur", stopModelDrag);
     mount.addEventListener("dblclick", resetModelRotation);
 
     mount.addEventListener("wheel", handleWheel, { passive: false });
@@ -1090,11 +1072,10 @@ export function SarahAvatar({
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
       mount.removeEventListener("wheel", handleWheel);
-      mount.removeEventListener("pointerdown", handlePointerDown);
-      mount.removeEventListener("pointermove", handlePointerMove);
-      mount.removeEventListener("pointerup", stopModelDrag);
-      mount.removeEventListener("pointercancel", stopModelDrag);
-      mount.removeEventListener("lostpointercapture", stopModelDrag);
+      mount.removeEventListener("mousedown", handleMouseDown);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", stopModelDrag);
+      window.removeEventListener("blur", stopModelDrag);
       mount.removeEventListener("dblclick", resetModelRotation);
       frameAvatarRef.current = null;
 
@@ -1173,7 +1154,7 @@ export function SarahAvatar({
           </div>
         )}
         {loadState === "ready" && (
-          <div style={styles.zoomHint}>Drag to spin • Scroll to zoom • Double-click to reset</div>
+          <div style={styles.zoomHint}>Hold left mouse + drag to spin • Scroll to zoom • Double-click to reset</div>
         )}
         {loadState !== "ready" && (
           <div style={styles.fallback}>
