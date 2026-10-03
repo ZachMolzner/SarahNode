@@ -30,6 +30,7 @@ const FACE_TEST_MOODS = [
 ] as const;
 
 type FaceTestMood = (typeof FACE_TEST_MOODS)[number];
+type MotionTestMode = "stand" | "walk" | "floorSit" | "stretch";
 
 export function BasicChatPage() {
   const [messages, setMessages] = useState<Message[]>([
@@ -45,6 +46,8 @@ export function BasicChatPage() {
   const [replySignal, setReplySignal] = useState(0);
   const [faceTestSignal, setFaceTestSignal] = useState(0);
   const [attentionSignal, setAttentionSignal] = useState(0);
+  const [motionTestMode, setMotionTestMode] =
+    useState<MotionTestMode | null>(null);
   const [sending, setSending] = useState(false);
   const [localSpeaking, setLocalSpeaking] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(() => {
@@ -55,6 +58,7 @@ export function BasicChatPage() {
   const endRef = useRef<HTMLDivElement | null>(null);
   const faceTestActiveRef = useRef(false);
   const faceTestTimersRef = useRef<number[]>([]);
+  const motionTestTimersRef = useRef<number[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +109,9 @@ export function BasicChatPage() {
       for (const timer of faceTestTimersRef.current) {
         window.clearTimeout(timer);
       }
+      for (const timer of motionTestTimersRef.current) {
+        window.clearTimeout(timer);
+      }
     };
   }, []);
 
@@ -123,6 +130,14 @@ export function BasicChatPage() {
     faceTestActiveRef.current = false;
   };
 
+  const clearMotionTest = () => {
+    for (const timer of motionTestTimersRef.current) {
+      window.clearTimeout(timer);
+    }
+    motionTestTimersRef.current = [];
+    setMotionTestMode(null);
+  };
+
   const setTestMood = (mood: FaceTestMood) => {
     setAvatarMood(mood);
     setReplySignal((current) => current + 1);
@@ -135,6 +150,7 @@ export function BasicChatPage() {
     if (!match) return false;
 
     clearFaceTest();
+    clearMotionTest();
     stopLocalSpeech();
     setLocalSpeaking(false);
     setFaceTestSignal((current) => current + 1);
@@ -181,6 +197,75 @@ export function BasicChatPage() {
     return true;
   };
 
+  const runMotionTestCommand = (content: string): boolean => {
+    const match = content.match(
+      /^\/(?:motion-test|motiontest)(?:\s+([a-z-]+))?\s*$/i,
+    );
+    if (!match) return false;
+
+    clearFaceTest();
+    clearMotionTest();
+    stopLocalSpeech();
+    setLocalSpeaking(false);
+
+    const requested = (match[1] || "all").toLowerCase();
+    const aliases: Record<string, MotionTestMode> = {
+      stand: "stand",
+      walk: "walk",
+      sit: "floorSit",
+      "floor-sit": "floorSit",
+      floorsit: "floorSit",
+      stretch: "stretch",
+    };
+
+    if (requested === "off" || requested === "stop") {
+      addMessage("system", "Motion test stopped. Normal idle behavior restored.");
+      return true;
+    }
+
+    if (requested === "all") {
+      const sequence: MotionTestMode[] = [
+        "stand",
+        "walk",
+        "floorSit",
+        "stretch",
+      ];
+      addMessage(
+        "system",
+        "Motion test started: stand → walk → floor sit → stretch.",
+      );
+      sequence.forEach((mode, index) => {
+        const timer = window.setTimeout(() => {
+          setMotionTestMode(mode);
+          if (index === sequence.length - 1) {
+            const finishTimer = window.setTimeout(() => {
+              setMotionTestMode(null);
+            }, 4500);
+            motionTestTimersRef.current.push(finishTimer);
+          }
+        }, index * 5200);
+        motionTestTimersRef.current.push(timer);
+      });
+      return true;
+    }
+
+    const mode = aliases[requested];
+    if (mode) {
+      setMotionTestMode(mode);
+      addMessage(
+        "system",
+        `Motion test: ${requested}. Use /motion-test off to return to normal idle behavior.`,
+      );
+      return true;
+    }
+
+    addMessage(
+      "system",
+      "Unknown motion test. Use /motion-test, or /motion-test stand|walk|sit|stretch|off.",
+    );
+    return true;
+  };
+
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const content = input.trim();
@@ -192,8 +277,12 @@ export function BasicChatPage() {
     if (runFaceTestCommand(content)) {
       return;
     }
+    if (runMotionTestCommand(content)) {
+      return;
+    }
 
     clearFaceTest();
+    clearMotionTest();
     setAttentionSignal((current) => current + 1);
     setSending(true);
 
@@ -274,6 +363,7 @@ export function BasicChatPage() {
             replySignal={replySignal}
             faceTestSignal={faceTestSignal}
             attentionSignal={attentionSignal}
+            motionTestMode={motionTestMode}
           />
         </aside>
 
@@ -357,7 +447,7 @@ export function BasicChatPage() {
                   event.currentTarget.form?.requestSubmit();
                 }
               }}
-              placeholder="Ask Sarah anything, or type /face-test to test expressions..."
+              placeholder="Ask Sarah anything, or use /face-test and /motion-test..."
               rows={2}
               disabled={sending}
               style={styles.input}
