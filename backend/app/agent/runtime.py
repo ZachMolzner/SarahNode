@@ -37,7 +37,7 @@ class SarahAgentRuntime:
 
     def capabilities(self) -> dict[str, object]:
         return {
-            "architecture_version": 15,
+            "architecture_version": 16,
             "tool_count": len(self.tools.list_tools()),
             "tools": [
                 {
@@ -52,7 +52,7 @@ class SarahAgentRuntime:
             "granted_scopes": sorted(scope.value for scope in self.permissions.granted_scopes),
             "automation_count": len(self.automations.list()),
             "systems": {
-                "memory": "persistent_learning_active",
+                "memory": "persistent_learning_and_confirmed_outcome_learning_active",
                 "memory_secret_guard": "credential_writes_and_session_recall_blocked",
                 "model_gateway": "active",
                 "tool_registry": "knowledge_first_read_only_diagnostics",
@@ -62,7 +62,7 @@ class SarahAgentRuntime:
                 "it_help": "active",
                 "coding_help": "active",
                 "general_qa": "active",
-                "web_research": "provider_dependent",
+                "web_research": "active_public_search_with_optional_api_providers",
                 "system_info": "read_only_active",
                 "system_resources": "read_only_active",
                 "running_processes": "read_only_active",
