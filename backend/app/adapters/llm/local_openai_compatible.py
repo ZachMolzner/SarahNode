@@ -126,20 +126,6 @@ class LocalOpenAICompatibleClient(LLMClient):
         if any(
             phrase in lowered
             for phrase in (
-                "what window am i",
-                "which window am i",
-                "current window",
-                "active window",
-                "focused window",
-                "what app am i currently",
-                "which app am i currently",
-            )
-        ):
-            requests.append(("active_window", {}))
-
-        if any(
-            phrase in lowered
-            for phrase in (
                 "how much ram",
                 "memory am i using",
                 "memory usage",
@@ -206,18 +192,6 @@ class LocalOpenAICompatibleClient(LLMClient):
                             for index, proc in enumerate(processes[:20], start=1)
                         )
                         lines.append(f"TOP MEMORY PROCESSES (highest memory first): {rows}")
-                continue
-
-            if tool == "active_window":
-                if data.get("supported") is False:
-                    lines.append(f"ACTIVE WINDOW: unsupported; reason={data.get('reason')}")
-                else:
-                    lines.append(
-                        "ACTIVE WINDOW: "
-                        f"title='{data.get('title') or ''}'; "
-                        f"process='{data.get('process_name') or ''}'; "
-                        f"pid={data.get('pid')}"
-                    )
                 continue
 
             if tool == "system_resources":
@@ -413,8 +387,8 @@ class LocalOpenAICompatibleClient(LLMClient):
                     f"{system_prompt}\n"
                     "You are the local reasoning and tool-selection layer for SarahNode. "
                     "Use available tools when they improve accuracy or when the user asks for host-machine information. "
-                    "For volatile computer state (running processes, active window, CPU/RAM/disk use, current files), live tool data always overrides memory and prior conversation. "
-                    "Never claim a process is running/not running, name the active window, or give current resource usage from memory alone. "
+                    "For volatile computer state (running processes and CPU/RAM/disk use), live tool data always overrides memory and prior conversation. "
+                    "Never claim a process is running/not running or give current resource usage from memory alone. "
                     "If fresh host evidence is supplied, it was read from the host just before this answer; use it as authoritative current evidence. "
                     "For a filtered process check, match_count=0 means the requested process is not running; it does NOT mean the computer has no running processes. "
                     "If top-memory process rows are supplied, report those rows directly and do not say the process list is unavailable or empty. "
