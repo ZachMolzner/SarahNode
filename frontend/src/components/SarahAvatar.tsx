@@ -545,10 +545,10 @@ export function SarahAvatar({
           (0.20 + 0.80 * (1 - attentionBlend));
 
         avatarRoot.position.x =
-          baseX + walkTravelX + 0.090 * floorSitBlend;
+          baseX + walkTravelX + 0.045 * floorSitBlend;
         avatarRoot.position.y =
           baseY -
-          0.60 * floorSitBlend +
+          0.64 * floorSitBlend +
           walkBob +
           breathingBob;
         avatarRoot.position.z =
@@ -557,7 +557,7 @@ export function SarahAvatar({
           baseYaw +
           idleYaw +
           walkDirection * 0.14 * walkBlend -
-          0.22 * floorSitBlend;
+          0.12 * floorSitBlend;
 
         if (hipsBone) {
           hipsBone.rotation.x =
@@ -565,10 +565,10 @@ export function SarahAvatar({
             0.22 * floorSitBlend -
             0.025 * stretchBlend;
           hipsBone.rotation.y =
-            hipsBaseRotation.y - 0.24 * floorSitBlend;
+            hipsBaseRotation.y - 0.14 * floorSitBlend;
           hipsBone.rotation.z =
             hipsBaseRotation.z +
-            0.30 * floorSitBlend +
+            0.16 * floorSitBlend +
             Math.sin(elapsed * 0.48) *
               0.004 *
               (0.25 + 0.75 * (1 - attentionBlend));
@@ -581,129 +581,133 @@ export function SarahAvatar({
             0.015 * floorSitBlend -
             0.10 * stretchBlend;
           chestBone.rotation.y =
-            chestBaseRotation.y + 0.18 * floorSitBlend;
+            chestBaseRotation.y + 0.08 * floorSitBlend;
           chestBone.rotation.z =
             chestBaseRotation.z -
-            0.16 * floorSitBlend +
+            0.10 * floorSitBlend +
             Math.sin(elapsed * 0.55) *
               0.0045 *
               (0.30 + 0.70 * (1 - attentionBlend));
         }
 
-        // Relaxed walking with a true side-sit: both legs fold toward
-        // Sarah's right side. The left knee stays slightly raised while the
-        // right shin tucks farther underneath/behind it.
+        // Reference-style floor sit: Sarah's left knee is raised while
+        // her right leg extends diagonally outward instead of crossing underneath.
         if (leftUpperLegBone) {
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
             legSwing * 0.15 * walkBlend +
-            1.02 * floorSitBlend;
+            1.22 * floorSitBlend;
           leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y - 0.56 * floorSitBlend;
+            leftUpperLegBaseRotation.y + 0.10 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z - 0.34 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.12 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
             rightUpperLegBaseRotation.x +
             oppositeLegSwing * 0.15 * walkBlend +
-            0.74 * floorSitBlend;
+            0.30 * floorSitBlend;
           rightUpperLegBone.rotation.y =
-            rightUpperLegBaseRotation.y - 0.66 * floorSitBlend;
+            rightUpperLegBaseRotation.y - 0.34 * floorSitBlend;
           rightUpperLegBone.rotation.z =
-            rightUpperLegBaseRotation.z - 0.18 * floorSitBlend;
+            rightUpperLegBaseRotation.z - 0.46 * floorSitBlend;
         }
         if (leftLowerLegBone) {
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend -
-            1.22 * floorSitBlend;
+            1.42 * floorSitBlend;
           leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y - 0.38 * floorSitBlend;
+            leftLowerLegBaseRotation.y + 0.06 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z - 0.22 * floorSitBlend;
+            leftLowerLegBaseRotation.z + 0.06 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
             rightLowerLegBaseRotation.x -
             Math.max(0, -oppositeLegSwing) * 0.16 * walkBlend -
-            1.36 * floorSitBlend;
+            0.16 * floorSitBlend;
           rightLowerLegBone.rotation.y =
-            rightLowerLegBaseRotation.y - 0.46 * floorSitBlend;
+            rightLowerLegBaseRotation.y - 0.18 * floorSitBlend;
           rightLowerLegBone.rotation.z =
-            rightLowerLegBaseRotation.z - 0.28 * floorSitBlend;
+            rightLowerLegBaseRotation.z - 0.12 * floorSitBlend;
         }
         if (leftFootBone) {
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
             legSwing * 0.04 * walkBlend +
-            0.54 * floorSitBlend;
+            0.44 * floorSitBlend;
           leftFootBone.rotation.y =
-            leftFootBaseRotation.y - 0.46 * floorSitBlend;
+            leftFootBaseRotation.y + 0.04 * floorSitBlend;
           leftFootBone.rotation.z =
-            leftFootBaseRotation.z - 0.20 * floorSitBlend;
+            leftFootBaseRotation.z + 0.04 * floorSitBlend;
         }
         if (rightFootBone) {
           rightFootBone.rotation.x =
             rightFootBaseRotation.x +
             oppositeLegSwing * 0.04 * walkBlend +
-            0.62 * floorSitBlend;
+            0.10 * floorSitBlend;
           rightFootBone.rotation.y =
-            rightFootBaseRotation.y - 0.56 * floorSitBlend;
+            rightFootBaseRotation.y - 0.30 * floorSitBlend;
           rightFootBone.rotation.z =
             rightFootBaseRotation.z - 0.24 * floorSitBlend;
         }
 
-        // Arms counter-swing while walking. In the side-sit, elbows bend and
-        // hands settle inward toward the lap. Stretching raises both arms.
+        // Arms counter-swing while walking. During the floor sit, upper
+        // arms stay close to the torso and the forearms fold inward around
+        // the raised knee, matching the reference instead of opening outward.
         if (leftUpperArmBone) {
           leftUpperArmBone.rotation.x =
             leftUpperArmBaseRotation.x +
             oppositeLegSwing * 0.52 * walkBlend -
-            0.30 * floorSitBlend;
+            0.22 * floorSitBlend;
           leftUpperArmBone.rotation.y =
             leftUpperArmBaseRotation.y +
             legSwing * 0.08 * walkBlend -
-            0.18 * floorSitBlend;
+            0.16 * floorSitBlend;
           leftUpperArmBone.rotation.z =
             leftUpperArmBaseRotation.z -
-            1.82 * stretchBlend -
-            0.68 * floorSitBlend +
+            1.82 * stretchBlend +
+            0.10 * floorSitBlend +
             legSwing * 0.055 * walkBlend;
         }
         if (rightUpperArmBone) {
           rightUpperArmBone.rotation.x =
             rightUpperArmBaseRotation.x +
             legSwing * 0.52 * walkBlend -
-            0.30 * floorSitBlend;
+            0.18 * floorSitBlend;
           rightUpperArmBone.rotation.y =
             rightUpperArmBaseRotation.y -
             legSwing * 0.08 * walkBlend +
-            0.18 * floorSitBlend;
+            0.12 * floorSitBlend;
           rightUpperArmBone.rotation.z =
             rightUpperArmBaseRotation.z +
-            1.82 * stretchBlend +
-            0.68 * floorSitBlend -
+            1.82 * stretchBlend -
+            0.10 * floorSitBlend -
             legSwing * 0.055 * walkBlend;
         }
         if (leftLowerArmBone) {
           leftLowerArmBone.rotation.x =
             leftLowerArmBaseRotation.x -
-            1.10 * floorSitBlend -
+            0.34 * floorSitBlend -
             0.20 * stretchBlend;
+          leftLowerArmBone.rotation.y =
+            leftLowerArmBaseRotation.y - 0.20 * floorSitBlend;
           leftLowerArmBone.rotation.z =
             leftLowerArmBaseRotation.z +
-            0.15 * floorSitBlend +
+            0.82 * floorSitBlend +
             0.10 * stretchBlend;
         }
         if (rightLowerArmBone) {
           rightLowerArmBone.rotation.x =
             rightLowerArmBaseRotation.x -
-            1.10 * floorSitBlend -
+            0.42 * floorSitBlend -
             0.20 * stretchBlend;
+          rightLowerArmBone.rotation.y =
+            rightLowerArmBaseRotation.y + 0.18 * floorSitBlend;
           rightLowerArmBone.rotation.z =
             rightLowerArmBaseRotation.z -
-            0.15 * floorSitBlend -
+            0.74 * floorSitBlend -
             0.10 * stretchBlend;
         }
 
