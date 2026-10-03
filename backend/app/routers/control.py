@@ -241,6 +241,7 @@ def get_assistant_state() -> dict[str, object]:
     return {
         "assistant_state": memory_manager.state.assistant_state,
         "latest_reply": memory_manager.state.last_reply,
+        "latest_reply_emotion": memory_manager.state.last_reply_emotion,
         "latest_capability_intent": memory_manager.state.last_capability_intent,
         "last_used_live_web": memory_manager.state.last_used_live_web,
         "latest_web_sources": memory_manager.state.latest_web_sources,
