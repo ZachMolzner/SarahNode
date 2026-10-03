@@ -10,6 +10,11 @@ type SarahAvatarProps = {
 };
 
 type LoadState = "loading" | "ready" | "missing" | "error";
+type AvatarViewMode = "full" | "face";
+
+const MIN_AVATAR_ZOOM = 1;
+const MAX_AVATAR_ZOOM = 3.2;
+const AVATAR_ZOOM_STEP = 0.2;
 
 function disposeMaterial(material: THREE.Material) {
   const record = material as THREE.Material & Record<string, unknown>;
@@ -56,7 +61,12 @@ export function SarahAvatar({
   const statusRef = useRef(status);
   const moodRef = useRef(mood);
   const replyPulseStartedAtRef = useRef<number | null>(null);
+  const zoomRef = useRef(1);
+  const viewModeRef = useRef<AvatarViewMode>("full");
+  const frameAvatarRef = useRef<(() => void) | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
+  const [zoom, setZoom] = useState(1);
+  const [viewMode, setViewMode] = useState<AvatarViewMode>("full");
 
   useEffect(() => {
     statusRef.current = status;
@@ -72,6 +82,31 @@ export function SarahAvatar({
     }
   }, [replySignal]);
 
+  const applyZoom = (nextZoom: number) => {
+    const clamped = THREE.MathUtils.clamp(
+      nextZoom,
+      MIN_AVATAR_ZOOM,
+      MAX_AVATAR_ZOOM,
+    );
+    zoomRef.current = clamped;
+    setZoom(clamped);
+    window.requestAnimationFrame(() => frameAvatarRef.current?.());
+  };
+
+  const changeZoom = (delta: number) => {
+    applyZoom(zoomRef.current + delta);
+  };
+
+  const selectViewMode = (mode: AvatarViewMode) => {
+    viewModeRef.current = mode;
+    setViewMode(mode);
+    if (mode === "full") {
+      zoomRef.current = 1;
+      setZoom(1);
+    }
+    window.requestAnimationFrame(() => frameAvatarRef.current?.());
+  };
+
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
@@ -86,6 +121,10 @@ export function SarahAvatar({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
+    renderer.domElement.style.position = "absolute";
+    renderer.domElement.style.inset = "0";
+    renderer.domElement.style.zIndex = "0";
+    renderer.domElement.style.touchAction = "none";
     mount.appendChild(renderer.domElement);
 
     const hemi = new THREE.HemisphereLight(0xdde8ff, 0x211c28, 2.1);
@@ -158,11 +197,18 @@ export function SarahAvatar({
       const widthDistance =
         size.x / Math.max(2 * Math.tan(horizontalFov / 2), 0.001);
       const distance = Math.max(heightDistance, widthDistance, 1.5) * 1.03;
+      const faceMode = viewModeRef.current === "face";
+      const zoomScale = Math.max(zoomRef.current, MIN_AVATAR_ZOOM);
+      const targetY = faceMode
+        ? box.max.y - size.y * 0.12
+        : center.y;
+      const viewDistance = distance * (faceMode ? 0.44 : 1) / zoomScale;
 
-      camera.position.set(0, center.y, distance);
-      camera.lookAt(0, center.y, 0);
+      camera.position.set(0, targetY, viewDistance);
+      camera.lookAt(0, targetY, 0);
       camera.updateProjectionMatrix();
     };
+    frameAvatarRef.current = frameAvatar;
 
     const loader = new GLTFLoader();
     loader.register((parser) => new VRMLoaderPlugin(parser));
@@ -245,6 +291,23 @@ export function SarahAvatar({
 
     const observer = new ResizeObserver(resize);
     observer.observe(mount);
+
+    const handleWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const direction = event.deltaY < 0 ? 1 : -1;
+      const nextZoom =
+        zoomRef.current + direction * AVATAR_ZOOM_STEP;
+      const clamped = THREE.MathUtils.clamp(
+        nextZoom,
+        MIN_AVATAR_ZOOM,
+        MAX_AVATAR_ZOOM,
+      );
+      zoomRef.current = clamped;
+      setZoom(clamped);
+      frameAvatar();
+    };
+
+    mount.addEventListener("wheel", handleWheel, { passive: false });
     resize();
 
     const animate = () => {
@@ -405,6 +468,8 @@ export function SarahAvatar({
     return () => {
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
+      mount.removeEventListener("wheel", handleWheel);
+      frameAvatarRef.current = null;
 
       scene.traverse((node) => {
         if (node instanceof THREE.Mesh) {
@@ -432,6 +497,57 @@ export function SarahAvatar({
   return (
     <section style={styles.shell} aria-label="Sarah display-only avatar">
       <div ref={mountRef} style={styles.viewport}>
+        {loadState === "ready" && (
+          <div style={styles.viewControls}>
+            <button
+              type="button"
+              onClick={() => selectViewMode("full")}
+              style={{
+                ...styles.viewButton,
+                ...(viewMode === "full" ? styles.viewButtonActive : {}),
+              }}
+              title="Reset to full-body view"
+            >
+              Full
+            </button>
+            <button
+              type="button"
+              onClick={() => selectViewMode("face")}
+              style={{
+                ...styles.viewButton,
+                ...(viewMode === "face" ? styles.viewButtonActive : {}),
+              }}
+              title="Focus on Sarah's face and expressions"
+            >
+              Face
+            </button>
+            <span style={styles.zoomDivider} />
+            <button
+              type="button"
+              onClick={() => changeZoom(-AVATAR_ZOOM_STEP)}
+              disabled={zoom <= MIN_AVATAR_ZOOM}
+              style={styles.zoomButton}
+              title="Zoom out"
+            >
+              −
+            </button>
+            <span style={styles.zoomValue}>
+              {Math.round(zoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() => changeZoom(AVATAR_ZOOM_STEP)}
+              disabled={zoom >= MAX_AVATAR_ZOOM}
+              style={styles.zoomButton}
+              title="Zoom in"
+            >
+              +
+            </button>
+          </div>
+        )}
+        {loadState === "ready" && (
+          <div style={styles.zoomHint}>Scroll to zoom</div>
+        )}
         {loadState !== "ready" && (
           <div style={styles.fallback}>
             <div style={styles.monogram}>S</div>
@@ -464,6 +580,71 @@ const styles: Record<string, React.CSSProperties> = {
     position: "relative",
     minHeight: 0,
     overflow: "hidden",
+  },
+  viewControls: {
+    position: "absolute",
+    top: "14px",
+    left: "14px",
+    zIndex: 10,
+    display: "flex",
+    alignItems: "center",
+    gap: "6px",
+    padding: "6px",
+    borderRadius: "10px",
+    background: "rgba(8, 11, 16, 0.78)",
+    border: "1px solid rgba(70, 82, 101, 0.7)",
+    backdropFilter: "blur(8px)",
+  },
+  viewButton: {
+    border: "1px solid #354052",
+    borderRadius: "7px",
+    padding: "5px 8px",
+    background: "#141b26",
+    color: "#aab4c4",
+    fontSize: "11px",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+  viewButtonActive: {
+    background: "#dfe7f2",
+    color: "#101722",
+    borderColor: "#dfe7f2",
+  },
+  zoomDivider: {
+    width: "1px",
+    height: "20px",
+    margin: "0 2px",
+    background: "#354052",
+  },
+  zoomButton: {
+    width: "28px",
+    height: "28px",
+    border: "1px solid #354052",
+    borderRadius: "7px",
+    background: "#141b26",
+    color: "#e7edf5",
+    fontSize: "18px",
+    lineHeight: 1,
+    cursor: "pointer",
+  },
+  zoomValue: {
+    minWidth: "42px",
+    textAlign: "center",
+    color: "#b8c3d3",
+    fontSize: "11px",
+    fontVariantNumeric: "tabular-nums",
+  },
+  zoomHint: {
+    position: "absolute",
+    right: "14px",
+    bottom: "14px",
+    zIndex: 10,
+    padding: "5px 8px",
+    borderRadius: "7px",
+    background: "rgba(8, 11, 16, 0.72)",
+    color: "#7f8a9c",
+    fontSize: "10px",
+    pointerEvents: "none",
   },
   fallback: {
     position: "absolute",
