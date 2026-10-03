@@ -207,6 +207,10 @@ export function SarahAvatar({
     let baseZ = 0;
     const baseYaw = Math.PI;
     let animationFrame = 0;
+    let inspectionYaw = 0;
+    let isModelDragging = false;
+    let dragPointerId: number | null = null;
+    let lastDragX = 0;
     let headBone: THREE.Object3D | null = null;
     let neckBone: THREE.Object3D | null = null;
     let chestBone: THREE.Object3D | null = null;
@@ -468,6 +472,43 @@ export function SarahAvatar({
       frameAvatar();
     };
 
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      isModelDragging = true;
+      dragPointerId = event.pointerId;
+      lastDragX = event.clientX;
+      renderer.domElement.setPointerCapture(event.pointerId);
+      renderer.domElement.style.cursor = "grabbing";
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!isModelDragging || dragPointerId !== event.pointerId) return;
+      const deltaX = event.clientX - lastDragX;
+      lastDragX = event.clientX;
+      inspectionYaw += deltaX * 0.012;
+    };
+
+    const stopModelDrag = (event: PointerEvent) => {
+      if (dragPointerId !== event.pointerId) return;
+      isModelDragging = false;
+      if (renderer.domElement.hasPointerCapture(event.pointerId)) {
+        renderer.domElement.releasePointerCapture(event.pointerId);
+      }
+      dragPointerId = null;
+      renderer.domElement.style.cursor = "grab";
+    };
+
+    const resetModelRotation = () => {
+      inspectionYaw = 0;
+    };
+
+    renderer.domElement.style.cursor = "grab";
+    renderer.domElement.addEventListener("pointerdown", handlePointerDown);
+    renderer.domElement.addEventListener("pointermove", handlePointerMove);
+    renderer.domElement.addEventListener("pointerup", stopModelDrag);
+    renderer.domElement.addEventListener("pointercancel", stopModelDrag);
+    renderer.domElement.addEventListener("dblclick", resetModelRotation);
+
     mount.addEventListener("wheel", handleWheel, { passive: false });
     resize();
 
@@ -606,6 +647,7 @@ export function SarahAvatar({
           baseZ - 0.015 * floorSitBlend;
         avatarRoot.rotation.y =
           baseYaw +
+          inspectionYaw +
           idleYaw +
           walkDirection * 0.14 * walkBlend -
           0.02 * floorSitBlend;
@@ -1022,6 +1064,11 @@ export function SarahAvatar({
       window.cancelAnimationFrame(animationFrame);
       observer.disconnect();
       mount.removeEventListener("wheel", handleWheel);
+      renderer.domElement.removeEventListener("pointerdown", handlePointerDown);
+      renderer.domElement.removeEventListener("pointermove", handlePointerMove);
+      renderer.domElement.removeEventListener("pointerup", stopModelDrag);
+      renderer.domElement.removeEventListener("pointercancel", stopModelDrag);
+      renderer.domElement.removeEventListener("dblclick", resetModelRotation);
       frameAvatarRef.current = null;
 
       scene.traverse((node) => {
@@ -1099,7 +1146,7 @@ export function SarahAvatar({
           </div>
         )}
         {loadState === "ready" && (
-          <div style={styles.zoomHint}>Scroll to zoom</div>
+          <div style={styles.zoomHint}>Drag to spin • Scroll to zoom • Double-click to reset</div>
         )}
         {loadState !== "ready" && (
           <div style={styles.fallback}>
