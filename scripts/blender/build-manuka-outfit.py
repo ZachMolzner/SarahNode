@@ -328,6 +328,266 @@ def body_shell(
     obj["sarah_outfit_body_shell"] = True
     return obj
 
+def add_armature_modifier(obj, armature):
+    modifier = obj.modifiers.new("SarahOutfit_Armature", "ARMATURE")
+    modifier.object = armature
+    obj.parent = armature
+    return modifier
+
+def add_open_jacket_shell(name, body, armature, collection, mat, m):
+    """Create a clean open-front cropped jacket shell with smooth authored edges."""
+    hips, chest, neck = m["hips"], m["chest"], m["neck"]
+    sw, hw, depth, th = (
+        m["shoulder_width"],
+        m["hip_width"],
+        m["depth"],
+        m["torso_height"],
+    )
+
+    z_levels = [
+        hips.z + th * 0.17,
+        hips.z + th * 0.34,
+        chest.z + th * 0.02,
+        neck.z - th * 0.10,
+    ]
+
+    def band_profile(z_value):
+        points = []
+        x_limit = sw * 0.54
+        band = max(th * 0.065, 0.025)
+        for vertex in body.data.vertices:
+            world = body.matrix_world @ vertex.co
+            if abs(world.z - z_value) > band:
+                continue
+            if abs(world.x - chest.x) > x_limit:
+                continue
+            points.append(world)
+
+        if not points:
+            return sw * 0.29, max(depth * 0.62, 0.09)
+
+        x_radius = max(abs(point.x - chest.x) for point in points)
+        y_radius = max(abs(point.y - chest.y) for point in points)
+        return (
+            max(x_radius * 1.055, sw * 0.22),
+            max(y_radius * 1.075, depth * 0.54),
+        )
+
+    profiles = [band_profile(z_value) for z_value in z_levels]
+
+    # Keep a generous open front so the cream crop top reads clearly.
+    gap_angle = math.radians(42)
+    angular_segments = 20
+    angles = [
+        (math.pi + gap_angle)
+        + ((2 * math.pi - 2 * gap_angle) * index / (angular_segments - 1))
+        for index in range(angular_segments)
+    ]
+
+    vertices = []
+    for ring_index, z_value in enumerate(z_levels):
+        x_radius, y_radius = profiles[ring_index]
+
+        # Slight garment shaping: fitted waist, relaxed chest/shoulder area.
+        if ring_index == 0:
+            x_radius *= 1.02
+            y_radius *= 1.02
+        elif ring_index == 1:
+            x_radius *= 1.035
+            y_radius *= 1.035
+        elif ring_index == 2:
+            x_radius *= 1.07
+            y_radius *= 1.08
+        else:
+            x_radius *= 1.10
+            y_radius *= 1.08
+
+        for angle in angles:
+            world = Vector((
+                chest.x + math.sin(angle) * x_radius,
+                chest.y + math.cos(angle) * y_radius,
+                z_value,
+            ))
+            vertices.append(armature.matrix_world.inverted() @ world)
+
+    faces = []
+    for ring_index in range(len(z_levels) - 1):
+        base = ring_index * angular_segments
+        next_base = (ring_index + 1) * angular_segments
+        for angle_index in range(angular_segments - 1):
+            a = base + angle_index
+            b = base + angle_index + 1
+            c_idx = next_base + angle_index + 1
+            d = next_base + angle_index
+            faces.append((a, b, c_idx, d))
+
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+
+    obj = bpy.data.objects.new(name, mesh)
+    collection.objects.link(obj)
+    set_single_material(obj, mat)
+
+    hips_group = obj.vertex_groups.new(name="Hips")
+    spine_group = obj.vertex_groups.new(name="Spine")
+    chest_group = obj.vertex_groups.new(name="Chest")
+
+    ring_weights = (
+        ((hips_group, 0.70), (spine_group, 0.30)),
+        ((hips_group, 0.25), (spine_group, 0.75)),
+        ((spine_group, 0.25), (chest_group, 0.75)),
+        ((chest_group, 1.00),),
+    )
+    for ring_index, weights in enumerate(ring_weights):
+        indices = list(range(
+            ring_index * angular_segments,
+            (ring_index + 1) * angular_segments,
+        ))
+        for group, weight in weights:
+            group.add(indices, weight, "REPLACE")
+
+    add_armature_modifier(obj, armature)
+
+    subdivision = obj.modifiers.new("SarahOutfit_Subdivision", "SUBSURF")
+    subdivision.levels = 2
+    subdivision.render_levels = 2
+
+    solidify = obj.modifiers.new("SarahOutfit_Thickness", "SOLIDIFY")
+    solidify.thickness = max(sw * 0.013, 0.0045)
+    solidify.offset = 1.0
+    solidify.use_rim = True
+    if hasattr(solidify, "use_even_offset"):
+        solidify.use_even_offset = True
+
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+
+    obj["sarah_outfit_generated"] = True
+    obj["sarah_outfit_preset"] = "casual-streetwear"
+    return obj
+
+def add_tapered_sleeve(name, armature, side, collection, mat, m):
+    """Create one smooth skinned sleeve with deliberate shoulder-to-wrist taper."""
+    upper_name = f"UpperArm_{side}"
+    lower_name = f"LowerArm_{side}"
+    hand_name = f"Hand_{side}"
+
+    shoulder = bone_head(armature, upper_name)
+    elbow = bone_tail(armature, upper_name)
+    wrist = bone_head(armature, hand_name)
+
+    sw = m["shoulder_width"]
+    upper_length = max((elbow - shoulder).length, 0.10)
+    lower_length = max((wrist - elbow).length, 0.10)
+
+    ring_points = [
+        shoulder.lerp(elbow, 0.04),
+        shoulder.lerp(elbow, 0.38),
+        shoulder.lerp(elbow, 0.76),
+        elbow.lerp(wrist, 0.08),
+        elbow.lerp(wrist, 0.46),
+        elbow.lerp(wrist, 0.82),
+        elbow.lerp(wrist, 0.955),
+    ]
+
+    base_radius = max(min(upper_length, lower_length) * 0.19, sw * 0.060)
+    radii = [
+        base_radius * 1.10,
+        base_radius * 1.06,
+        base_radius * 0.98,
+        base_radius * 0.93,
+        base_radius * 0.84,
+        base_radius * 0.73,
+        base_radius * 0.64,
+    ]
+
+    radial_segments = 20
+    vertices = []
+
+    for ring_index, center in enumerate(ring_points):
+        if ring_index == 0:
+            tangent = ring_points[1] - center
+        elif ring_index == len(ring_points) - 1:
+            tangent = center - ring_points[ring_index - 1]
+        else:
+            tangent = ring_points[ring_index + 1] - ring_points[ring_index - 1]
+        tangent.normalize()
+
+        reference = Vector((0.0, 0.0, 1.0))
+        if abs(tangent.dot(reference)) > 0.92:
+            reference = Vector((0.0, 1.0, 0.0))
+
+        axis_a = tangent.cross(reference).normalized()
+        axis_b = tangent.cross(axis_a).normalized()
+
+        radius = radii[ring_index]
+        for segment in range(radial_segments):
+            angle = (2 * math.pi * segment) / radial_segments
+            # Slightly flatter front/back than vertical to read as cloth, not pipe.
+            offset = (
+                axis_a * math.cos(angle) * radius * 0.94
+                + axis_b * math.sin(angle) * radius * 1.04
+            )
+            world = center + offset
+            vertices.append(armature.matrix_world.inverted() @ world)
+
+    faces = []
+    for ring_index in range(len(ring_points) - 1):
+        base = ring_index * radial_segments
+        next_base = (ring_index + 1) * radial_segments
+        for segment in range(radial_segments):
+            next_segment = (segment + 1) % radial_segments
+            faces.append((
+                base + segment,
+                base + next_segment,
+                next_base + next_segment,
+                next_base + segment,
+            ))
+
+    mesh = bpy.data.meshes.new(f"{name}_Mesh")
+    mesh.from_pydata(vertices, [], faces)
+    mesh.update()
+
+    obj = bpy.data.objects.new(name, mesh)
+    collection.objects.link(obj)
+    set_single_material(obj, mat)
+
+    upper_group = obj.vertex_groups.new(name=upper_name)
+    lower_group = obj.vertex_groups.new(name=lower_name)
+
+    upper_weights = (1.0, 1.0, 0.88, 0.50, 0.10, 0.0, 0.0)
+    for ring_index, upper_weight in enumerate(upper_weights):
+        indices = list(range(
+            ring_index * radial_segments,
+            (ring_index + 1) * radial_segments,
+        ))
+        lower_weight = 1.0 - upper_weight
+        if upper_weight > 0:
+            upper_group.add(indices, upper_weight, "REPLACE")
+        if lower_weight > 0:
+            lower_group.add(indices, lower_weight, "REPLACE")
+
+    add_armature_modifier(obj, armature)
+
+    subdivision = obj.modifiers.new("SarahOutfit_Subdivision", "SUBSURF")
+    subdivision.levels = 2
+    subdivision.render_levels = 2
+
+    solidify = obj.modifiers.new("SarahOutfit_Thickness", "SOLIDIFY")
+    solidify.thickness = max(sw * 0.010, 0.0035)
+    solidify.offset = 1.0
+    solidify.use_rim = True
+    if hasattr(solidify, "use_even_offset"):
+        solidify.use_even_offset = True
+
+    for polygon in mesh.polygons:
+        polygon.use_smooth = True
+
+    obj["sarah_outfit_generated"] = True
+    obj["sarah_outfit_preset"] = "casual-streetwear"
+    return obj
+
 def metrics(armature):
     hips = bone_center(armature, "Hips")
     chest = bone_center(armature, "Chest")
@@ -472,95 +732,39 @@ def build_casual_streetwear(armature, coll, m):
     for piece in (top, shorts, shoes, tie):
         piece["sarah_outfit_preset"] = "casual-streetwear"
 
-    arm_groups = group_indices(
-        body,
-        (
-            "UpperArm_",
-            "UpperArm_twist_",
-            "LowerArm_",
-            "LowerArm_twist_",
-        ),
-    )
-    hand_groups = group_indices(
-        body,
-        (
-            "Hand_",
-            "Thumb_",
-            "Index_",
-            "Middle_",
-            "Ring_",
-            "Little_",
-        ),
-    )
-    leg_groups = group_indices(
-        body,
-        ("UpperLeg_", "LowerLeg_", "Foot_"),
-    )
-
-    jacket_low = hips.z + th * 0.16
-    jacket_high = neck.z - th * 0.07
-    front_y = chest.y - depth * 0.06
-    front_gap_half_width = sw * 0.235
-
-    def keep_jacket_torso(obj, vertex, world_co):
-        if world_co.z < jacket_low or world_co.z > jacket_high:
-            return False
-        if has_group_weight(vertex, leg_groups, 0.10):
-            return False
-        if has_group_weight(vertex, arm_groups, 0.13):
-            return False
-
-        # MANUKA faces toward negative Y in this source. Remove a narrow strip
-        # down the front so the jacket reads as open rather than a sweater.
-        in_front_center = (
-            world_co.y < front_y
-            and abs(world_co.x - chest.x) < front_gap_half_width
-        )
-        return not in_front_center
-
-    body_shell(
-        body,
+    # Clean authored garment meshes replace the earlier masked body shell.
+    # Their edge loops are explicit, so the neckline/front/hem no longer inherit
+    # jagged cuts from MANUKA's body topology.
+    add_open_jacket_shell(
         "Casual_OpenJacketBody",
-        coll,
-        black,
-        keep_jacket_torso,
-        thickness=max(sw * 0.024, 0.008),
-    )
-
-    hand_l = bone_head(armature, "Hand_L")
-    hand_r = bone_head(armature, "Hand_R")
-    wrist_limit = min(
-        abs(hand_l.x - chest.x),
-        abs(hand_r.x - chest.x),
-    ) - sw * 0.012
-
-    def keep_jacket_sleeves(obj, vertex, world_co):
-        # Cut the garment before the hand/finger vertices. The first prototype
-        # inherited some finger-weighted geometry and looked like clawed gloves.
-        if abs(world_co.x - chest.x) > wrist_limit:
-            return False
-        if has_group_weight(vertex, hand_groups, 0.02):
-            return False
-        return has_group_weight(vertex, arm_groups, 0.10)
-
-    body_shell(
         body,
-        "Casual_JacketSleeves",
+        armature,
         coll,
         black,
-        keep_jacket_sleeves,
-        thickness=max(sw * 0.030, 0.009),
+        m,
     )
 
-    # Clean cuffs hide the raw sleeve cut and create the intentional streetwear
-    # wrist finish visible in the reference.
-    cuff_major = max(sw * 0.070, 0.028)
-    cuff_minor = max(sw * 0.010, 0.004)
+    for side in ("L", "R"):
+        add_tapered_sleeve(
+            f"Casual_JacketSleeve_{side}",
+            armature,
+            side,
+            coll,
+            black,
+            m,
+        )
+
+    # Thin cuffs sit just inside the wrist and visually finish the tapered sleeves.
+    cuff_major = max(sw * 0.055, 0.022)
+    cuff_minor = max(sw * 0.006, 0.0025)
     for side, hand_name, forearm_name in (
         ("L", "Hand_L", "LowerArm_L"),
         ("R", "Hand_R", "LowerArm_R"),
     ):
-        wrist = bone_head(armature, hand_name)
+        wrist = bone_head(armature, hand_name).lerp(
+            bone_head(armature, forearm_name),
+            0.035,
+        )
         add_torus(
             f"Casual_Cuff_{side}",
             wrist,
@@ -576,14 +780,14 @@ def build_casual_streetwear(armature, coll, m):
     # Small lapels add the street-jacket silhouette without dominating the fit.
     lapel_z = chest.z + th * 0.08
     lapel_y = chest.y - depth * 0.60
-    lapel_w = sw * 0.105
-    lapel_h = th * 0.205
-    lapel_d = max(depth * 0.075, 0.009)
+    lapel_w = sw * 0.085
+    lapel_h = th * 0.18
+    lapel_d = max(depth * 0.060, 0.007)
     for side, sign in (("L", -1), ("R", 1)):
         add_box(
             f"Casual_Lapel_{side}",
             Vector((
-                chest.x + sign * sw * 0.205,
+                chest.x + sign * sw * 0.225,
                 lapel_y,
                 lapel_z,
             )),
