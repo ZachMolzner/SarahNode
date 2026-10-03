@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     # Local-first model gateway. Defaults target Ollama's OpenAI-compatible API,
     # but any compatible server (including llama.cpp) can be configured.
     local_llm_base_url: str = "http://127.0.0.1:11434/v1"
-    local_llm_model: str = "llama3.2"
+    local_llm_model: str = "qwen3:14b"
     local_llm_api_key: str = "local"
     local_llm_temperature: float = 0.4
     local_llm_max_tool_rounds: int = 5
