@@ -32,6 +32,17 @@ function normalizedBone(vrm: VRM, name: string): THREE.Object3D | null {
   return vrm.humanoid?.getNormalizedBoneNode(name as never) ?? null;
 }
 
+function isLikelyTailBone(node: THREE.Object3D): boolean {
+  if (!(node instanceof THREE.Bone)) return false;
+  const name = node.name.toLowerCase();
+  return (
+    name.includes("tail") ||
+    name.includes("shippo") ||
+    node.name.includes("尻尾") ||
+    node.name.includes("しっぽ")
+  );
+}
+
 function applyRelaxedPose(vrm: VRM) {
   const leftUpperArm = normalizedBone(vrm, "leftUpperArm");
   const rightUpperArm = normalizedBone(vrm, "rightUpperArm");
@@ -210,6 +221,10 @@ export function SarahAvatar({
     let rightLowerLegBone: THREE.Object3D | null = null;
     let leftFootBone: THREE.Object3D | null = null;
     let rightFootBone: THREE.Object3D | null = null;
+    let tailBones: Array<{
+      node: THREE.Object3D;
+      baseRotation: THREE.Euler;
+    }> = [];
     let headBaseRotation = new THREE.Euler();
     let neckBaseRotation = new THREE.Euler();
     let chestBaseRotation = new THREE.Euler();
@@ -359,13 +374,28 @@ export function SarahAvatar({
         avatarRoot = vrm.scene;
         avatarRoot.rotation.y = baseYaw;
 
+        tailBones = [];
         avatarRoot.traverse((node) => {
           if (node instanceof THREE.Mesh) {
             node.castShadow = true;
             node.receiveShadow = true;
             node.frustumCulled = false;
           }
+
+          if (isLikelyTailBone(node)) {
+            tailBones.push({
+              node,
+              baseRotation: node.rotation.clone(),
+            });
+          }
         });
+
+        if (tailBones.length > 0) {
+          console.info(
+            "Sarah MANUKA tail bones:",
+            tailBones.map((entry) => entry.node.name),
+          );
+        }
 
         const initialBox = new THREE.Box3().setFromObject(avatarRoot);
         const initialSize = initialBox.getSize(new THREE.Vector3());
@@ -596,11 +626,11 @@ export function SarahAvatar({
           leftUpperLegBone.rotation.x =
             leftUpperLegBaseRotation.x +
             legSwing * 0.15 * walkBlend +
-            1.16 * floorSitBlend;
+            1.04 * floorSitBlend;
           leftUpperLegBone.rotation.y =
-            leftUpperLegBaseRotation.y + 0.02 * floorSitBlend;
+            leftUpperLegBaseRotation.y + 0.14 * floorSitBlend;
           leftUpperLegBone.rotation.z =
-            leftUpperLegBaseRotation.z + 0.10 * floorSitBlend;
+            leftUpperLegBaseRotation.z + 0.28 * floorSitBlend;
         }
         if (rightUpperLegBone) {
           rightUpperLegBone.rotation.x =
@@ -616,11 +646,11 @@ export function SarahAvatar({
           leftLowerLegBone.rotation.x =
             leftLowerLegBaseRotation.x -
             Math.max(0, -legSwing) * 0.16 * walkBlend -
-            1.52 * floorSitBlend;
+            2.02 * floorSitBlend;
           leftLowerLegBone.rotation.y =
-            leftLowerLegBaseRotation.y + 0.02 * floorSitBlend;
+            leftLowerLegBaseRotation.y + 0.08 * floorSitBlend;
           leftLowerLegBone.rotation.z =
-            leftLowerLegBaseRotation.z + 0.02 * floorSitBlend;
+            leftLowerLegBaseRotation.z + 0.10 * floorSitBlend;
         }
         if (rightLowerLegBone) {
           rightLowerLegBone.rotation.x =
@@ -636,7 +666,7 @@ export function SarahAvatar({
           leftFootBone.rotation.x =
             leftFootBaseRotation.x +
             legSwing * 0.04 * walkBlend +
-            0.54 * floorSitBlend;
+            0.84 * floorSitBlend;
           leftFootBone.rotation.y =
             leftFootBaseRotation.y + 0.02 * floorSitBlend;
           leftFootBone.rotation.z =
@@ -874,6 +904,31 @@ export function SarahAvatar({
         }
 
         vrm.update(delta);
+
+        if (tailBones.length > 0 && floorSitBlend > 0.001) {
+          const lastIndex = Math.max(1, tailBones.length - 1);
+          tailBones.forEach((entry, index) => {
+            const alongTail = index / lastIndex;
+            const strength = floorSitBlend * (1 - alongTail * 0.38);
+            const curl = floorSitBlend * alongTail;
+
+            entry.node.rotation.x = THREE.MathUtils.lerp(
+              entry.node.rotation.x,
+              entry.baseRotation.x - 0.18 * strength + 0.10 * curl,
+              floorSitBlend,
+            );
+            entry.node.rotation.y = THREE.MathUtils.lerp(
+              entry.node.rotation.y,
+              entry.baseRotation.y + 0.58 * strength + 0.20 * curl,
+              floorSitBlend,
+            );
+            entry.node.rotation.z = THREE.MathUtils.lerp(
+              entry.node.rotation.z,
+              entry.baseRotation.z + 0.42 * strength - 0.16 * curl,
+              floorSitBlend,
+            );
+          });
+        }
       }
 
       renderer.render(scene, camera);
