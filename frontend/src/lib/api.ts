@@ -42,6 +42,7 @@ export type SendAssistantMessagePayload = {
 export type AssistantStateResponse = {
   assistant_state: string;
   latest_reply: string;
+  latest_reply_emotion?: string;
   memory_summary: string;
   providers?: {
     llm?: { active?: string; mode?: string };
