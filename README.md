@@ -88,7 +88,7 @@ The frontend uses Three.js and `@pixiv/three-vrm` to render the character. Avata
 Sarah's display behavior also includes:
 - emotion inference from both reply wording and emoji;
 - distinct happy, relaxed, sad, angry, surprised, and concerned facial recipes;
-- idle standing, short pacing, and seated-rest behavior;
+- idle standing, left-to-right walking with natural arm swing, floor sitting, and occasional stretching;
 - automatic standing/centering and forward attention when the user begins typing, sends a message, or Sarah starts thinking/speaking;
 - Full/Face camera modes and interactive zoom.
 
